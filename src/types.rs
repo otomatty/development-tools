@@ -308,6 +308,69 @@ pub struct XpHistoryEntry {
     pub created_at: String,
 }
 
+/// XP獲得時のブレークダウン
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct XpBreakdown {
+    pub commits_xp: i32,
+    pub prs_created_xp: i32,
+    pub prs_merged_xp: i32,
+    pub issues_created_xp: i32,
+    pub issues_closed_xp: i32,
+    pub reviews_xp: i32,
+    pub stars_xp: i32,
+    pub streak_bonus_xp: i32,
+    pub total_xp: i32,
+}
+
+/// ストリークボーナス情報
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StreakBonusInfo {
+    pub daily_bonus: i32,
+    pub milestone_bonus: i32,
+    pub total_bonus: i32,
+    pub milestone_reached: Option<i32>,
+    pub current_streak: i32,
+    pub next_milestone_days: Option<i32>,
+    pub days_to_next_milestone: Option<i32>,
+}
+
+/// XP獲得イベント
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct XpGainedEvent {
+    pub xp_gained: i32,
+    pub total_xp: u32,
+    pub old_level: u32,
+    pub new_level: u32,
+    pub level_up: bool,
+    pub xp_breakdown: XpBreakdown,
+    pub streak_bonus: StreakBonusInfo,
+}
+
+/// ストリークマイルストーン到達イベント
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreakMilestoneEvent {
+    pub milestone_days: i32,
+    pub bonus_xp: i32,
+    pub current_streak: i32,
+}
+
+/// GitHub統計同期結果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncResult {
+    pub user_stats: UserStats,
+    pub xp_gained: i32,
+    pub old_level: u32,
+    pub new_level: u32,
+    pub level_up: bool,
+    pub xp_breakdown: XpBreakdown,
+    pub streak_bonus: StreakBonusInfo,
+}
+
 /// アプリのページ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppPage {

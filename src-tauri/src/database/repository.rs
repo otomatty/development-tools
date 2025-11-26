@@ -592,6 +592,36 @@ impl Database {
 
         Ok(result.rows_affected())
     }
+
+    /// Save previous GitHub stats (for diff calculation)
+    /// Uses activity_cache with a very long expiry to persist stats
+    pub async fn save_previous_github_stats(
+        &self,
+        user_id: i64,
+        stats_json: &str,
+    ) -> DbResult<()> {
+        // Set expiry to 100 years in the future (effectively permanent)
+        let expires = Utc::now() + chrono::Duration::days(36500);
+        self.save_cache(user_id, "previous_github_stats", stats_json, expires)
+            .await
+    }
+
+    /// Get previous GitHub stats (for diff calculation)
+    pub async fn get_previous_github_stats(&self, user_id: i64) -> DbResult<Option<String>> {
+        // Get cache without expiry check (we use a very long expiry)
+        let result: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT data_json FROM activity_cache
+            WHERE user_id = ? AND data_type = 'previous_github_stats'
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]

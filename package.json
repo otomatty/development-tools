@@ -1,6 +1,25 @@
 {
+  "scripts": {
+    "dev": "tauri dev",
+    "dev:frontend": "trunk serve",
+    "build": "tauri build",
+    "build:frontend": "trunk build",
+    "build:debug": "tauri build --debug",
+    "build:css": "tailwindcss -i ./input.css -o ./styles.css --minify",
+    "watch:css": "tailwindcss -i ./input.css -o ./styles.css --watch",
+    "tauri:icon": "tauri icon",
+    "tauri:info": "tauri info",
+    "tauri:signer": "tauri signer generate -w ~/.tauri/development-tools.key",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build"
+  },
   "dependencies": {},
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "tailwindcss": "3"
   }
 }

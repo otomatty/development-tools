@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::types::{
     AuthState, Badge, BadgeDefinition, GitHubStats, GitHubUser, 
-    LevelInfo, ToolConfig, ToolInfo, UserStats, XpHistoryEntry,
+    LevelInfo, SyncResult, ToolConfig, ToolInfo, UserStats, XpGainedEvent, XpHistoryEntry,
 };
 
 #[wasm_bindgen]
@@ -251,12 +251,54 @@ pub async fn get_xp_history(limit: Option<i32>) -> Result<Vec<XpHistoryEntry>, S
         .map_err(|e| format!("Failed to get XP history: {:?}", e))
 }
 
-/// GitHub統計を同期
-pub async fn sync_github_stats() -> Result<UserStats, String> {
+/// GitHub統計を同期（差分XP付与付き）
+pub async fn sync_github_stats() -> Result<SyncResult, String> {
     let args = serde_wasm_bindgen::to_value(&()).unwrap();
     let result = invoke("sync_github_stats", args).await;
     
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to sync GitHub stats: {:?}", e))
+}
+
+// ============================================
+// イベントリスナー
+// ============================================
+
+/// XP獲得イベントをリッスン
+pub async fn listen_xp_gained_events<F>(mut callback: F) -> Result<UnlistenFn, String>
+where
+    F: FnMut(XpGainedEvent) + 'static,
+{
+    let closure = Closure::new(move |event: JsValue| {
+        if let Ok(payload) = js_sys::Reflect::get(&event, &"payload".into()) {
+            if let Ok(xp_event) = serde_wasm_bindgen::from_value(payload) {
+                callback(xp_event);
+            }
+        }
+    });
+
+    let unlisten = listen("xp-gained", &closure).await;
+    closure.forget();
+
+    Ok(UnlistenFn { _unlisten: unlisten })
+}
+
+/// レベルアップイベントをリッスン
+pub async fn listen_level_up_events<F>(mut callback: F) -> Result<UnlistenFn, String>
+where
+    F: FnMut(XpGainedEvent) + 'static,
+{
+    let closure = Closure::new(move |event: JsValue| {
+        if let Ok(payload) = js_sys::Reflect::get(&event, &"payload".into()) {
+            if let Ok(level_event) = serde_wasm_bindgen::from_value(payload) {
+                callback(level_event);
+            }
+        }
+    });
+
+    let unlisten = listen("level-up", &closure).await;
+    closure.forget();
+
+    Ok(UnlistenFn { _unlisten: unlisten })
 }
 
