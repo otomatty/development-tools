@@ -254,6 +254,56 @@ impl GitHubClient {
             .ok_or_else(|| GitHubError::NotFound(format!("User {} not found", username)))
     }
 
+    /// Get count of merged PRs for the user
+    pub async fn get_merged_prs_count(&self, username: &str) -> GitHubResult<i32> {
+        let query = format!(
+            "/search/issues?q=type:pr+author:{}+is:merged&per_page=1",
+            username
+        );
+        let response: serde_json::Value = self.get(&query).await?;
+        Ok(response
+            .get("total_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32)
+    }
+
+    /// Get count of closed issues for the user
+    pub async fn get_closed_issues_count(&self, username: &str) -> GitHubResult<i32> {
+        // Issues created by user that are closed
+        let query = format!(
+            "/search/issues?q=type:issue+author:{}+is:closed&per_page=1",
+            username
+        );
+        let response: serde_json::Value = self.get(&query).await?;
+        Ok(response
+            .get("total_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32)
+    }
+
+    /// Get unique programming languages used across user's repositories
+    pub async fn get_languages_count(&self, username: &str) -> GitHubResult<i32> {
+        let repos = self.get_repositories(100, 1).await?;
+        let languages: std::collections::HashSet<&str> = repos
+            .iter()
+            .filter_map(|r| r.language.as_deref())
+            .collect();
+        Ok(languages.len() as i32)
+    }
+
+    /// Get count of all PRs (open + closed) for the user
+    pub async fn get_total_prs_count(&self, username: &str) -> GitHubResult<i32> {
+        let query = format!(
+            "/search/issues?q=type:pr+author:{}&per_page=1",
+            username
+        );
+        let response: serde_json::Value = self.get(&query).await?;
+        Ok(response
+            .get("total_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32)
+    }
+
     /// Get current rate limit status
     pub async fn get_rate_limit(&self) -> GitHubResult<RateLimit> {
         let response: RateLimitResponse = self.get("/rate_limit").await?;
@@ -312,22 +362,35 @@ impl GitHubClient {
         let (current_streak, longest_streak) =
             Self::calculate_streak(&contributions.contribution_calendar);
 
-        // Get total stars received
+        // Get total stars received and languages count
         let repos = self.get_repositories(100, 1).await?;
         let total_stars: i32 = repos.iter().map(|r| r.stargazers_count).sum();
+        let languages: std::collections::HashSet<&str> = repos
+            .iter()
+            .filter_map(|r| r.language.as_deref())
+            .collect();
+
+        // Get detailed PR and issue counts using search API
+        // Note: These are rate-limited, so we do them sequentially
+        let total_prs = self.get_total_prs_count(username).await.unwrap_or(
+            contributions.total_pull_request_contributions,
+        );
+        let total_prs_merged = self.get_merged_prs_count(username).await.unwrap_or(0);
+        let total_issues_closed = self.get_closed_issues_count(username).await.unwrap_or(0);
 
         Ok(GitHubStats {
             total_commits: contributions.total_commit_contributions,
-            total_prs: contributions.total_pull_request_contributions,
-            total_prs_merged: 0, // Would need additional API calls
+            total_prs,
+            total_prs_merged,
             total_issues: contributions.total_issue_contributions,
-            total_issues_closed: 0, // Would need additional API calls
+            total_issues_closed,
             total_reviews: contributions.total_pull_request_review_contributions,
             total_stars_received: total_stars,
             total_contributions: contributions.contribution_calendar.total_contributions,
             contribution_calendar: Some(contributions.contribution_calendar),
             current_streak,
             longest_streak,
+            languages_count: languages.len() as i32,
         })
     }
 }

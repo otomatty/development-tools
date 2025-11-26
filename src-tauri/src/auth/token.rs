@@ -1,12 +1,12 @@
 //! Token management
 //!
-//! Handles token storage, retrieval, and refresh logic.
+//! Handles token storage, retrieval, and secure token storage.
+//! Note: GitHub Device Flow tokens don't expire and don't support refresh.
 
-use chrono::{Duration, Utc};
 use thiserror::Error;
 
 use super::crypto::{Crypto, CryptoError};
-use super::oauth::{AuthToken, OAuthConfig, OAuthError, OAuthFlow};
+use super::oauth::{AuthToken, OAuthError};
 use crate::database::{Database, DatabaseError, User};
 
 #[derive(Error, Debug)]
@@ -22,9 +22,6 @@ pub enum TokenError {
 
     #[error("No user logged in")]
     NotLoggedIn,
-
-    #[error("Token expired and refresh failed")]
-    RefreshFailed,
 }
 
 pub type TokenResult<T> = Result<T, TokenError>;
@@ -33,32 +30,17 @@ pub type TokenResult<T> = Result<T, TokenError>;
 pub struct TokenManager {
     crypto: Crypto,
     db: Database,
-    oauth_config: Option<OAuthConfig>,
 }
 
 impl TokenManager {
     /// Create a new token manager
     pub fn new(db: Database) -> TokenResult<Self> {
         let crypto = Crypto::from_app_key()?;
-        Ok(Self {
-            crypto,
-            db,
-            oauth_config: None,
-        })
-    }
-
-    /// Set OAuth config for token refresh
-    pub fn with_oauth_config(mut self, config: OAuthConfig) -> Self {
-        self.oauth_config = Some(config);
-        self
+        Ok(Self { crypto, db })
     }
 
     /// Save tokens for a user
-    pub async fn save_tokens(
-        &self,
-        user_id: i64,
-        token: &AuthToken,
-    ) -> TokenResult<()> {
+    pub async fn save_tokens(&self, user_id: i64, token: &AuthToken) -> TokenResult<()> {
         let encrypted_access = self.crypto.encrypt(&token.access_token)?;
         let encrypted_refresh = token
             .refresh_token
@@ -78,7 +60,8 @@ impl TokenManager {
         Ok(())
     }
 
-    /// Get the current access token, refreshing if needed
+    /// Get the current access token
+    /// Note: GitHub tokens from Device Flow don't expire, so no refresh logic is needed
     pub async fn get_access_token(&self) -> TokenResult<String> {
         let user = self
             .db
@@ -86,43 +69,10 @@ impl TokenManager {
             .await?
             .ok_or(TokenError::NotLoggedIn)?;
 
-        // Check if token is expired or about to expire (within 5 minutes)
-        if let Some(expires_at) = user.token_expires_at {
-            let buffer = Duration::minutes(5);
-            if Utc::now() + buffer >= expires_at {
-                // Token is expired or expiring soon, try to refresh
-                return self.refresh_and_get_token(&user).await;
-            }
-        }
-
-        // Token is valid, decrypt and return
-        self.crypto.decrypt(&user.access_token_encrypted).map_err(|e| e.into())
-    }
-
-    /// Refresh token and return new access token
-    async fn refresh_and_get_token(&self, user: &User) -> TokenResult<String> {
-        // Check if we have refresh token and OAuth config
-        let refresh_token_encrypted = user
-            .refresh_token_encrypted
-            .as_ref()
-            .ok_or(TokenError::RefreshFailed)?;
-
-        let oauth_config = self
-            .oauth_config
-            .as_ref()
-            .ok_or(TokenError::RefreshFailed)?;
-
-        // Decrypt refresh token
-        let refresh_token = self.crypto.decrypt(refresh_token_encrypted)?;
-
-        // Exchange refresh token for new access token
-        let flow = OAuthFlow::new(oauth_config.clone());
-        let new_token = flow.refresh_token(&refresh_token).await?;
-
-        // Save new tokens
-        self.save_tokens(user.id, &new_token).await?;
-
-        Ok(new_token.access_token)
+        // Decrypt and return the token
+        self.crypto
+            .decrypt(&user.access_token_encrypted)
+            .map_err(|e| e.into())
     }
 
     /// Create a new user from OAuth token
@@ -165,10 +115,11 @@ impl TokenManager {
         Ok(self.db.get_current_user().await?)
     }
 
-    /// Logout current user
+    /// Logout current user (clears token but preserves user data)
     pub async fn logout(&self) -> TokenResult<()> {
         if let Some(user) = self.db.get_current_user().await? {
-            self.db.delete_user(user.id).await?;
+            // Only clear the token, preserve all user data (XP, badges, etc.)
+            self.db.clear_user_tokens(user.id).await?;
         }
         Ok(())
     }
@@ -224,4 +175,3 @@ mod tests {
     // Integration tests would require a running database
     // Unit tests for the crypto layer are in crypto.rs
 }
-

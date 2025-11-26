@@ -188,6 +188,33 @@ pub struct UserInfo {
     pub avatar_url: Option<String>,
 }
 
+// ============================================
+// Device Flow 認証関連の型
+// ============================================
+
+/// Device Flow開始時のレスポンス
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCodeResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: i64,
+    pub interval: i64,
+}
+
+/// Device Flowトークンポーリングのステータス
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum DeviceTokenStatus {
+    /// 認証待ち - ユーザーがまだ認証を完了していない
+    Pending,
+    /// 認証成功 - ログイン完了
+    Success { auth_state: AuthState },
+    /// エラー発生
+    Error { message: String },
+}
+
 /// ユーザー統計
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -233,6 +260,7 @@ pub struct GitHubStats {
     pub contribution_calendar: Option<ContributionCalendar>,
     pub current_streak: i32,
     pub longest_streak: i32,
+    pub languages_count: i32,
 }
 
 /// GitHubユーザー
@@ -369,6 +397,31 @@ pub struct SyncResult {
     pub level_up: bool,
     pub xp_breakdown: XpBreakdown,
     pub streak_bonus: StreakBonusInfo,
+    pub new_badges: Vec<NewBadgeInfo>,
+}
+
+/// 新しく獲得したバッジ情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewBadgeInfo {
+    pub badge_id: String,
+    pub badge_type: String,
+    pub name: String,
+    pub description: String,
+    pub rarity: String,
+    pub icon: String,
+}
+
+/// バッジ獲得イベント
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeEarnedEvent {
+    pub badge_id: String,
+    pub badge_type: String,
+    pub name: String,
+    pub description: String,
+    pub rarity: String,
+    pub icon: String,
 }
 
 /// アプリのページ
@@ -378,5 +431,138 @@ pub enum AppPage {
     Home,
     Tools,
     Settings,
+}
+
+// ============================================
+// 設定関連の型
+// ============================================
+
+/// ユーザー設定
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSettings {
+    pub id: i64,
+    pub user_id: i64,
+    pub notification_method: String,
+    pub notify_xp_gain: bool,
+    pub notify_level_up: bool,
+    pub notify_badge_earned: bool,
+    pub notify_streak_update: bool,
+    pub notify_streak_milestone: bool,
+    pub sync_interval_minutes: i32,
+    pub background_sync: bool,
+    pub sync_on_startup: bool,
+    pub animations_enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 設定更新リクエスト
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSettingsRequest {
+    pub notification_method: String,
+    pub notify_xp_gain: bool,
+    pub notify_level_up: bool,
+    pub notify_badge_earned: bool,
+    pub notify_streak_update: bool,
+    pub notify_streak_milestone: bool,
+    pub sync_interval_minutes: i32,
+    pub background_sync: bool,
+    pub sync_on_startup: bool,
+    pub animations_enabled: bool,
+}
+
+impl From<&UserSettings> for UpdateSettingsRequest {
+    fn from(settings: &UserSettings) -> Self {
+        Self {
+            notification_method: settings.notification_method.clone(),
+            notify_xp_gain: settings.notify_xp_gain,
+            notify_level_up: settings.notify_level_up,
+            notify_badge_earned: settings.notify_badge_earned,
+            notify_streak_update: settings.notify_streak_update,
+            notify_streak_milestone: settings.notify_streak_milestone,
+            sync_interval_minutes: settings.sync_interval_minutes,
+            background_sync: settings.background_sync,
+            sync_on_startup: settings.sync_on_startup,
+            animations_enabled: settings.animations_enabled,
+        }
+    }
+}
+
+/// データベース情報
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseInfo {
+    pub path: String,
+    pub size_bytes: u64,
+    pub cache_size_bytes: u64,
+}
+
+/// キャッシュクリア結果
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearCacheResult {
+    pub cleared_entries: i32,
+    pub freed_bytes: u64,
+}
+
+/// 通知方法の選択肢
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NotificationMethod {
+    AppOnly,
+    OsOnly,
+    #[default]
+    Both,
+    None,
+}
+
+impl NotificationMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NotificationMethod::AppOnly => "app_only",
+            NotificationMethod::OsOnly => "os_only",
+            NotificationMethod::Both => "both",
+            NotificationMethod::None => "none",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "app_only" => NotificationMethod::AppOnly,
+            "os_only" => NotificationMethod::OsOnly,
+            "both" => NotificationMethod::Both,
+            "none" => NotificationMethod::None,
+            _ => NotificationMethod::Both,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            NotificationMethod::AppOnly => "アプリ内のみ",
+            NotificationMethod::OsOnly => "OSネイティブのみ",
+            NotificationMethod::Both => "両方",
+            NotificationMethod::None => "通知なし",
+        }
+    }
+}
+
+/// 同期間隔の選択肢
+pub const SYNC_INTERVALS: &[(i32, &str)] = &[
+    (5, "5分"),
+    (15, "15分"),
+    (30, "30分"),
+    (60, "1時間"),
+    (180, "3時間"),
+    (0, "手動のみ"),
+];
+
+/// 同期間隔のラベルを取得
+pub fn get_sync_interval_label(minutes: i32) -> &'static str {
+    SYNC_INTERVALS
+        .iter()
+        .find(|(m, _)| *m == minutes)
+        .map(|(_, label)| *label)
+        .unwrap_or("不明")
 }
 

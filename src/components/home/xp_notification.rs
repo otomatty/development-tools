@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::types::XpGainedEvent;
+use crate::types::{NewBadgeInfo, XpGainedEvent};
 
 /// XP notification component
 #[component]
@@ -240,6 +240,191 @@ where
                                         on:click=move |_| on_close_button()
                                     >
                                         "Awesome!"
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+        </Show>
+    }
+}
+
+/// Badge earned notification component
+#[component]
+pub fn BadgeNotification<F>(
+    badge: ReadSignal<Option<NewBadgeInfo>>,
+    on_close: F,
+) -> impl IntoView 
+where
+    F: Fn() + 'static + Clone + Send + Sync,
+{
+    // Get rarity styling
+    let rarity_styles = move || {
+        badge.get().map(|b| {
+            match b.rarity.as_str() {
+                "bronze" => ("border-badge-bronze", "text-badge-bronze", "shadow-bronze"),
+                "silver" => ("border-badge-silver", "text-badge-silver", "shadow-silver"),
+                "gold" => ("border-badge-gold", "text-badge-gold", "shadow-neon-cyan"),
+                "platinum" => ("border-badge-platinum", "text-badge-platinum", "shadow-neon-purple"),
+                _ => ("border-slate-600", "text-slate-400", ""),
+            }
+        })
+    };
+
+    view! {
+        <Show when=move || badge.get().is_some()>
+            {
+                let on_close = on_close.clone();
+                move || {
+                    let b = badge.get().unwrap();
+                    let on_close_overlay = on_close.clone();
+                    let on_close_button = on_close.clone();
+                    let styles = rarity_styles().unwrap_or(("border-slate-600", "text-slate-400", ""));
+                    let border_class = styles.0;
+                    let text_class = styles.1;
+                    let shadow_class = styles.2;
+                    
+                    view! {
+                        // Overlay
+                        <div 
+                            class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-fade-in"
+                            on:click=move |_| on_close_overlay()
+                        >
+                            // Modal content
+                            <div 
+                                class=format!(
+                                    "relative p-8 bg-gm-bg-card rounded-2xl border-2 {} {} max-w-md w-full mx-4 animate-scale-in",
+                                    border_class, shadow_class
+                                )
+                                on:click=|ev| ev.stop_propagation()
+                            >
+                                // Sparkle effects
+                                <div class="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
+                                    <div class="sparkle sparkle-1"/>
+                                    <div class="sparkle sparkle-2"/>
+                                    <div class="sparkle sparkle-3"/>
+                                </div>
+                                
+                                // Content
+                                <div class="relative text-center space-y-4">
+                                    // Title
+                                    <h2 class="text-2xl font-gaming font-bold text-gm-accent-purple">
+                                        "🏅 Badge Unlocked!"
+                                    </h2>
+                                    
+                                    // Badge icon with glow
+                                    <div class="py-4">
+                                        <span class="text-8xl animate-bounce-slow">
+                                            {b.icon.clone()}
+                                        </span>
+                                    </div>
+                                    
+                                    // Badge name
+                                    <h3 class=format!("text-3xl font-gaming font-bold {}", text_class)>
+                                        {b.name.clone()}
+                                    </h3>
+                                    
+                                    // Description
+                                    <p class="text-dt-text-sub">
+                                        {b.description.clone()}
+                                    </p>
+                                    
+                                    // Rarity badge
+                                    <div class="inline-block px-4 py-1 rounded-full bg-slate-800/50">
+                                        <span class=format!("text-sm font-bold uppercase {}", text_class)>
+                                            {b.rarity.clone()}
+                                        </span>
+                                    </div>
+                                    
+                                    // Close button
+                                    <div class="pt-4">
+                                        <button
+                                            class=format!(
+                                                "px-8 py-3 rounded-lg font-gaming font-bold transition-all duration-200 border-2 hover:scale-105 {} bg-gm-bg-secondary",
+                                                border_class
+                                            )
+                                            on:click=move |_| on_close_button()
+                                        >
+                                            "Collect!"
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+        </Show>
+    }
+}
+
+/// Multiple badges notification component (for when multiple badges are earned at once)
+#[component]
+pub fn MultipleBadgesNotification<F>(
+    badges: ReadSignal<Vec<NewBadgeInfo>>,
+    on_close: F,
+) -> impl IntoView 
+where
+    F: Fn() + 'static + Clone + Send + Sync,
+{
+    view! {
+        <Show when=move || !badges.get().is_empty()>
+            {
+                let on_close = on_close.clone();
+                move || {
+                    let badge_list = badges.get();
+                    let on_close_overlay = on_close.clone();
+                    let on_close_button = on_close.clone();
+                    
+                    view! {
+                        // Overlay
+                        <div 
+                            class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-fade-in"
+                            on:click=move |_| on_close_overlay()
+                        >
+                            // Modal content
+                            <div 
+                                class="relative p-8 bg-gm-bg-card rounded-2xl border-2 border-gm-accent-purple shadow-neon-purple max-w-lg w-full mx-4 animate-scale-in"
+                                on:click=|ev| ev.stop_propagation()
+                            >
+                                // Content
+                                <div class="relative text-center space-y-6">
+                                    // Title
+                                    <h2 class="text-2xl font-gaming font-bold text-gm-accent-purple">
+                                        "🎉 " {badge_list.len()} " Badges Unlocked!"
+                                    </h2>
+                                    
+                                    // Badge grid
+                                    <div class="flex flex-wrap justify-center gap-4 py-4">
+                                        {badge_list.iter().map(|b| {
+                                            let rarity_class = match b.rarity.as_str() {
+                                                "bronze" => "border-badge-bronze text-badge-bronze",
+                                                "silver" => "border-badge-silver text-badge-silver",
+                                                "gold" => "border-badge-gold text-badge-gold",
+                                                "platinum" => "border-badge-platinum text-badge-platinum",
+                                                _ => "border-slate-600 text-slate-400",
+                                            };
+                                            
+                                            view! {
+                                                <div class=format!(
+                                                    "p-4 rounded-xl border-2 {} bg-gm-bg-secondary/50 text-center",
+                                                    rarity_class
+                                                )>
+                                                    <div class="text-4xl mb-2">{b.icon.clone()}</div>
+                                                    <div class="text-sm font-bold">{b.name.clone()}</div>
+                                                </div>
+                                            }
+                                        }).collect_view()}
+                                    </div>
+                                    
+                                    // Close button
+                                    <button
+                                        class="px-8 py-3 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-lg text-white font-gaming font-bold hover:shadow-neon-cyan transition-all duration-200"
+                                        on:click=move |_| on_close_button()
+                                    >
+                                        "Collect All!"
                                     </button>
                                 </div>
                             </div>

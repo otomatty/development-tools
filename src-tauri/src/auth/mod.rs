@@ -1,13 +1,14 @@
 //! Authentication module
 //!
-//! This module handles GitHub OAuth authentication, token management,
+//! This module handles GitHub Device Flow authentication, token management,
 //! and secure token storage.
 
 pub mod crypto;
 pub mod oauth;
 pub mod token;
 
-pub use crypto::Crypto;
-pub use oauth::{OAuthConfig, OAuthFlow};
+pub use oauth::{
+    AuthToken, DeviceCodeResponse, DeviceFlow, DeviceFlowConfig, DeviceTokenStatus, OAuthError,
+};
 pub use token::{AuthState, TokenManager, UserInfo};
 

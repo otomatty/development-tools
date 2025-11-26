@@ -2,8 +2,9 @@ use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
 
 use crate::types::{
-    AuthState, Badge, BadgeDefinition, GitHubStats, GitHubUser, 
-    LevelInfo, SyncResult, ToolConfig, ToolInfo, UserStats, XpGainedEvent, XpHistoryEntry,
+    AuthState, Badge, BadgeDefinition, ClearCacheResult, DatabaseInfo, DeviceCodeResponse,
+    DeviceTokenStatus, GitHubStats, GitHubUser, LevelInfo, SyncResult, ToolConfig, ToolInfo,
+    UpdateSettingsRequest, UserSettings, UserStats, XpGainedEvent, XpHistoryEntry,
 };
 
 #[wasm_bindgen]
@@ -115,7 +116,7 @@ where
 }
 
 // ============================================
-// 認証関連API
+// 認証関連API（Device Flow）
 // ============================================
 
 /// 認証状態を取得
@@ -127,35 +128,71 @@ pub async fn get_auth_state() -> Result<AuthState, String> {
         .map_err(|e| format!("Failed to get auth state: {:?}", e))
 }
 
-/// OAuthログイン開始（認証URLを返す）
-pub async fn start_oauth_login() -> Result<String, String> {
-    let args = serde_wasm_bindgen::to_value(&()).unwrap();
-    let result = invoke("start_oauth_login", args).await;
-    
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to start OAuth login: {:?}", e))
-}
-
-/// OAuthコールバック処理
-pub async fn handle_oauth_callback(code: &str, state: &str) -> Result<AuthState, String> {
-    #[derive(serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Args<'a> {
-        code: &'a str,
-        callback_state: &'a str,
-    }
-
-    let args = serde_wasm_bindgen::to_value(&Args { code, callback_state: state }).unwrap();
-    let result = invoke("handle_oauth_callback", args).await;
-    
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to handle OAuth callback: {:?}", e))
-}
-
 /// ログアウト
 pub async fn logout() -> Result<(), String> {
     let args = serde_wasm_bindgen::to_value(&()).unwrap();
     let result = invoke("logout", args).await;
+    
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// システムのデフォルトブラウザでURLを開く
+pub async fn open_url(url: &str) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Args<'a> {
+        url: &'a str,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { url }).unwrap();
+    let result = invoke("open_url", args).await;
+    
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Device Flow開始 - user_code と verification_uri を返す
+/// 
+/// ユーザーは以下を実行する:
+/// 1. verification_uri (https://github.com/login/device) にアクセス
+/// 2. 表示された user_code を入力
+/// 3. アプリ側で poll_device_token() を繰り返し呼び出して認証完了を待つ
+pub async fn start_device_flow() -> Result<DeviceCodeResponse, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("start_device_flow", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to start device flow: {:?}", e))
+}
+
+/// Device Flowトークンポーリング - 認証完了を待つ
+/// 
+/// 返り値:
+/// - DeviceTokenStatus::Pending - ユーザーがまだ認証を完了していない
+/// - DeviceTokenStatus::Success - 認証完了、ログイン成功
+/// - DeviceTokenStatus::Error - エラー発生
+pub async fn poll_device_token() -> Result<DeviceTokenStatus, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("poll_device_token", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to poll device token: {:?}", e))
+}
+
+/// Device Flowをキャンセル
+pub async fn cancel_device_flow() -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("cancel_device_flow", args).await;
     
     if result.is_null() || result.is_undefined() {
         Ok(())
@@ -300,5 +337,77 @@ where
     closure.forget();
 
     Ok(UnlistenFn { _unlisten: unlisten })
+}
+
+// ============================================
+// 設定関連API
+// ============================================
+
+/// ユーザー設定を取得
+pub async fn get_settings() -> Result<UserSettings, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_settings", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get settings: {:?}", e))
+}
+
+/// ユーザー設定を更新
+pub async fn update_settings(settings: &UpdateSettingsRequest) -> Result<UserSettings, String> {
+    let args = serde_wasm_bindgen::to_value(settings).unwrap();
+    let result = invoke("update_settings", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to update settings: {:?}", e))
+}
+
+/// 設定をリセット
+pub async fn reset_settings() -> Result<UserSettings, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("reset_settings", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to reset settings: {:?}", e))
+}
+
+/// キャッシュをクリア
+pub async fn clear_cache() -> Result<ClearCacheResult, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("clear_cache", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to clear cache: {:?}", e))
+}
+
+/// データベース情報を取得
+pub async fn get_database_info() -> Result<DatabaseInfo, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_database_info", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get database info: {:?}", e))
+}
+
+/// 全データをリセット
+pub async fn reset_all_data() -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("reset_all_data", args).await;
+    
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// データをエクスポート
+pub async fn export_data() -> Result<String, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("export_data", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to export data: {:?}", e))
 }
 

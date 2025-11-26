@@ -183,7 +183,7 @@ pub fn App() -> impl IntoView {
                 // ページに応じてコンテンツを表示
                 {move || match current_page.get() {
                     AppPage::Home => view! {
-                        <HomePage />
+                        <HomePage set_current_page=set_current_page />
                     }.into_any(),
                     
                     AppPage::Tools => view! {

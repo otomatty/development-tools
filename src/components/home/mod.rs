@@ -9,23 +9,25 @@ pub mod contribution_graph;
 pub mod badge_grid;
 pub mod xp_notification;
 
-pub use login_card::LoginCard;
+pub use login_card::{LoginCard, LoginState};
 pub use profile_card::ProfileCard;
 pub use stats_display::StatsDisplay;
 pub use contribution_graph::ContributionGraph;
 pub use badge_grid::BadgeGrid;
-pub use xp_notification::{LevelUpModal, XpNotification};
+pub use xp_notification::{BadgeNotification, LevelUpModal, MultipleBadgesNotification, XpNotification};
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
 use crate::tauri_api;
-use crate::types::{AuthState, Badge, BadgeDefinition, GitHubStats, LevelInfo, UserStats, XpGainedEvent};
+use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, UserStats, XpGainedEvent};
 
 /// Home page component
 #[component]
-pub fn HomePage() -> impl IntoView {
+pub fn HomePage(
+    set_current_page: WriteSignal<AppPage>,
+) -> impl IntoView {
     // State
     let (auth_state, set_auth_state) = signal(AuthState::default());
     let (loading, set_loading) = signal(true);
@@ -40,9 +42,16 @@ pub fn HomePage() -> impl IntoView {
     let (xp_event, set_xp_event) = signal(Option::<XpGainedEvent>::None);
     let (level_up_event, set_level_up_event) = signal(Option::<XpGainedEvent>::None);
     
+    // Badge notification state
+    let (new_badges_event, set_new_badges_event) = signal(Vec::<NewBadgeInfo>::new());
+    
     // Auto-sync state
     let (auto_sync_enabled, set_auto_sync_enabled) = signal(true);
     let (last_sync_time, set_last_sync_time) = signal(Option::<String>::None);
+    
+    // Device Flow login state
+    let (login_state, set_login_state) = signal(LoginState::default());
+    let (polling_active, set_polling_active) = signal(false);
 
     // Load initial data
     spawn_local(async move {
@@ -89,8 +98,10 @@ pub fn HomePage() -> impl IntoView {
             loop {
                 // Check every 15 minutes
                 if let Some(window) = web_sys::window() {
-                    let auth = auth_state.get();
-                    let enabled = auto_sync_enabled.get();
+                    // Use get_untracked() since we're in an async context outside reactive tracking
+                    // This is intentional - we poll these values periodically, not reactively
+                    let auth = auth_state.get_untracked();
+                    let enabled = auto_sync_enabled.get_untracked();
                     
                     if auth.is_logged_in && enabled {
                         web_sys::console::log_1(&"Auto-sync: Syncing GitHub stats...".into());
@@ -137,9 +148,17 @@ pub fn HomePage() -> impl IntoView {
                                     }
                                 }
                                 
-                                // Reload level info
+                                // Show badge notifications if any
+                                if !sync_result.new_badges.is_empty() {
+                                    set_new_badges_event.set(sync_result.new_badges);
+                                }
+                                
+                                // Reload level info and badges
                                 if let Ok(info) = tauri_api::get_level_info().await {
                                     set_level_info.set(info);
+                                }
+                                if let Ok(b) = tauri_api::get_badges().await {
+                                    set_badges.set(b);
                                 }
                                 
                                 web_sys::console::log_1(&format!("Auto-sync: Completed, XP gained: {}", sync_result.xp_gained).into());
@@ -165,30 +184,124 @@ pub fn HomePage() -> impl IntoView {
         });
     }
 
-    // Handle login
-    let on_login = move |_| {
+    // Handle login with Device Flow
+    let on_login = Callback::new(move |_: leptos::ev::MouseEvent| {
         spawn_local(async move {
-            set_loading.set(true);
-            match tauri_api::start_oauth_login().await {
-                Ok(auth_url) => {
-                    // Open browser for OAuth
-                    web_sys::console::log_1(&format!("Opening auth URL: {}", auth_url).into());
-                    // In a real app, this would open the system browser
-                    // For now, we'll just log it
-                    if let Some(window) = web_sys::window() {
-                        let _ = window.open_with_url(&auth_url);
-                    }
+            set_login_state.set(LoginState::Starting);
+            
+            match tauri_api::start_device_flow().await {
+                Ok(device_response) => {
+                    web_sys::console::log_1(&format!(
+                        "Device Flow started. User code: {}, URL: {}",
+                        device_response.user_code,
+                        device_response.verification_uri
+                    ).into());
+                    
+                    // Show the user code
+                    set_login_state.set(LoginState::WaitingForCode {
+                        user_code: device_response.user_code,
+                        verification_uri: device_response.verification_uri,
+                        expires_in: device_response.expires_in,
+                    });
                 }
                 Err(e) => {
-                    set_error.set(Some(format!("Login failed: {}", e)));
+                    set_login_state.set(LoginState::Error(format!("Failed to start login: {}", e)));
                 }
             }
-            set_loading.set(false);
         });
-    };
+    });
+
+    // Handle opening verification URL
+    let on_open_url = Callback::new(move |url: String| {
+        let url_clone = url.clone();
+        
+        // Open URL in system browser using Tauri API
+        spawn_local(async move {
+            if let Err(e) = tauri_api::open_url(&url_clone).await {
+                web_sys::console::error_1(&format!("Failed to open URL: {}", e).into());
+            }
+        });
+        
+        // Start polling for token
+        set_login_state.set(LoginState::Polling);
+        set_polling_active.set(true);
+        
+        spawn_local(async move {
+            // Polling interval (5 seconds as recommended by GitHub)
+            const POLL_INTERVAL_MS: i32 = 5000;
+            
+            loop {
+                // Check if polling is still active
+                if !polling_active.get_untracked() {
+                    break;
+                }
+                
+                match tauri_api::poll_device_token().await {
+                    Ok(status) => {
+                        match status {
+                            DeviceTokenStatus::Pending => {
+                                // Still waiting - continue polling
+                                web_sys::console::log_1(&"Device Flow: Authorization pending...".into());
+                            }
+                            DeviceTokenStatus::Success { auth_state: new_auth_state } => {
+                                // Success! User is logged in
+                                web_sys::console::log_1(&"Device Flow: Authorization successful!".into());
+                                set_auth_state.set(new_auth_state);
+                                set_login_state.set(LoginState::Initial);
+                                set_polling_active.set(false);
+                                
+                                // Load user data
+                                load_user_data(
+                                    set_github_stats,
+                                    set_level_info,
+                                    set_user_stats,
+                                    set_badges,
+                                    set_error,
+                                ).await;
+                                break;
+                            }
+                            DeviceTokenStatus::Error { message } => {
+                                // Error occurred
+                                set_login_state.set(LoginState::Error(message));
+                                set_polling_active.set(false);
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        set_login_state.set(LoginState::Error(format!("Polling failed: {}", e)));
+                        set_polling_active.set(false);
+                        break;
+                    }
+                }
+                
+                // Wait before next poll
+                if let Some(window) = web_sys::window() {
+                    let promise = js_sys::Promise::new(&mut |resolve, _| {
+                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            &resolve,
+                            POLL_INTERVAL_MS,
+                        );
+                    });
+                    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                }
+            }
+        });
+    });
+
+    // Handle cancel login
+    let on_cancel_login = Callback::new(move |_: leptos::ev::MouseEvent| {
+        set_polling_active.set(false);
+        set_login_state.set(LoginState::Initial);
+        
+        // Cancel the device flow on backend
+        spawn_local(async move {
+            let _ = tauri_api::cancel_device_flow().await;
+        });
+    });
 
     // Handle logout
-    let on_logout = move |_| {
+    let on_logout = Callback::new(move |_: leptos::ev::MouseEvent| {
         spawn_local(async move {
             set_loading.set(true);
             if let Err(e) = tauri_api::logout().await {
@@ -202,10 +315,10 @@ pub fn HomePage() -> impl IntoView {
             }
             set_loading.set(false);
         });
-    };
+    });
 
     // Handle sync
-    let on_sync = move |_| {
+    let on_sync = Callback::new(move |_: leptos::ev::MouseEvent| {
         spawn_local(async move {
             set_loading.set(true);
             
@@ -245,6 +358,11 @@ pub fn HomePage() -> impl IntoView {
                             }
                         }
                     }
+                    
+                    // Show badge notifications if any
+                    if !sync_result.new_badges.is_empty() {
+                        set_new_badges_event.set(sync_result.new_badges);
+                    }
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Failed to sync: {}", e).into());
@@ -262,11 +380,12 @@ pub fn HomePage() -> impl IntoView {
             ).await;
             set_loading.set(false);
         });
-    };
+    });
     
     // Callbacks for closing notifications
     let on_close_xp = move || set_xp_event.set(None);
     let on_close_level_up = move || set_level_up_event.set(None);
+    let on_close_badges = move || set_new_badges_event.set(Vec::new());
 
     view! {
         <div class="flex-1 overflow-y-auto bg-gradient-to-br from-gm-bg-primary via-gm-bg-secondary to-gm-bg-primary min-h-full">
@@ -276,9 +395,16 @@ pub fn HomePage() -> impl IntoView {
             // Level Up Modal
             <LevelUpModal event=level_up_event on_close=on_close_level_up />
             
+            // Badge Notification
+            <MultipleBadgesNotification badges=new_badges_event on_close=on_close_badges />
+            
             <div class="max-w-6xl mx-auto p-6 space-y-6">
                 // Header
                 <div class="flex items-center justify-between">
+                    <h1 class="text-3xl font-gaming font-bold text-gm-accent-cyan">
+                        "Dashboard"
+                    </h1>
+                    
                     <Show when=move || auth_state.get().is_logged_in>
                         <div class="flex items-center gap-4">
                             // Auto-sync toggle
@@ -310,7 +436,7 @@ pub fn HomePage() -> impl IntoView {
                             // Manual sync button
                             <button
                                 class="px-4 py-2 bg-gm-bg-card border border-gm-accent-cyan/30 rounded-lg text-gm-accent-cyan hover:bg-gm-accent-cyan/10 transition-all duration-200 flex items-center gap-2"
-                                on:click=on_sync
+                                on:click=move |e| on_sync.run(e)
                                 disabled=move || loading.get()
                             >
                                 <span class=move || if loading.get() { "animate-spin" } else { "" }>"↻"</span>
@@ -339,7 +465,12 @@ pub fn HomePage() -> impl IntoView {
                     <Show
                         when=move || auth_state.get().is_logged_in
                         fallback=move || view! {
-                            <LoginCard on_login=on_login />
+                            <LoginCard
+                                login_state=login_state
+                                on_login=on_login
+                                on_cancel=on_cancel_login
+                                on_open_url=on_open_url
+                            />
                         }
                     >
                         // Profile Card
@@ -347,7 +478,8 @@ pub fn HomePage() -> impl IntoView {
                             auth_state=auth_state
                             level_info=level_info
                             user_stats=user_stats
-                            on_logout=on_logout
+                            on_logout=move |e| on_logout.run(e)
+                            on_settings=move |_| set_current_page.set(AppPage::Settings)
                         />
 
                         // Stats Grid

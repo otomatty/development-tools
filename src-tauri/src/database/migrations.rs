@@ -118,6 +118,42 @@ CREATE INDEX IF NOT EXISTS idx_activity_cache_expires ON activity_cache(expires_
 CREATE INDEX IF NOT EXISTS idx_activity_cache_user_type ON activity_cache(user_id, data_type);
 "#,
     },
+    Migration {
+        version: 2,
+        name: "add_user_settings",
+        sql: r#"
+-- User settings table: stores user preferences
+CREATE TABLE IF NOT EXISTS user_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    
+    -- Notification settings
+    notification_method TEXT DEFAULT 'both', -- 'app_only' | 'os_only' | 'both' | 'none'
+    notify_xp_gain INTEGER DEFAULT 1,
+    notify_level_up INTEGER DEFAULT 1,
+    notify_badge_earned INTEGER DEFAULT 1,
+    notify_streak_update INTEGER DEFAULT 1,
+    notify_streak_milestone INTEGER DEFAULT 1,
+    
+    -- Sync settings
+    sync_interval_minutes INTEGER DEFAULT 60, -- 5, 15, 30, 60, 180, 0 (manual only)
+    background_sync INTEGER DEFAULT 1,
+    sync_on_startup INTEGER DEFAULT 1,
+    
+    -- Appearance settings
+    animations_enabled INTEGER DEFAULT 1,
+    
+    -- Metadata
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Create index for user_settings
+CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

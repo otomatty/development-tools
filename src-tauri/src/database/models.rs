@@ -5,6 +5,144 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
+// ============================================
+// User Settings
+// ============================================
+
+/// Notification method options
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationMethod {
+    AppOnly,
+    OsOnly,
+    #[default]
+    Both,
+    None,
+}
+
+impl NotificationMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NotificationMethod::AppOnly => "app_only",
+            NotificationMethod::OsOnly => "os_only",
+            NotificationMethod::Both => "both",
+            NotificationMethod::None => "none",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "app_only" => NotificationMethod::AppOnly,
+            "os_only" => NotificationMethod::OsOnly,
+            "both" => NotificationMethod::Both,
+            "none" => NotificationMethod::None,
+            _ => NotificationMethod::Both, // default
+        }
+    }
+}
+
+/// User settings model - stores user preferences
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSettings {
+    pub id: i64,
+    pub user_id: i64,
+    
+    // Notification settings
+    pub notification_method: NotificationMethod,
+    pub notify_xp_gain: bool,
+    pub notify_level_up: bool,
+    pub notify_badge_earned: bool,
+    pub notify_streak_update: bool,
+    pub notify_streak_milestone: bool,
+    
+    // Sync settings
+    pub sync_interval_minutes: i32,
+    pub background_sync: bool,
+    pub sync_on_startup: bool,
+    
+    // Appearance settings
+    pub animations_enabled: bool,
+    
+    // Metadata
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl Default for UserSettings {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            user_id: 0,
+            notification_method: NotificationMethod::Both,
+            notify_xp_gain: true,
+            notify_level_up: true,
+            notify_badge_earned: true,
+            notify_streak_update: true,
+            notify_streak_milestone: true,
+            sync_interval_minutes: 60,
+            background_sync: true,
+            sync_on_startup: true,
+            animations_enabled: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+}
+
+/// Settings defaults as constants
+pub mod settings_defaults {
+    use super::NotificationMethod;
+
+    pub const NOTIFICATION_METHOD: NotificationMethod = NotificationMethod::Both;
+    pub const NOTIFY_XP_GAIN: bool = true;
+    pub const NOTIFY_LEVEL_UP: bool = true;
+    pub const NOTIFY_BADGE_EARNED: bool = true;
+    pub const NOTIFY_STREAK_UPDATE: bool = true;
+    pub const NOTIFY_STREAK_MILESTONE: bool = true;
+    pub const SYNC_INTERVAL_MINUTES: i32 = 60;
+    pub const BACKGROUND_SYNC: bool = true;
+    pub const SYNC_ON_STARTUP: bool = true;
+    pub const ANIMATIONS_ENABLED: bool = true;
+}
+
+/// Database info for display in settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseInfo {
+    pub path: String,
+    pub size_bytes: u64,
+    pub cache_size_bytes: u64,
+}
+
+/// Result of clearing cache
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearCacheResult {
+    pub cleared_entries: i32,
+    pub freed_bytes: u64,
+}
+
+/// Data export structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportData {
+    pub exported_at: String,
+    pub version: String,
+    pub user: ExportUser,
+    pub stats: UserStats,
+    pub badges: Vec<Badge>,
+    pub xp_history: Vec<XpHistoryEntry>,
+}
+
+/// User info for export
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportUser {
+    pub github_id: i64,
+    pub username: String,
+}
+
 /// User model - represents a GitHub user
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -579,6 +717,361 @@ pub mod xp {
             assert_eq!(breakdown.reviews_xp, 125);        // 5 * 25
             assert_eq!(breakdown.stars_xp, 50);           // 10 * 5
             assert_eq!(breakdown.total_xp, 510);
+        }
+    }
+}
+
+/// Badge evaluation utilities
+pub mod badge {
+    use serde::{Deserialize, Serialize};
+
+    /// Badge definition with condition
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct BadgeDefinition {
+        pub id: String,
+        pub name: String,
+        pub description: String,
+        pub badge_type: String,
+        pub rarity: String,
+        pub icon: String,
+        pub condition: BadgeCondition,
+    }
+
+    /// Badge condition types
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(tag = "type")]
+    pub enum BadgeCondition {
+        /// Commits milestone
+        Commits { threshold: i32 },
+        /// Streak milestone (uses longest_streak)
+        Streak { days: i32 },
+        /// Reviews milestone
+        Reviews { threshold: i32 },
+        /// PRs merged milestone
+        PrsMerged { threshold: i32 },
+        /// Issues closed milestone
+        IssuesClosed { threshold: i32 },
+        /// PR merge rate (requires min_prs)
+        PrMergeRate { min_rate: f32, min_prs: i32 },
+        /// Languages used
+        Languages { count: i32 },
+    }
+
+    /// User stats for badge evaluation
+    #[derive(Debug, Clone, Default)]
+    pub struct BadgeEvalContext {
+        pub total_commits: i32,
+        pub current_streak: i32,
+        pub longest_streak: i32,
+        pub total_reviews: i32,
+        pub total_prs: i32,
+        pub total_prs_merged: i32,
+        pub total_issues_closed: i32,
+        pub languages_count: i32,
+    }
+
+    /// All badge definitions
+    pub fn get_all_badge_definitions() -> Vec<BadgeDefinition> {
+        vec![
+            // Milestone badges
+            BadgeDefinition {
+                id: "first_blood".to_string(),
+                name: "First Blood".to_string(),
+                description: "Make your first commit".to_string(),
+                badge_type: "milestone".to_string(),
+                rarity: "bronze".to_string(),
+                icon: "🎯".to_string(),
+                condition: BadgeCondition::Commits { threshold: 1 },
+            },
+            BadgeDefinition {
+                id: "century".to_string(),
+                name: "Century".to_string(),
+                description: "Reach 100 commits".to_string(),
+                badge_type: "milestone".to_string(),
+                rarity: "silver".to_string(),
+                icon: "💯".to_string(),
+                condition: BadgeCondition::Commits { threshold: 100 },
+            },
+            BadgeDefinition {
+                id: "thousand_cuts".to_string(),
+                name: "Thousand Cuts".to_string(),
+                description: "Reach 1,000 commits".to_string(),
+                badge_type: "milestone".to_string(),
+                rarity: "gold".to_string(),
+                icon: "⚔️".to_string(),
+                condition: BadgeCondition::Commits { threshold: 1000 },
+            },
+            BadgeDefinition {
+                id: "legendary".to_string(),
+                name: "Legendary".to_string(),
+                description: "Reach 10,000 commits".to_string(),
+                badge_type: "milestone".to_string(),
+                rarity: "platinum".to_string(),
+                icon: "🏆".to_string(),
+                condition: BadgeCondition::Commits { threshold: 10000 },
+            },
+            // Streak badges
+            BadgeDefinition {
+                id: "on_fire".to_string(),
+                name: "On Fire".to_string(),
+                description: "7 day commit streak".to_string(),
+                badge_type: "streak".to_string(),
+                rarity: "bronze".to_string(),
+                icon: "🔥".to_string(),
+                condition: BadgeCondition::Streak { days: 7 },
+            },
+            BadgeDefinition {
+                id: "unstoppable".to_string(),
+                name: "Unstoppable".to_string(),
+                description: "30 day commit streak".to_string(),
+                badge_type: "streak".to_string(),
+                rarity: "silver".to_string(),
+                icon: "💪".to_string(),
+                condition: BadgeCondition::Streak { days: 30 },
+            },
+            BadgeDefinition {
+                id: "immortal".to_string(),
+                name: "Immortal".to_string(),
+                description: "365 day commit streak".to_string(),
+                badge_type: "streak".to_string(),
+                rarity: "platinum".to_string(),
+                icon: "👑".to_string(),
+                condition: BadgeCondition::Streak { days: 365 },
+            },
+            // Collaboration badges
+            BadgeDefinition {
+                id: "team_player".to_string(),
+                name: "Team Player".to_string(),
+                description: "Complete your first review".to_string(),
+                badge_type: "collaboration".to_string(),
+                rarity: "bronze".to_string(),
+                icon: "🤝".to_string(),
+                condition: BadgeCondition::Reviews { threshold: 1 },
+            },
+            BadgeDefinition {
+                id: "mentor".to_string(),
+                name: "Mentor".to_string(),
+                description: "Complete 50 reviews".to_string(),
+                badge_type: "collaboration".to_string(),
+                rarity: "silver".to_string(),
+                icon: "🎓".to_string(),
+                condition: BadgeCondition::Reviews { threshold: 50 },
+            },
+            BadgeDefinition {
+                id: "guardian".to_string(),
+                name: "Guardian".to_string(),
+                description: "Merge 100 PRs".to_string(),
+                badge_type: "collaboration".to_string(),
+                rarity: "gold".to_string(),
+                icon: "🛡️".to_string(),
+                condition: BadgeCondition::PrsMerged { threshold: 100 },
+            },
+            // Quality badges
+            BadgeDefinition {
+                id: "clean_coder".to_string(),
+                name: "Clean Coder".to_string(),
+                description: "90%+ PR merge rate (10+ PRs)".to_string(),
+                badge_type: "quality".to_string(),
+                rarity: "gold".to_string(),
+                icon: "✨".to_string(),
+                condition: BadgeCondition::PrMergeRate {
+                    min_rate: 0.9,
+                    min_prs: 10,
+                },
+            },
+            BadgeDefinition {
+                id: "bug_hunter".to_string(),
+                name: "Bug Hunter".to_string(),
+                description: "Close 50 issues".to_string(),
+                badge_type: "quality".to_string(),
+                rarity: "silver".to_string(),
+                icon: "🐛".to_string(),
+                condition: BadgeCondition::IssuesClosed { threshold: 50 },
+            },
+            BadgeDefinition {
+                id: "polyglot".to_string(),
+                name: "Polyglot".to_string(),
+                description: "Use 5+ programming languages".to_string(),
+                badge_type: "quality".to_string(),
+                rarity: "silver".to_string(),
+                icon: "🌍".to_string(),
+                condition: BadgeCondition::Languages { count: 5 },
+            },
+        ]
+    }
+
+    /// Evaluate if a badge condition is met
+    pub fn evaluate_condition(condition: &BadgeCondition, context: &BadgeEvalContext) -> bool {
+        match condition {
+            BadgeCondition::Commits { threshold } => context.total_commits >= *threshold,
+            BadgeCondition::Streak { days } => {
+                context.current_streak >= *days || context.longest_streak >= *days
+            }
+            BadgeCondition::Reviews { threshold } => context.total_reviews >= *threshold,
+            BadgeCondition::PrsMerged { threshold } => context.total_prs_merged >= *threshold,
+            BadgeCondition::IssuesClosed { threshold } => context.total_issues_closed >= *threshold,
+            BadgeCondition::PrMergeRate { min_rate, min_prs } => {
+                if context.total_prs < *min_prs {
+                    return false;
+                }
+                if context.total_prs == 0 {
+                    return false;
+                }
+                let rate = context.total_prs_merged as f32 / context.total_prs as f32;
+                rate >= *min_rate
+            }
+            BadgeCondition::Languages { count } => context.languages_count >= *count,
+        }
+    }
+
+    /// Result of badge evaluation
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct BadgeEvalResult {
+        pub badge_id: String,
+        pub badge_type: String,
+        pub newly_earned: bool,
+    }
+
+    /// Evaluate all badges and return which ones should be awarded
+    pub fn evaluate_badges(
+        context: &BadgeEvalContext,
+        already_earned: &[String],
+    ) -> Vec<BadgeEvalResult> {
+        let definitions = get_all_badge_definitions();
+        let mut results = Vec::new();
+
+        for def in definitions {
+            let is_earned = already_earned.iter().any(|id| id == &def.id);
+            let condition_met = evaluate_condition(&def.condition, context);
+
+            if condition_met && !is_earned {
+                results.push(BadgeEvalResult {
+                    badge_id: def.id,
+                    badge_type: def.badge_type,
+                    newly_earned: true,
+                });
+            }
+        }
+
+        results
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_first_blood_badge() {
+            let context = BadgeEvalContext {
+                total_commits: 1,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "first_blood"));
+        }
+
+        #[test]
+        fn test_century_badge() {
+            let context = BadgeEvalContext {
+                total_commits: 100,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &["first_blood".to_string()]);
+            assert!(results.iter().any(|r| r.badge_id == "century"));
+        }
+
+        #[test]
+        fn test_streak_badge_on_fire() {
+            let context = BadgeEvalContext {
+                current_streak: 7,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "on_fire"));
+        }
+
+        #[test]
+        fn test_streak_badge_with_longest_streak() {
+            let context = BadgeEvalContext {
+                current_streak: 3, // Current is broken
+                longest_streak: 7, // But longest qualifies
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "on_fire"));
+        }
+
+        #[test]
+        fn test_team_player_badge() {
+            let context = BadgeEvalContext {
+                total_reviews: 1,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "team_player"));
+        }
+
+        #[test]
+        fn test_clean_coder_badge() {
+            let context = BadgeEvalContext {
+                total_prs: 15,
+                total_prs_merged: 14, // 93.3% merge rate
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "clean_coder"));
+        }
+
+        #[test]
+        fn test_clean_coder_badge_not_enough_prs() {
+            let context = BadgeEvalContext {
+                total_prs: 5, // Less than 10 required
+                total_prs_merged: 5,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(!results.iter().any(|r| r.badge_id == "clean_coder"));
+        }
+
+        #[test]
+        fn test_polyglot_badge() {
+            let context = BadgeEvalContext {
+                languages_count: 5,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "polyglot"));
+        }
+
+        #[test]
+        fn test_already_earned_badge_not_returned() {
+            let context = BadgeEvalContext {
+                total_commits: 100,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &["first_blood".to_string(), "century".to_string()]);
+            assert!(!results.iter().any(|r| r.badge_id == "first_blood"));
+            assert!(!results.iter().any(|r| r.badge_id == "century"));
+        }
+
+        #[test]
+        fn test_guardian_badge() {
+            let context = BadgeEvalContext {
+                total_prs_merged: 100,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "guardian"));
+        }
+
+        #[test]
+        fn test_bug_hunter_badge() {
+            let context = BadgeEvalContext {
+                total_issues_closed: 50,
+                ..Default::default()
+            };
+            let results = evaluate_badges(&context, &[]);
+            assert!(results.iter().any(|r| r.badge_id == "bug_hunter"));
         }
     }
 }
