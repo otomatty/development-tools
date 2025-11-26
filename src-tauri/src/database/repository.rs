@@ -195,6 +195,16 @@ impl Database {
     }
 
     /// Get user by ID regardless of login state
+    /// 
+    /// Unlike `get_current_user()` which only returns logged-in users,
+    /// this function returns the user even if they have logged out.
+    /// 
+    /// **Intended use cases:**
+    /// - Data recovery scenarios
+    /// - Admin/maintenance operations
+    /// - Checking if user data exists before re-login
+    /// - Future multi-account support where we need to access
+    ///   non-current user accounts
     pub async fn get_user_by_id_any_state(&self, id: i64) -> DbResult<Option<User>> {
         let row: Option<UserRow> = sqlx::query_as("SELECT * FROM users WHERE id = ?")
             .bind(id)

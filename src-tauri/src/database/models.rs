@@ -104,6 +104,17 @@ pub mod settings_defaults {
     pub const BACKGROUND_SYNC: bool = true;
     pub const SYNC_ON_STARTUP: bool = true;
     pub const ANIMATIONS_ENABLED: bool = true;
+
+    /// Available sync interval options (minutes, label)
+    /// This is the single source of truth - frontend should fetch this via command
+    pub const SYNC_INTERVALS: &[(i32, &str)] = &[
+        (5, "5分"),
+        (15, "15分"),
+        (30, "30分"),
+        (60, "1時間"),
+        (180, "3時間"),
+        (0, "手動のみ"),
+    ];
 }
 
 /// Database info for display in settings

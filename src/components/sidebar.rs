@@ -135,7 +135,7 @@ pub fn Sidebar(
             <div class="p-3 border-t border-slate-700/50">
                 <div class="flex items-center justify-between">
                     <div class="text-xs text-dt-text-sub">
-                        "v0.1.0"
+                    "v0.1.0"
                     </div>
                     // Settings button
                     <button

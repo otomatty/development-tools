@@ -19,6 +19,8 @@ pub use xp_notification::{BadgeNotification, LevelUpModal, MultipleBadgesNotific
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::tauri_api;
 use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, UserStats, XpGainedEvent};
@@ -52,6 +54,25 @@ pub fn HomePage(
     // Device Flow login state
     let (login_state, set_login_state) = signal(LoginState::default());
     let (polling_active, set_polling_active) = signal(false);
+
+    // Component lifecycle - used to cancel async loops when component unmounts
+    // Using Arc<AtomicBool> to safely share across async boundaries
+    let component_mounted = Arc::new(AtomicBool::new(true));
+    let component_mounted_for_auto_sync = component_mounted.clone();
+    let component_mounted_for_polling = component_mounted.clone();
+    
+    // Cleanup when component unmounts
+    on_cleanup({
+        let component_mounted = component_mounted.clone();
+        let set_polling_active = set_polling_active.clone();
+        move || {
+            // Signal all async loops to stop
+            component_mounted.store(false, Ordering::SeqCst);
+            // Also stop polling if active
+            set_polling_active.set(false);
+            web_sys::console::log_1(&"HomePage: Component unmounted, cleanup triggered".into());
+        }
+    });
 
     // Load initial data
     spawn_local(async move {
@@ -92,10 +113,17 @@ pub fn HomePage(
     {
         let auth_state = auth_state.clone();
         let auto_sync_enabled = auto_sync_enabled.clone();
+        let component_mounted = component_mounted_for_auto_sync;
         
         spawn_local(async move {
-            // Wait for initial load
+            // Auto-sync loop - runs every 15 minutes while component is mounted
             loop {
+                // Check if component is still mounted - exit if not
+                if !component_mounted.load(Ordering::SeqCst) {
+                    web_sys::console::log_1(&"Auto-sync: Component unmounted, stopping loop".into());
+                    break;
+                }
+                
                 // Check every 15 minutes
                 if let Some(window) = web_sys::window() {
                     // Use get_untracked() since we're in an async context outside reactive tracking
@@ -169,6 +197,12 @@ pub fn HomePage(
                         }
                     }
                     
+                    // Check again before waiting
+                    if !component_mounted.load(Ordering::SeqCst) {
+                        web_sys::console::log_1(&"Auto-sync: Component unmounted during operation, stopping".into());
+                        break;
+                    }
+                    
                     // Wait for next interval using a promise-based sleep
                     let promise = js_sys::Promise::new(&mut |resolve, _| {
                         let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
@@ -178,6 +212,8 @@ pub fn HomePage(
                     });
                     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                 } else {
+                    // No window available, exit loop
+                    web_sys::console::log_1(&"Auto-sync: No window available, stopping loop".into());
                     break;
                 }
             }
@@ -214,6 +250,7 @@ pub fn HomePage(
     // Handle opening verification URL
     let on_open_url = Callback::new(move |url: String| {
         let url_clone = url.clone();
+        let component_mounted = component_mounted_for_polling.clone();
         
         // Open URL in system browser using Tauri API
         spawn_local(async move {
@@ -231,8 +268,15 @@ pub fn HomePage(
             const POLL_INTERVAL_MS: i32 = 5000;
             
             loop {
-                // Check if polling is still active
+                // Check if component is still mounted
+                if !component_mounted.load(Ordering::SeqCst) {
+                    web_sys::console::log_1(&"Device Flow polling: Component unmounted, stopping".into());
+                    break;
+                }
+                
+                // Check if polling is still active (user may have cancelled)
                 if !polling_active.get_untracked() {
+                    web_sys::console::log_1(&"Device Flow polling: Polling cancelled, stopping".into());
                     break;
                 }
                 
@@ -275,6 +319,11 @@ pub fn HomePage(
                     }
                 }
                 
+                // Check again before waiting
+                if !component_mounted.load(Ordering::SeqCst) || !polling_active.get_untracked() {
+                    break;
+                }
+                
                 // Wait before next poll
                 if let Some(window) = web_sys::window() {
                     let promise = js_sys::Promise::new(&mut |resolve, _| {
@@ -284,6 +333,9 @@ pub fn HomePage(
                         );
                     });
                     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                } else {
+                    // No window available, exit loop
+                    break;
                 }
             }
         });

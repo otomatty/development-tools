@@ -179,6 +179,29 @@ pub async fn reset_all_data(state: tauri::State<'_, AppState>) -> Result<(), Str
     Ok(())
 }
 
+/// Sync interval option for frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncIntervalOption {
+    pub value: i32,
+    pub label: String,
+}
+
+/// Get available sync interval options
+/// This is the single source of truth for sync interval configuration
+#[tauri::command]
+pub fn get_sync_intervals() -> Vec<SyncIntervalOption> {
+    use crate::database::models::settings_defaults::SYNC_INTERVALS;
+    
+    SYNC_INTERVALS
+        .iter()
+        .map(|(value, label)| SyncIntervalOption {
+            value: *value,
+            label: label.to_string(),
+        })
+        .collect()
+}
+
 /// Export user data as JSON
 #[tauri::command]
 pub async fn export_data(state: tauri::State<'_, AppState>) -> Result<String, String> {

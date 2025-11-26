@@ -22,6 +22,8 @@ pub struct AppState {
     pub device_flow_config: Option<DeviceFlowConfig>,
     /// Current device flow state (device_code for polling)
     pub device_flow_state: Arc<Mutex<Option<String>>>,
+    /// Shared HTTP client for reuse across requests (improves performance)
+    pub http_client: reqwest::Client,
 }
 
 impl AppState {
@@ -33,11 +35,16 @@ impl AppState {
         let token_manager = TokenManager::new(db.clone())
             .map_err(|e| format!("Failed to initialize token manager: {}", e))?;
 
+        // Create a shared HTTP client for reuse across all requests
+        // This improves performance by reusing connection pools
+        let http_client = reqwest::Client::new();
+
         Ok(Self {
             db,
             token_manager,
             device_flow_config: None,
             device_flow_state: Arc::new(Mutex::new(None)),
+            http_client,
         })
     }
 
@@ -105,7 +112,8 @@ pub async fn start_device_flow(state: State<'_, AppState>) -> Result<DeviceCodeR
         .ok_or("Device Flow not configured. Please set GITHUB_CLIENT_ID")?
         .clone();
 
-    let flow = DeviceFlow::new(config);
+    // Use shared HTTP client for better performance
+    let flow = DeviceFlow::with_client(config, state.http_client.clone());
     let device_response = flow
         .start()
         .await
@@ -137,7 +145,8 @@ pub async fn poll_device_token(state: State<'_, AppState>) -> Result<DeviceToken
         device_state.clone().ok_or("No device flow in progress")?
     };
 
-    let flow = DeviceFlow::new(config);
+    // Use shared HTTP client for better performance during polling
+    let flow = DeviceFlow::with_client(config, state.http_client.clone());
 
     match flow.poll_token(&device_code).await {
         Ok(token) => {
@@ -224,11 +233,17 @@ async fn complete_device_login(
             .await
             .map_err(|e| e.to_string())?;
 
+        // Retrieve the updated user - get_user_by_id uses fetch_one, so it will
+        // return an error if the user doesn't exist (which shouldn't happen here
+        // since we just saved tokens for this user)
         state
             .db
             .get_user_by_id(existing.id)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| format!(
+                "Failed to retrieve user {} after saving tokens: {}. This may indicate a database inconsistency.",
+                existing.id, e
+            ))?
     } else {
         // Create new user
         state

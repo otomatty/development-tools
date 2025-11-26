@@ -130,12 +130,19 @@ pub struct DeviceFlow {
 }
 
 impl DeviceFlow {
-    /// Create a new Device Flow
+    /// Create a new Device Flow with a new HTTP client
     pub fn new(config: DeviceFlowConfig) -> Self {
         Self {
             config,
             client: reqwest::Client::new(),
         }
+    }
+
+    /// Create a new Device Flow with a shared HTTP client
+    /// This is more efficient when making multiple requests (e.g., polling)
+    /// as it reuses the connection pool
+    pub fn with_client(config: DeviceFlowConfig, client: reqwest::Client) -> Self {
+        Self { config, client }
     }
 
     /// Start the device flow - returns device code and user code

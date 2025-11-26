@@ -17,8 +17,8 @@ use commands::{
     // Gamification commands
     add_xp, award_badge, get_badge_definitions, get_badges, get_level_info, get_xp_history,
     // Settings commands
-    clear_cache, export_data, get_database_info, get_settings, reset_all_data, reset_settings,
-    update_settings,
+    clear_cache, export_data, get_database_info, get_settings, get_sync_intervals, reset_all_data,
+    reset_settings, update_settings,
     // State
     AppState,
 };
@@ -99,6 +99,7 @@ pub fn run() {
             get_database_info,
             reset_all_data,
             export_data,
+            get_sync_intervals,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
