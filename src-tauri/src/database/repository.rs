@@ -1,0 +1,732 @@
+//! Database repository layer
+//!
+//! This module provides CRUD operations for database models.
+
+use chrono::{DateTime, NaiveDate, Utc};
+use sqlx::{FromRow, Row};
+
+use super::connection::{Database, DatabaseError, DbResult};
+use super::models::*;
+
+/// User row from database
+#[derive(Debug, FromRow)]
+struct UserRow {
+    id: i64,
+    github_id: i64,
+    username: String,
+    avatar_url: Option<String>,
+    access_token_encrypted: String,
+    refresh_token_encrypted: Option<String>,
+    token_expires_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl TryFrom<UserRow> for User {
+    type Error = DatabaseError;
+
+    fn try_from(row: UserRow) -> Result<Self, Self::Error> {
+        Ok(User {
+            id: row.id,
+            github_id: row.github_id,
+            username: row.username,
+            avatar_url: row.avatar_url,
+            access_token_encrypted: row.access_token_encrypted,
+            refresh_token_encrypted: row.refresh_token_encrypted,
+            token_expires_at: row
+                .token_expires_at
+                .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&Utc)),
+            created_at: DateTime::parse_from_rfc3339(&row.created_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    }
+}
+
+/// User repository operations
+impl Database {
+    /// Create a new user
+    pub async fn create_user(
+        &self,
+        github_id: i64,
+        username: &str,
+        avatar_url: Option<&str>,
+        access_token_encrypted: &str,
+        refresh_token_encrypted: Option<&str>,
+        token_expires_at: Option<DateTime<Utc>>,
+    ) -> DbResult<User> {
+        let now = Utc::now().to_rfc3339();
+        let expires_at = token_expires_at.map(|dt| dt.to_rfc3339());
+
+        let id = sqlx::query(
+            r#"
+            INSERT INTO users (github_id, username, avatar_url, access_token_encrypted, 
+                              refresh_token_encrypted, token_expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(github_id)
+        .bind(username)
+        .bind(avatar_url)
+        .bind(access_token_encrypted)
+        .bind(refresh_token_encrypted)
+        .bind(&expires_at)
+        .bind(&now)
+        .bind(&now)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?
+        .last_insert_rowid();
+
+        // Create default user stats
+        self.create_user_stats(id).await?;
+
+        self.get_user_by_id(id).await
+    }
+
+    /// Get user by ID
+    pub async fn get_user_by_id(&self, id: i64) -> DbResult<User> {
+        let row: UserRow = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+            .bind(id)
+            .fetch_one(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        row.try_into()
+    }
+
+    /// Get user by GitHub ID
+    pub async fn get_user_by_github_id(&self, github_id: i64) -> DbResult<Option<User>> {
+        let row: Option<UserRow> = sqlx::query_as("SELECT * FROM users WHERE github_id = ?")
+            .bind(github_id)
+            .fetch_optional(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        match row {
+            Some(r) => Ok(Some(r.try_into()?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Update user tokens
+    pub async fn update_user_tokens(
+        &self,
+        user_id: i64,
+        access_token_encrypted: &str,
+        refresh_token_encrypted: Option<&str>,
+        token_expires_at: Option<DateTime<Utc>>,
+    ) -> DbResult<()> {
+        let now = Utc::now().to_rfc3339();
+        let expires_at = token_expires_at.map(|dt| dt.to_rfc3339());
+
+        sqlx::query(
+            r#"
+            UPDATE users 
+            SET access_token_encrypted = ?, refresh_token_encrypted = ?, 
+                token_expires_at = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(access_token_encrypted)
+        .bind(refresh_token_encrypted)
+        .bind(expires_at)
+        .bind(now)
+        .bind(user_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Delete user (and cascade delete related data)
+    pub async fn delete_user(&self, user_id: i64) -> DbResult<()> {
+        sqlx::query("DELETE FROM users WHERE id = ?")
+            .bind(user_id)
+            .execute(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get current logged in user (first user in table)
+    pub async fn get_current_user(&self) -> DbResult<Option<User>> {
+        let row: Option<UserRow> = sqlx::query_as("SELECT * FROM users LIMIT 1")
+            .fetch_optional(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        match row {
+            Some(r) => Ok(Some(r.try_into()?)),
+            None => Ok(None),
+        }
+    }
+}
+
+/// User stats row from database
+#[derive(Debug, FromRow)]
+struct UserStatsRow {
+    id: i64,
+    user_id: i64,
+    total_xp: i32,
+    current_level: i32,
+    current_streak: i32,
+    longest_streak: i32,
+    last_activity_date: Option<String>,
+    total_commits: i32,
+    total_prs: i32,
+    total_reviews: i32,
+    total_issues: i32,
+    updated_at: String,
+}
+
+impl TryFrom<UserStatsRow> for UserStats {
+    type Error = DatabaseError;
+
+    fn try_from(row: UserStatsRow) -> Result<Self, Self::Error> {
+        Ok(UserStats {
+            id: row.id,
+            user_id: row.user_id,
+            total_xp: row.total_xp,
+            current_level: row.current_level,
+            current_streak: row.current_streak,
+            longest_streak: row.longest_streak,
+            last_activity_date: row
+                .last_activity_date
+                .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
+            total_commits: row.total_commits,
+            total_prs: row.total_prs,
+            total_reviews: row.total_reviews,
+            total_issues: row.total_issues,
+            updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    }
+}
+
+/// User stats repository operations
+impl Database {
+    /// Create user stats (called automatically when creating user)
+    async fn create_user_stats(&self, user_id: i64) -> DbResult<()> {
+        let now = Utc::now().to_rfc3339();
+
+        sqlx::query(
+            r#"
+            INSERT INTO user_stats (user_id, total_xp, current_level, current_streak, 
+                                   longest_streak, total_commits, total_prs, 
+                                   total_reviews, total_issues, updated_at)
+            VALUES (?, 0, 1, 0, 0, 0, 0, 0, 0, ?)
+            "#,
+        )
+        .bind(user_id)
+        .bind(now)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get user stats by user ID
+    pub async fn get_user_stats(&self, user_id: i64) -> DbResult<Option<UserStats>> {
+        let row: Option<UserStatsRow> =
+            sqlx::query_as("SELECT * FROM user_stats WHERE user_id = ?")
+                .bind(user_id)
+                .fetch_optional(self.pool())
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        match row {
+            Some(r) => Ok(Some(r.try_into()?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Update user XP and level
+    pub async fn add_xp(&self, user_id: i64, xp_amount: i32) -> DbResult<UserStats> {
+        let now = Utc::now().to_rfc3339();
+
+        // Get current stats
+        let current = self
+            .get_user_stats(user_id)
+            .await?
+            .ok_or_else(|| DatabaseError::Query("User stats not found".to_string()))?;
+
+        let new_total_xp = current.total_xp + xp_amount;
+        let new_level = level::level_from_xp(new_total_xp as u32) as i32;
+
+        sqlx::query(
+            r#"
+            UPDATE user_stats 
+            SET total_xp = ?, current_level = ?, updated_at = ?
+            WHERE user_id = ?
+            "#,
+        )
+        .bind(new_total_xp)
+        .bind(new_level)
+        .bind(now)
+        .bind(user_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        self.get_user_stats(user_id)
+            .await?
+            .ok_or_else(|| DatabaseError::Query("User stats not found after update".to_string()))
+    }
+
+    /// Update streak
+    pub async fn update_streak(&self, user_id: i64, activity_date: NaiveDate) -> DbResult<UserStats> {
+        let now = Utc::now().to_rfc3339();
+
+        let current = self
+            .get_user_stats(user_id)
+            .await?
+            .ok_or_else(|| DatabaseError::Query("User stats not found".to_string()))?;
+
+        let (new_streak, new_longest) = if let Some(last_date) = current.last_activity_date {
+            let days_diff = (activity_date - last_date).num_days();
+            if days_diff == 1 {
+                // Consecutive day
+                let new_streak = current.current_streak + 1;
+                let new_longest = new_streak.max(current.longest_streak);
+                (new_streak, new_longest)
+            } else if days_diff == 0 {
+                // Same day, no change
+                (current.current_streak, current.longest_streak)
+            } else {
+                // Streak broken
+                (1, current.longest_streak)
+            }
+        } else {
+            // First activity
+            (1, 1)
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE user_stats 
+            SET current_streak = ?, longest_streak = ?, last_activity_date = ?, updated_at = ?
+            WHERE user_id = ?
+            "#,
+        )
+        .bind(new_streak)
+        .bind(new_longest)
+        .bind(activity_date.to_string())
+        .bind(now)
+        .bind(user_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        self.get_user_stats(user_id)
+            .await?
+            .ok_or_else(|| DatabaseError::Query("User stats not found after update".to_string()))
+    }
+
+    /// Increment activity counts
+    pub async fn increment_activity_count(
+        &self,
+        user_id: i64,
+        commits: i32,
+        prs: i32,
+        reviews: i32,
+        issues: i32,
+    ) -> DbResult<()> {
+        let now = Utc::now().to_rfc3339();
+
+        sqlx::query(
+            r#"
+            UPDATE user_stats 
+            SET total_commits = total_commits + ?,
+                total_prs = total_prs + ?,
+                total_reviews = total_reviews + ?,
+                total_issues = total_issues + ?,
+                updated_at = ?
+            WHERE user_id = ?
+            "#,
+        )
+        .bind(commits)
+        .bind(prs)
+        .bind(reviews)
+        .bind(issues)
+        .bind(now)
+        .bind(user_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+/// XP History repository operations
+impl Database {
+    /// Record XP gain
+    pub async fn record_xp_gain(
+        &self,
+        user_id: i64,
+        action_type: &str,
+        xp_amount: i32,
+        description: Option<&str>,
+        github_event_id: Option<&str>,
+    ) -> DbResult<i64> {
+        let id = sqlx::query(
+            r#"
+            INSERT INTO xp_history (user_id, action_type, xp_amount, description, github_event_id)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(user_id)
+        .bind(action_type)
+        .bind(xp_amount)
+        .bind(description)
+        .bind(github_event_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?
+        .last_insert_rowid();
+
+        Ok(id)
+    }
+
+    /// Check if XP was already recorded for a GitHub event
+    pub async fn is_xp_recorded_for_event(&self, github_event_id: &str) -> DbResult<bool> {
+        let count: i32 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM xp_history WHERE github_event_id = ?"
+        )
+        .bind(github_event_id)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(count > 0)
+    }
+
+    /// Get recent XP history
+    pub async fn get_recent_xp_history(
+        &self,
+        user_id: i64,
+        limit: i32,
+    ) -> DbResult<Vec<XpHistoryEntry>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_id, action_type, xp_amount, description, github_event_id, created_at
+            FROM xp_history
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let entries: Vec<XpHistoryEntry> = rows
+            .iter()
+            .map(|row| XpHistoryEntry {
+                id: row.get("id"),
+                user_id: row.get("user_id"),
+                action_type: row.get("action_type"),
+                xp_amount: row.get("xp_amount"),
+                description: row.get("description"),
+                github_event_id: row.get("github_event_id"),
+                created_at: DateTime::parse_from_rfc3339(row.get::<&str, _>("created_at"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+            })
+            .collect();
+
+        Ok(entries)
+    }
+}
+
+/// Badge repository operations
+impl Database {
+    /// Award a badge to user
+    pub async fn award_badge(
+        &self,
+        user_id: i64,
+        badge_type: &str,
+        badge_id: &str,
+    ) -> DbResult<i64> {
+        let id = sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO badges (user_id, badge_type, badge_id)
+            VALUES (?, ?, ?)
+            "#,
+        )
+        .bind(user_id)
+        .bind(badge_type)
+        .bind(badge_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?
+        .last_insert_rowid();
+
+        Ok(id)
+    }
+
+    /// Check if user has a badge
+    pub async fn has_badge(&self, user_id: i64, badge_id: &str) -> DbResult<bool> {
+        let count: i32 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM badges WHERE user_id = ? AND badge_id = ?")
+                .bind(user_id)
+                .bind(badge_id)
+                .fetch_one(self.pool())
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(count > 0)
+    }
+
+    /// Get all badges for a user
+    pub async fn get_user_badges(&self, user_id: i64) -> DbResult<Vec<Badge>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_id, badge_type, badge_id, earned_at
+            FROM badges
+            WHERE user_id = ?
+            ORDER BY earned_at DESC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let badges: Vec<Badge> = rows
+            .iter()
+            .map(|row| Badge {
+                id: row.get("id"),
+                user_id: row.get("user_id"),
+                badge_type: row.get("badge_type"),
+                badge_id: row.get("badge_id"),
+                earned_at: DateTime::parse_from_rfc3339(row.get::<&str, _>("earned_at"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+            })
+            .collect();
+
+        Ok(badges)
+    }
+}
+
+/// Activity cache repository operations
+impl Database {
+    /// Save or update cache entry
+    pub async fn save_cache(
+        &self,
+        user_id: i64,
+        data_type: &str,
+        data_json: &str,
+        expires_at: DateTime<Utc>,
+    ) -> DbResult<()> {
+        let now = Utc::now().to_rfc3339();
+        let expires = expires_at.to_rfc3339();
+
+        sqlx::query(
+            r#"
+            INSERT INTO activity_cache (user_id, data_type, data_json, fetched_at, expires_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, data_type) DO UPDATE SET
+                data_json = excluded.data_json,
+                fetched_at = excluded.fetched_at,
+                expires_at = excluded.expires_at
+            "#,
+        )
+        .bind(user_id)
+        .bind(data_type)
+        .bind(data_json)
+        .bind(now)
+        .bind(expires)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get valid cache entry (not expired)
+    pub async fn get_valid_cache(
+        &self,
+        user_id: i64,
+        data_type: &str,
+    ) -> DbResult<Option<String>> {
+        let now = Utc::now().to_rfc3339();
+
+        let result: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT data_json FROM activity_cache
+            WHERE user_id = ? AND data_type = ? AND expires_at > ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(data_type)
+        .bind(now)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Clear expired cache entries
+    pub async fn clear_expired_cache(&self) -> DbResult<u64> {
+        let now = Utc::now().to_rfc3339();
+
+        let result = sqlx::query("DELETE FROM activity_cache WHERE expires_at <= ?")
+            .bind(now)
+            .execute(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result.rows_affected())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn setup_test_db() -> Database {
+        Database::in_memory().await.expect("Failed to create test database")
+    }
+
+    #[tokio::test]
+    async fn test_create_and_get_user() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", Some("https://avatar.url"), "encrypted_token", None, None)
+            .await
+            .expect("Should create user");
+
+        assert_eq!(user.github_id, 12345);
+        assert_eq!(user.username, "testuser");
+
+        let fetched = db
+            .get_user_by_github_id(12345)
+            .await
+            .expect("Should fetch user")
+            .expect("User should exist");
+
+        assert_eq!(fetched.id, user.id);
+    }
+
+    #[tokio::test]
+    async fn test_user_stats_created_with_user() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let stats = db
+            .get_user_stats(user.id)
+            .await
+            .expect("Should get stats")
+            .expect("Stats should exist");
+
+        assert_eq!(stats.total_xp, 0);
+        assert_eq!(stats.current_level, 1);
+    }
+
+    #[tokio::test]
+    async fn test_add_xp() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let stats = db.add_xp(user.id, 100).await.expect("Should add XP");
+
+        assert_eq!(stats.total_xp, 100);
+        assert_eq!(stats.current_level, 2); // 100 XP = level 2
+    }
+
+    #[tokio::test]
+    async fn test_streak_tracking() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let today = Utc::now().date_naive();
+
+        let stats = db
+            .update_streak(user.id, today)
+            .await
+            .expect("Should update streak");
+
+        assert_eq!(stats.current_streak, 1);
+        assert_eq!(stats.longest_streak, 1);
+    }
+
+    #[tokio::test]
+    async fn test_badge_operations() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        db.award_badge(user.id, "milestone", "first_blood")
+            .await
+            .expect("Should award badge");
+
+        let has_badge = db
+            .has_badge(user.id, "first_blood")
+            .await
+            .expect("Should check badge");
+
+        assert!(has_badge);
+
+        let badges = db
+            .get_user_badges(user.id)
+            .await
+            .expect("Should get badges");
+
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].badge_id, "first_blood");
+    }
+
+    #[tokio::test]
+    async fn test_cache_operations() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let expires = Utc::now() + chrono::Duration::hours(1);
+        db.save_cache(user.id, "test_data", r#"{"test": true}"#, expires)
+            .await
+            .expect("Should save cache");
+
+        let cached = db
+            .get_valid_cache(user.id, "test_data")
+            .await
+            .expect("Should get cache")
+            .expect("Cache should exist");
+
+        assert_eq!(cached, r#"{"test": true}"#);
+    }
+}
+

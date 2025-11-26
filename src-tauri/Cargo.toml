@@ -21,8 +21,39 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-http = "2"
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+tokio = { version = "1", features = ["full"] }
+
+# HTTP Client for GitHub API
+reqwest = { version = "0.12", features = ["json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Security (for token encryption)
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+
+# Async utilities
+futures = "0.3"
+
+# URL encoding
+urlencoding = "2"
+
+# Tracing
+tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
 

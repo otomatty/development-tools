@@ -6,6 +6,10 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "dialog:default"
+    "dialog:default",
+    "shell:default",
+    "shell:allow-open",
+    "http:default",
+    "deep-link:default"
   ]
 }
