@@ -1,0 +1,115 @@
+{
+  "name": "shai-hulud-scanner",
+  "displayName": "Shai-Hulud Scanner",
+  "description": "npmサプライチェーン攻撃（Shai-Hulud）の影響を受けたパッケージを検出するセキュリティスキャナー",
+  "version": "1.0.0",
+  "binary": "target/release/shai-hulud-scanner",
+  "icon": "shield",
+  "category": "security",
+  "options": [
+    {
+      "name": "scan-dir",
+      "flag": "--scan-dir",
+      "shortFlag": "-s",
+      "type": "path",
+      "description": "スキャン対象ディレクトリ（デフォルト: ホームディレクトリ）",
+      "placeholder": "~/projects",
+      "required": false
+    },
+    {
+      "name": "current-dir",
+      "flag": "--current-dir",
+      "type": "boolean",
+      "description": "カレントディレクトリのみスキャン",
+      "default": false
+    },
+    {
+      "name": "csv-file",
+      "flag": "--csv-file",
+      "shortFlag": "-c",
+      "type": "path",
+      "description": "ローカルのCSVファイルパス",
+      "required": false
+    },
+    {
+      "name": "output",
+      "flag": "--output",
+      "shortFlag": "-o",
+      "type": "select",
+      "description": "出力形式",
+      "options": ["text", "json"],
+      "default": "json"
+    },
+    {
+      "name": "verbose",
+      "flag": "--verbose",
+      "type": "boolean",
+      "description": "スキャンした全パッケージを表示",
+      "default": false
+    },
+    {
+      "name": "offline",
+      "flag": "--offline",
+      "type": "boolean",
+      "description": "オフラインモード（キャッシュされたCSVを使用）",
+      "default": false
+    },
+    {
+      "name": "skip-global",
+      "flag": "--skip-global",
+      "type": "boolean",
+      "description": "グローバルパッケージのスキャンをスキップ",
+      "default": false
+    },
+    {
+      "name": "skip-suspicious",
+      "flag": "--skip-suspicious",
+      "type": "boolean",
+      "description": "不審なファイルの検出をスキップ",
+      "default": false
+    }
+  ],
+  "resultParser": {
+    "type": "json",
+    "outputFlag": "--output json",
+    "schema": {
+      "summary": [
+        {
+          "key": "critical",
+          "label": "Critical",
+          "path": "$.detections[?(@.severity=='CRITICAL')]",
+          "countType": "length",
+          "color": "red",
+          "icon": "alert-circle"
+        },
+        {
+          "key": "warning",
+          "label": "Warning",
+          "path": "$.detections[?(@.severity=='WARNING')]",
+          "countType": "length",
+          "color": "yellow",
+          "icon": "alert-triangle"
+        },
+        {
+          "key": "suspicious",
+          "label": "Suspicious",
+          "path": "$.suspicious_files",
+          "countType": "length",
+          "color": "orange",
+          "icon": "file-warning"
+        }
+      ],
+      "details": {
+        "items": "$.detections",
+        "columns": [
+          { "key": "package", "label": "Package", "width": "200px" },
+          { "key": "installed_version", "label": "Version", "width": "100px" },
+          { "key": "severity", "label": "Severity", "width": "100px" },
+          { "key": "source", "label": "Source", "width": "100px" },
+          { "key": "location", "label": "Location", "flex": 1 }
+        ]
+      }
+    }
+  }
+}
+

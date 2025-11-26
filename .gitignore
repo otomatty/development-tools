@@ -1,3 +1,41 @@
+# Build outputs
 /dist/
 /target/
-/Cargo.lock
+
+# Rust
+Cargo.lock
+
+# Node.js / Bun
+node_modules/
+bun.lock
+
+# Generated CSS (Tailwind output)
+styles.css
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage/
+
+# Misc
+*.bak
+*.tmp

@@ -7,3 +7,9 @@ ignore = ["./src-tauri"]
 [serve]
 port = 1420
 open = false
+
+# Tailwind CSS build hook
+[[hooks]]
+stage = "pre_build"
+command = "sh"
+command_arguments = ["-c", "npx tailwindcss -i ./input.css -o ./styles.css --minify"]
