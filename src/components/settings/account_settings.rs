@@ -32,7 +32,6 @@ pub fn AccountSettings(
             .unwrap_or_else(|| "不明".to_string())
     };
 
-
     // Handle token validation
     let handle_validate_token = move || {
         set_loading.set(true);
@@ -66,7 +65,7 @@ pub fn AccountSettings(
                             // Avatar
                             <img
                                 src=user_info.avatar_url.clone().unwrap_or_default()
-                                alt="Avatar"
+                                alt=format!("{}のアバター", user_info.username.clone())
                                 class="w-16 h-16 rounded-xl border-2 border-gm-accent-cyan"
                             />
                             <div class="flex-1">
@@ -162,4 +161,3 @@ pub fn AccountSettings(
         </div>
     }
 }
-

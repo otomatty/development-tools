@@ -98,8 +98,20 @@ pub async fn get_current_user(state: State<'_, AppState>) -> Result<Option<UserI
 /// 
 /// Note: GitHub Device Flow tokens don't expire, but users can revoke them manually.
 /// This command checks if the current token is still valid by making a test API call.
+/// Returns `Ok(false)` if the user is not logged in.
 #[command]
 pub async fn validate_token(state: State<'_, AppState>) -> Result<bool, String> {
+    // Check if user is logged in first
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if user.is_none() {
+        return Ok(false);
+    }
+
     let access_token = state
         .token_manager
         .get_access_token()

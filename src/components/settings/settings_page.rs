@@ -30,12 +30,17 @@ fn AccordionSection(
 ) -> impl IntoView
 {
     let max_height = max_height.unwrap_or("500px");
+    let section_id = format!("accordion-section-{}", title.replace(" ", "-").to_lowercase());
+    let content_id = format!("{}-content", section_id);
     
     view! {
         <div class="bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-cyan/20 shadow-lg overflow-hidden">
             <button
                 class="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gm-accent-cyan/10 transition-colors"
                 on:click=move |_| toggle()
+                aria-expanded=move || is_expanded.get()
+                aria-controls=content_id.clone()
+                id=section_id.clone()
             >
                 <span class="text-lg font-gaming font-bold text-white">
                     {title}
@@ -43,11 +48,13 @@ fn AccordionSection(
                 <span 
                     class="text-gm-accent-cyan transition-transform duration-300 inline-block"
                     style:transform=move || if is_expanded.get() { "rotate(180deg)" } else { "rotate(0deg)" }
+                    aria-hidden="true"
                 >
                     "▼"
                 </span>
             </button>
             <div 
+                id=content_id
                 class="overflow-hidden transition-all duration-300 ease-in-out"
                 style:max-height=move || if is_expanded.get() { max_height } else { "0px" }
                 style:opacity=move || if is_expanded.get() { "1" } else { "0" }
@@ -159,7 +166,7 @@ pub fn SettingsPage(
 
                 // App Info Section (placeholder)
                 <AccordionSection
-                    title="アプリケーション設定".to_string()
+                    title="アプリ情報".to_string()
                     is_expanded=app_info_expanded
                     toggle=move || toggle_section(SettingsSection::AppInfo)
                 >
@@ -171,4 +178,3 @@ pub fn SettingsPage(
         </div>
     }
 }
-

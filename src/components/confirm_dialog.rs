@@ -26,12 +26,27 @@ where
     
     view! {
         <Show when=move || visible.get()>
-            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div class="bg-gm-bg-card rounded-2xl border border-gm-accent-cyan/20 shadow-lg p-6 max-w-md w-full mx-4">
-                    <h3 class="text-xl font-gaming font-bold text-white mb-4">
+            <div 
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="confirm-dialog-title"
+                aria-describedby="confirm-dialog-message"
+            >
+                <div 
+                    id="confirm-dialog"
+                    class="bg-gm-bg-card rounded-2xl border border-gm-accent-cyan/20 shadow-lg p-6 max-w-md w-full mx-4"
+                >
+                    <h3 
+                        id="confirm-dialog-title"
+                        class="text-xl font-gaming font-bold text-white mb-4"
+                    >
                         {title.clone()}
                     </h3>
-                    <p class="text-dt-text-sub mb-6">
+                    <p 
+                        id="confirm-dialog-message"
+                        class="text-dt-text-sub mb-6"
+                    >
                         {message.clone()}
                     </p>
                     <div class="flex gap-3 justify-end">
@@ -53,4 +68,3 @@ where
         </Show>
     }
 }
-
