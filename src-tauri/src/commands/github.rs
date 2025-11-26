@@ -6,7 +6,7 @@ use chrono::Utc;
 use tauri::{command, Emitter, State};
 
 use super::auth::AppState;
-use crate::database::{level, streak, xp, UserStats, XpActionType};
+use crate::database::{badge, level, streak, xp, UserStats, XpActionType};
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
 
 /// Get GitHub user profile
@@ -72,6 +72,19 @@ pub struct SyncResult {
     pub level_up: bool,
     pub xp_breakdown: XpBreakdownResult,
     pub streak_bonus: StreakBonusInfo,
+    pub new_badges: Vec<NewBadgeInfo>,
+}
+
+/// Information about newly earned badge
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewBadgeInfo {
+    pub badge_id: String,
+    pub badge_type: String,
+    pub name: String,
+    pub description: String,
+    pub rarity: String,
+    pub icon: String,
 }
 
 /// XP breakdown details for frontend display
@@ -122,6 +135,18 @@ pub struct StreakMilestoneEvent {
     pub milestone_days: i32,
     pub bonus_xp: i32,
     pub current_streak: i32,
+}
+
+/// Event emitted when a badge is earned
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeEarnedEvent {
+    pub badge_id: String,
+    pub badge_type: String,
+    pub name: String,
+    pub description: String,
+    pub rarity: String,
+    pub icon: String,
 }
 
 /// Sync GitHub stats to local database
@@ -366,6 +391,65 @@ pub async fn sync_github_stats(
         }
     }
 
+    // Badge evaluation
+    let badge_context = badge::BadgeEvalContext {
+        total_commits: github_stats.total_commits,
+        current_streak: updated_stats.current_streak,
+        longest_streak: updated_stats.longest_streak,
+        total_reviews: github_stats.total_reviews,
+        total_prs: github_stats.total_prs,
+        total_prs_merged: github_stats.total_prs_merged,
+        total_issues_closed: github_stats.total_issues_closed,
+        languages_count: github_stats.languages_count,
+    };
+
+    // Get already earned badges
+    let earned_badges = state
+        .db
+        .get_user_badges(user.id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let earned_badge_ids: Vec<String> = earned_badges.iter().map(|b| b.badge_id.clone()).collect();
+
+    // Evaluate badges
+    let new_badge_results = badge::evaluate_badges(&badge_context, &earned_badge_ids);
+    let badge_definitions = badge::get_all_badge_definitions();
+
+    let mut new_badges: Vec<NewBadgeInfo> = Vec::new();
+    for badge_result in new_badge_results {
+        // Award the badge
+        state
+            .db
+            .award_badge(user.id, &badge_result.badge_type, &badge_result.badge_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Find badge definition for event
+        if let Some(def) = badge_definitions.iter().find(|d| d.id == badge_result.badge_id) {
+            let badge_info = NewBadgeInfo {
+                badge_id: def.id.clone(),
+                badge_type: def.badge_type.clone(),
+                name: def.name.clone(),
+                description: def.description.clone(),
+                rarity: def.rarity.clone(),
+                icon: def.icon.clone(),
+            };
+
+            // Emit badge earned event
+            let badge_event = BadgeEarnedEvent {
+                badge_id: badge_info.badge_id.clone(),
+                badge_type: badge_info.badge_type.clone(),
+                name: badge_info.name.clone(),
+                description: badge_info.description.clone(),
+                rarity: badge_info.rarity.clone(),
+                icon: badge_info.icon.clone(),
+            };
+            let _ = app.emit("badge-earned", &badge_event);
+
+            new_badges.push(badge_info);
+        }
+    }
+
     Ok(SyncResult {
         user_stats: updated_stats,
         xp_gained: total_xp_gained,
@@ -374,6 +458,7 @@ pub async fn sync_github_stats(
         level_up,
         xp_breakdown: xp_breakdown_result,
         streak_bonus: streak_bonus_result,
+        new_badges,
     })
 }
 

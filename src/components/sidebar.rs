@@ -133,8 +133,28 @@ pub fn Sidebar(
 
             // フッター
             <div class="p-3 border-t border-slate-700/50">
-                <div class="text-xs text-dt-text-sub text-center">
+                <div class="flex items-center justify-between">
+                    <div class="text-xs text-dt-text-sub">
                     "v0.1.0"
+                    </div>
+                    // Settings button
+                    <button
+                        class=move || format!(
+                            "p-2 rounded-lg transition-all duration-200 {}",
+                            if current_page.get() == AppPage::Settings {
+                                "bg-gm-accent-cyan/20 text-gm-accent-cyan"
+                            } else {
+                                "text-slate-400 hover:bg-slate-800 hover:text-dt-text"
+                            }
+                        )
+                        title="Settings"
+                        on:click=move |_| {
+                            set_current_page.set(AppPage::Settings);
+                            set_selected_tool.set(None);
+                        }
+                    >
+                        <Icon name="settings".to_string() class="w-5 h-5".to_string() />
+                    </button>
                 </div>
             </div>
         </aside>

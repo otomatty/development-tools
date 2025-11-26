@@ -254,6 +254,68 @@ impl GitHubClient {
             .ok_or_else(|| GitHubError::NotFound(format!("User {} not found", username)))
     }
 
+    /// Get count of merged PRs for the user
+    /// 
+    /// Note: This uses GitHub's Search API which has stricter rate limits
+    /// (30 requests/minute for authenticated users). Call sequentially
+    /// and handle rate limit errors gracefully.
+    pub async fn get_merged_prs_count(&self, username: &str) -> GitHubResult<i32> {
+        let query = format!(
+            "/search/issues?q=type:pr+author:{}+is:merged&per_page=1",
+            username
+        );
+        let response: serde_json::Value = self.get(&query).await?;
+        Ok(response
+            .get("total_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32)
+    }
+
+    /// Get count of closed issues for the user
+    /// 
+    /// Note: This uses GitHub's Search API which has stricter rate limits
+    /// (30 requests/minute for authenticated users). Call sequentially
+    /// and handle rate limit errors gracefully.
+    pub async fn get_closed_issues_count(&self, username: &str) -> GitHubResult<i32> {
+        // Issues created by user that are closed
+        let query = format!(
+            "/search/issues?q=type:issue+author:{}+is:closed&per_page=1",
+            username
+        );
+        let response: serde_json::Value = self.get(&query).await?;
+        Ok(response
+            .get("total_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32)
+    }
+
+    /// Get unique programming languages used across user's repositories
+    pub async fn get_languages_count(&self, username: &str) -> GitHubResult<i32> {
+        let repos = self.get_repositories(100, 1).await?;
+        let languages: std::collections::HashSet<&str> = repos
+            .iter()
+            .filter_map(|r| r.language.as_deref())
+            .collect();
+        Ok(languages.len() as i32)
+    }
+
+    /// Get count of all PRs (open + closed) for the user
+    /// 
+    /// Note: This uses GitHub's Search API which has stricter rate limits
+    /// (30 requests/minute for authenticated users). Call sequentially
+    /// and handle rate limit errors gracefully.
+    pub async fn get_total_prs_count(&self, username: &str) -> GitHubResult<i32> {
+        let query = format!(
+            "/search/issues?q=type:pr+author:{}&per_page=1",
+            username
+        );
+        let response: serde_json::Value = self.get(&query).await?;
+        Ok(response
+            .get("total_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32)
+    }
+
     /// Get current rate limit status
     pub async fn get_rate_limit(&self) -> GitHubResult<RateLimit> {
         let response: RateLimitResponse = self.get("/rate_limit").await?;
@@ -306,28 +368,89 @@ impl GitHubClient {
     }
 
     /// Get aggregated user stats
+    /// 
+    /// This method fetches stats from multiple API endpoints, including the
+    /// Search API which has stricter rate limits. If rate limits are hit,
+    /// fallback values from GraphQL/REST endpoints are used.
     pub async fn get_user_stats(&self, username: &str) -> GitHubResult<GitHubStats> {
-        // Get contribution calendar
+        // Get contribution calendar (uses GraphQL - higher rate limit)
         let contributions = self.get_contribution_calendar(username).await?;
         let (current_streak, longest_streak) =
             Self::calculate_streak(&contributions.contribution_calendar);
 
-        // Get total stars received
+        // Get total stars received and languages count (uses REST API)
         let repos = self.get_repositories(100, 1).await?;
         let total_stars: i32 = repos.iter().map(|r| r.stargazers_count).sum();
+        let languages: std::collections::HashSet<&str> = repos
+            .iter()
+            .filter_map(|r| r.language.as_deref())
+            .collect();
+
+        // Get detailed PR and issue counts using Search API
+        // IMPORTANT: Search API has stricter rate limits (30 req/min authenticated)
+        // We call these sequentially and use fallback values if rate limited
+        
+        // Total PRs - fallback to GraphQL contributions if rate limited
+        let total_prs = match self.get_total_prs_count(username).await {
+            Ok(count) => count,
+            Err(GitHubError::RateLimited(reset)) => {
+                eprintln!(
+                    "Rate limited fetching total PRs, using GraphQL fallback. Resets at {}",
+                    reset
+                );
+                contributions.total_pull_request_contributions
+            }
+            Err(e) => {
+                eprintln!("Error fetching total PRs: {}, using GraphQL fallback", e);
+                contributions.total_pull_request_contributions
+            }
+        };
+
+        // Merged PRs - fallback to 0 if rate limited
+        let total_prs_merged = match self.get_merged_prs_count(username).await {
+            Ok(count) => count,
+            Err(GitHubError::RateLimited(reset)) => {
+                eprintln!(
+                    "Rate limited fetching merged PRs, using fallback (0). Resets at {}",
+                    reset
+                );
+                0
+            }
+            Err(e) => {
+                eprintln!("Error fetching merged PRs: {}, using fallback (0)", e);
+                0
+            }
+        };
+
+        // Closed issues - fallback to 0 if rate limited
+        let total_issues_closed = match self.get_closed_issues_count(username).await {
+            Ok(count) => count,
+            Err(GitHubError::RateLimited(reset)) => {
+                eprintln!(
+                    "Rate limited fetching closed issues, using fallback (0). Resets at {}",
+                    reset
+                );
+                0
+            }
+            Err(e) => {
+                eprintln!("Error fetching closed issues: {}, using fallback (0)", e);
+                0
+            }
+        };
 
         Ok(GitHubStats {
             total_commits: contributions.total_commit_contributions,
-            total_prs: contributions.total_pull_request_contributions,
-            total_prs_merged: 0, // Would need additional API calls
+            total_prs,
+            total_prs_merged,
             total_issues: contributions.total_issue_contributions,
-            total_issues_closed: 0, // Would need additional API calls
+            total_issues_closed,
             total_reviews: contributions.total_pull_request_review_contributions,
             total_stars_received: total_stars,
             total_contributions: contributions.contribution_calendar.total_contributions,
             contribution_calendar: Some(contributions.contribution_calendar),
             current_streak,
             longest_streak,
+            languages_count: languages.len() as i32,
         })
     }
 }

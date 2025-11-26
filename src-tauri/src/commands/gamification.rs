@@ -5,7 +5,7 @@
 use tauri::{command, State};
 
 use super::auth::AppState;
-use crate::database::{level, Badge, UserStats, XpHistoryEntry};
+use crate::database::{badge, level, Badge, UserStats, XpHistoryEntry};
 
 /// Level info for frontend
 #[derive(Debug, Clone, serde::Serialize)]
@@ -177,115 +177,16 @@ pub struct BadgeDefinition {
 /// Get all available badge definitions
 #[command]
 pub fn get_badge_definitions() -> Vec<BadgeDefinition> {
-    vec![
-        // Milestone badges
-        BadgeDefinition {
-            id: "first_blood".to_string(),
-            name: "First Blood".to_string(),
-            description: "Make your first commit".to_string(),
-            badge_type: "milestone".to_string(),
-            rarity: "bronze".to_string(),
-            icon: "🎯".to_string(),
-        },
-        BadgeDefinition {
-            id: "century".to_string(),
-            name: "Century".to_string(),
-            description: "Reach 100 commits".to_string(),
-            badge_type: "milestone".to_string(),
-            rarity: "silver".to_string(),
-            icon: "💯".to_string(),
-        },
-        BadgeDefinition {
-            id: "thousand_cuts".to_string(),
-            name: "Thousand Cuts".to_string(),
-            description: "Reach 1,000 commits".to_string(),
-            badge_type: "milestone".to_string(),
-            rarity: "gold".to_string(),
-            icon: "⚔️".to_string(),
-        },
-        BadgeDefinition {
-            id: "legendary".to_string(),
-            name: "Legendary".to_string(),
-            description: "Reach 10,000 commits".to_string(),
-            badge_type: "milestone".to_string(),
-            rarity: "platinum".to_string(),
-            icon: "🏆".to_string(),
-        },
-        // Streak badges
-        BadgeDefinition {
-            id: "on_fire".to_string(),
-            name: "On Fire".to_string(),
-            description: "7 day commit streak".to_string(),
-            badge_type: "streak".to_string(),
-            rarity: "bronze".to_string(),
-            icon: "🔥".to_string(),
-        },
-        BadgeDefinition {
-            id: "unstoppable".to_string(),
-            name: "Unstoppable".to_string(),
-            description: "30 day commit streak".to_string(),
-            badge_type: "streak".to_string(),
-            rarity: "silver".to_string(),
-            icon: "💪".to_string(),
-        },
-        BadgeDefinition {
-            id: "immortal".to_string(),
-            name: "Immortal".to_string(),
-            description: "365 day commit streak".to_string(),
-            badge_type: "streak".to_string(),
-            rarity: "platinum".to_string(),
-            icon: "👑".to_string(),
-        },
-        // Collaboration badges
-        BadgeDefinition {
-            id: "team_player".to_string(),
-            name: "Team Player".to_string(),
-            description: "Complete your first review".to_string(),
-            badge_type: "collaboration".to_string(),
-            rarity: "bronze".to_string(),
-            icon: "🤝".to_string(),
-        },
-        BadgeDefinition {
-            id: "mentor".to_string(),
-            name: "Mentor".to_string(),
-            description: "Complete 50 reviews".to_string(),
-            badge_type: "collaboration".to_string(),
-            rarity: "silver".to_string(),
-            icon: "🎓".to_string(),
-        },
-        BadgeDefinition {
-            id: "guardian".to_string(),
-            name: "Guardian".to_string(),
-            description: "Merge 100 PRs".to_string(),
-            badge_type: "collaboration".to_string(),
-            rarity: "gold".to_string(),
-            icon: "🛡️".to_string(),
-        },
-        // Quality badges
-        BadgeDefinition {
-            id: "clean_coder".to_string(),
-            name: "Clean Coder".to_string(),
-            description: "90%+ PR merge rate (10+ PRs)".to_string(),
-            badge_type: "quality".to_string(),
-            rarity: "gold".to_string(),
-            icon: "✨".to_string(),
-        },
-        BadgeDefinition {
-            id: "bug_hunter".to_string(),
-            name: "Bug Hunter".to_string(),
-            description: "Close 50 issues".to_string(),
-            badge_type: "quality".to_string(),
-            rarity: "silver".to_string(),
-            icon: "🐛".to_string(),
-        },
-        BadgeDefinition {
-            id: "polyglot".to_string(),
-            name: "Polyglot".to_string(),
-            description: "Use 5+ programming languages".to_string(),
-            badge_type: "quality".to_string(),
-            rarity: "silver".to_string(),
-            icon: "🌍".to_string(),
-        },
-    ]
+    badge::get_all_badge_definitions()
+        .into_iter()
+        .map(|def| BadgeDefinition {
+            id: def.id,
+            name: def.name,
+            description: def.description,
+            badge_type: def.badge_type,
+            rarity: def.rarity,
+            icon: def.icon,
+        })
+        .collect()
 }
 

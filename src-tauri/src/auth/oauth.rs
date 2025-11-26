@@ -1,10 +1,9 @@
 //! GitHub OAuth flow implementation
 //!
-//! Handles the OAuth 2.0 authorization code flow with PKCE.
+//! Handles the GitHub Device Flow authentication.
+//! Device Flow is recommended for desktop apps as it doesn't require client_secret.
 
 use chrono::{DateTime, Duration, Utc};
-use rand::Rng;
-use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -16,34 +15,33 @@ pub enum OAuthError {
     #[error("Token exchange failed: {0}")]
     TokenExchange(String),
 
-    #[error("Invalid state parameter")]
-    InvalidState,
+    #[error("Device flow authorization pending")]
+    AuthorizationPending,
 
-    #[error("Missing authorization code")]
-    MissingCode,
+    #[error("Device flow slow down")]
+    SlowDown,
 
-    #[error("Configuration error: {0}")]
-    Configuration(String),
+    #[error("Device code expired")]
+    ExpiredToken,
+
+    #[error("Access denied by user")]
+    AccessDenied,
 }
 
 pub type OAuthResult<T> = Result<T, OAuthError>;
 
-/// OAuth configuration
+/// Device Flow configuration (does NOT require client_secret)
 #[derive(Debug, Clone)]
-pub struct OAuthConfig {
+pub struct DeviceFlowConfig {
     pub client_id: String,
-    pub client_secret: String,
-    pub redirect_uri: String,
     pub scopes: Vec<String>,
 }
 
-impl OAuthConfig {
-    /// Create a new OAuth config from environment or defaults
-    pub fn new(client_id: String, client_secret: String) -> Self {
+impl DeviceFlowConfig {
+    /// Create a new Device Flow config
+    pub fn new(client_id: String) -> Self {
         Self {
             client_id,
-            client_secret,
-            redirect_uri: "development-tools://callback".to_string(),
             scopes: vec![
                 "read:user".to_string(),
                 "repo".to_string(),
@@ -56,6 +54,37 @@ impl OAuthConfig {
     pub fn scopes_string(&self) -> String {
         self.scopes.join(" ")
     }
+}
+
+/// Device code response from GitHub
+/// Note: GitHub returns snake_case, but we serialize to camelCase for frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCodeResponse {
+    #[serde(alias = "device_code")]
+    pub device_code: String,
+    #[serde(alias = "user_code")]
+    pub user_code: String,
+    #[serde(alias = "verification_uri")]
+    pub verification_uri: String,
+    #[serde(alias = "expires_in")]
+    pub expires_in: i64,
+    #[serde(alias = "interval")]
+    pub interval: i64,
+}
+
+/// Device token polling status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum DeviceTokenStatus {
+    /// Authorization is still pending - user hasn't completed authorization yet
+    Pending,
+    /// Token was successfully obtained
+    Success {
+        auth_state: crate::auth::token::AuthState,
+    },
+    /// An error occurred
+    Error { message: String },
 }
 
 /// Token response from GitHub
@@ -94,51 +123,64 @@ impl From<TokenResponse> for AuthToken {
     }
 }
 
-/// OAuth flow manager
-pub struct OAuthFlow {
-    config: OAuthConfig,
+/// Device Flow manager - does NOT require client_secret
+pub struct DeviceFlow {
+    config: DeviceFlowConfig,
     client: reqwest::Client,
-    state: Option<String>,
 }
 
-impl OAuthFlow {
-    /// Create a new OAuth flow
-    pub fn new(config: OAuthConfig) -> Self {
+impl DeviceFlow {
+    /// Create a new Device Flow with a new HTTP client
+    pub fn new(config: DeviceFlowConfig) -> Self {
         Self {
             config,
             client: reqwest::Client::new(),
-            state: None,
         }
     }
 
-    /// Generate a random state parameter
-    fn generate_state() -> String {
-        let mut rng = rand::thread_rng();
-        let bytes: Vec<u8> = (0..32).map(|_| rng.gen()).collect();
-        hex::encode(bytes)
+    /// Create a new Device Flow with a shared HTTP client
+    /// This is more efficient when making multiple requests (e.g., polling)
+    /// as it reuses the connection pool
+    pub fn with_client(config: DeviceFlowConfig, client: reqwest::Client) -> Self {
+        Self { config, client }
     }
 
-    /// Get the authorization URL
-    ///
-    /// Returns the URL to redirect the user to for authorization
-    pub fn get_authorization_url(&mut self) -> String {
-        let state = Self::generate_state();
-        self.state = Some(state.clone());
+    /// Start the device flow - returns device code and user code
+    pub async fn start(&self) -> OAuthResult<DeviceCodeResponse> {
+        let response = self
+            .client
+            .post("https://github.com/login/device/code")
+            .header("Accept", "application/json")
+            .form(&[
+                ("client_id", self.config.client_id.as_str()),
+                ("scope", self.config.scopes_string().as_str()),
+            ])
+            .send()
+            .await?;
 
-        format!(
-            "https://github.com/login/oauth/authorize?client_id={}&redirect_uri={}&scope={}&state={}",
-            self.config.client_id,
-            urlencoding::encode(&self.config.redirect_uri),
-            urlencoding::encode(&self.config.scopes_string()),
-            state
-        )
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(OAuthError::TokenExchange(format!(
+                "Failed to start device flow: {}",
+                error_text
+            )));
+        }
+
+        let device_response: DeviceCodeResponse = response.json().await?;
+        Ok(device_response)
     }
 
-    /// Exchange authorization code for access token
-    pub async fn exchange_code(&self, code: &str, state: &str) -> OAuthResult<AuthToken> {
-        // Verify state
-        if self.state.as_deref() != Some(state) {
-            return Err(OAuthError::InvalidState);
+    /// Poll for the access token
+    /// Returns Ok(token) if authorized, Err(AuthorizationPending) if still pending
+    pub async fn poll_token(&self, device_code: &str) -> OAuthResult<AuthToken> {
+        #[derive(Deserialize)]
+        struct PollResponse {
+            #[serde(default)]
+            access_token: Option<String>,
+            #[serde(default)]
+            error: Option<String>,
+            #[serde(default)]
+            error_description: Option<String>,
         }
 
         let response = self
@@ -147,79 +189,43 @@ impl OAuthFlow {
             .header("Accept", "application/json")
             .form(&[
                 ("client_id", self.config.client_id.as_str()),
-                ("client_secret", self.config.client_secret.as_str()),
-                ("code", code),
-                ("redirect_uri", self.config.redirect_uri.as_str()),
+                ("device_code", device_code),
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ])
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(OAuthError::TokenExchange(error_text));
+        let poll_response: PollResponse = response.json().await?;
+
+        // Check for errors first
+        if let Some(error) = poll_response.error {
+            return match error.as_str() {
+                "authorization_pending" => Err(OAuthError::AuthorizationPending),
+                "slow_down" => Err(OAuthError::SlowDown),
+                "expired_token" => Err(OAuthError::ExpiredToken),
+                "access_denied" => Err(OAuthError::AccessDenied),
+                _ => Err(OAuthError::TokenExchange(
+                    poll_response
+                        .error_description
+                        .unwrap_or_else(|| error.clone()),
+                )),
+            };
         }
 
-        let token_response: TokenResponse = response.json().await?;
-
-        if token_response.access_token.is_empty() {
-            return Err(OAuthError::TokenExchange(
-                "Empty access token received".to_string(),
-            ));
+        // Check if we got a token
+        if let Some(access_token) = poll_response.access_token {
+            if !access_token.is_empty() {
+                return Ok(AuthToken {
+                    access_token,
+                    refresh_token: None, // Device flow doesn't provide refresh tokens by default
+                    expires_at: None,    // GitHub tokens don't expire by default
+                });
+            }
         }
 
-        Ok(token_response.into())
-    }
-
-    /// Refresh an access token
-    pub async fn refresh_token(&self, refresh_token: &str) -> OAuthResult<AuthToken> {
-        let response = self
-            .client
-            .post("https://github.com/login/oauth/access_token")
-            .header("Accept", "application/json")
-            .form(&[
-                ("client_id", self.config.client_id.as_str()),
-                ("client_secret", self.config.client_secret.as_str()),
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token),
-            ])
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(OAuthError::TokenExchange(error_text));
-        }
-
-        let token_response: TokenResponse = response.json().await?;
-        Ok(token_response.into())
-    }
-}
-
-/// Parse callback URL to extract code and state
-pub fn parse_callback_url(url: &str) -> OAuthResult<(String, String)> {
-    let url = Url::parse(url).map_err(|e| OAuthError::Configuration(e.to_string()))?;
-
-    let mut code = None;
-    let mut state = None;
-
-    for (key, value) in url.query_pairs() {
-        match key.as_ref() {
-            "code" => code = Some(value.to_string()),
-            "state" => state = Some(value.to_string()),
-            _ => {}
-        }
-    }
-
-    let code = code.ok_or(OAuthError::MissingCode)?;
-    let state = state.ok_or(OAuthError::InvalidState)?;
-
-    Ok((code, state))
-}
-
-// Add hex crate dependency - if not available, implement simple hex encoding
-mod hex {
-    pub fn encode(bytes: Vec<u8>) -> String {
-        bytes.iter().map(|b| format!("{:02x}", b)).collect()
+        Err(OAuthError::TokenExchange(
+            "Unexpected response from GitHub".to_string(),
+        ))
     }
 }
 
@@ -228,41 +234,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_oauth_config() {
-        let config = OAuthConfig::new("client_id".to_string(), "client_secret".to_string());
+    fn test_device_flow_config() {
+        let config = DeviceFlowConfig::new("client_id".to_string());
 
         assert_eq!(config.client_id, "client_id");
-        assert_eq!(config.redirect_uri, "development-tools://callback");
         assert!(config.scopes.contains(&"read:user".to_string()));
+        assert!(config.scopes.contains(&"repo".to_string()));
+        assert_eq!(config.scopes_string(), "read:user repo read:org");
     }
 
     #[test]
-    fn test_authorization_url() {
-        let config = OAuthConfig::new("test_client".to_string(), "test_secret".to_string());
-        let mut flow = OAuthFlow::new(config);
-
-        let url = flow.get_authorization_url();
-
-        assert!(url.contains("github.com/login/oauth/authorize"));
-        assert!(url.contains("client_id=test_client"));
-        assert!(url.contains("state="));
-    }
-
-    #[test]
-    fn test_parse_callback_url() {
-        let url = "development-tools://callback?code=abc123&state=xyz789";
-        let (code, state) = parse_callback_url(url).expect("Should parse");
-
-        assert_eq!(code, "abc123");
-        assert_eq!(state, "xyz789");
-    }
-
-    #[test]
-    fn test_parse_callback_url_missing_code() {
-        let url = "development-tools://callback?state=xyz789";
-        let result = parse_callback_url(url);
-
-        assert!(matches!(result, Err(OAuthError::MissingCode)));
+    fn test_device_flow_new() {
+        let config = DeviceFlowConfig::new("test_client".to_string());
+        let _flow = DeviceFlow::new(config);
+        // Just ensure it compiles and creates without panic
     }
 }
-

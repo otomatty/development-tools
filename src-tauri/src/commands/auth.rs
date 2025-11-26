@@ -1,12 +1,16 @@
 //! Authentication commands for Tauri
 //!
-//! These commands handle GitHub OAuth authentication flow.
+//! These commands handle GitHub Device Flow authentication.
+//! Device Flow is recommended for desktop apps as it doesn't require client_secret.
 
 use std::sync::Arc;
 use tauri::{command, State};
 use tokio::sync::Mutex;
 
-use crate::auth::{AuthState, OAuthConfig, OAuthFlow, TokenManager, UserInfo};
+use crate::auth::{
+    AuthState, AuthToken, DeviceCodeResponse, DeviceFlow, DeviceFlowConfig, DeviceTokenStatus,
+    OAuthError, TokenManager, UserInfo,
+};
 use crate::database::Database;
 use crate::github::GitHubClient;
 
@@ -14,8 +18,12 @@ use crate::github::GitHubClient;
 pub struct AppState {
     pub db: Database,
     pub token_manager: TokenManager,
-    pub oauth_flow: Arc<Mutex<Option<OAuthFlow>>>,
-    pub oauth_config: Option<OAuthConfig>,
+    /// Device Flow config - only requires client_id (no client_secret needed)
+    pub device_flow_config: Option<DeviceFlowConfig>,
+    /// Current device flow state (device_code for polling)
+    pub device_flow_state: Arc<Mutex<Option<String>>>,
+    /// Shared HTTP client for reuse across requests (improves performance)
+    pub http_client: reqwest::Client,
 }
 
 impl AppState {
@@ -27,16 +35,22 @@ impl AppState {
         let token_manager = TokenManager::new(db.clone())
             .map_err(|e| format!("Failed to initialize token manager: {}", e))?;
 
+        // Create a shared HTTP client for reuse across all requests
+        // This improves performance by reusing connection pools
+        let http_client = reqwest::Client::new();
+
         Ok(Self {
             db,
             token_manager,
-            oauth_flow: Arc::new(Mutex::new(None)),
-            oauth_config: None,
+            device_flow_config: None,
+            device_flow_state: Arc::new(Mutex::new(None)),
+            http_client,
         })
     }
 
-    pub fn with_oauth_config(mut self, config: OAuthConfig) -> Self {
-        self.oauth_config = Some(config);
+    /// Set Device Flow config (only requires client_id)
+    pub fn with_device_flow_config(mut self, config: DeviceFlowConfig) -> Self {
+        self.device_flow_config = Some(config);
         self
     }
 }
@@ -53,90 +67,6 @@ pub async fn get_auth_state(state: State<'_, AppState>) -> Result<AuthState, Str
     Ok(AuthState {
         is_logged_in: user.is_some(),
         user: user.map(UserInfo::from),
-    })
-}
-
-/// Start OAuth login flow - returns authorization URL
-#[command]
-pub async fn start_oauth_login(state: State<'_, AppState>) -> Result<String, String> {
-    let config = state
-        .oauth_config
-        .as_ref()
-        .ok_or("OAuth not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET")?
-        .clone();
-
-    let mut flow = OAuthFlow::new(config);
-    let auth_url = flow.get_authorization_url();
-
-    // Store the flow for later
-    let mut oauth_flow = state.oauth_flow.lock().await;
-    *oauth_flow = Some(flow);
-
-    Ok(auth_url)
-}
-
-/// Handle OAuth callback - exchange code for token
-#[command]
-pub async fn handle_oauth_callback(
-    state: State<'_, AppState>,
-    code: String,
-    callback_state: String,
-) -> Result<AuthState, String> {
-    let mut oauth_flow_guard = state.oauth_flow.lock().await;
-    let flow = oauth_flow_guard
-        .take()
-        .ok_or("No OAuth flow in progress")?;
-
-    // Exchange code for token
-    let token = flow
-        .exchange_code(&code, &callback_state)
-        .await
-        .map_err(|e| format!("Failed to exchange code: {}", e))?;
-
-    // Get user info from GitHub
-    let github_client = GitHubClient::new(token.access_token.clone());
-    let github_user = github_client
-        .get_user()
-        .await
-        .map_err(|e| format!("Failed to get user info: {}", e))?;
-
-    // Check if user already exists
-    let existing_user = state
-        .db
-        .get_user_by_github_id(github_user.id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let user = if let Some(existing) = existing_user {
-        // Update tokens for existing user
-        state
-            .token_manager
-            .save_tokens(existing.id, &token)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        state
-            .db
-            .get_user_by_id(existing.id)
-            .await
-            .map_err(|e| e.to_string())?
-    } else {
-        // Create new user
-        state
-            .token_manager
-            .create_user_from_token(
-                github_user.id,
-                &github_user.login,
-                Some(&github_user.avatar_url),
-                &token,
-            )
-            .await
-            .map_err(|e| e.to_string())?
-    };
-
-    Ok(AuthState {
-        is_logged_in: true,
-        user: Some(UserInfo::from(user)),
     })
 }
 
@@ -164,3 +94,172 @@ pub async fn get_current_user(state: State<'_, AppState>) -> Result<Option<UserI
     Ok(user.map(UserInfo::from))
 }
 
+// ============================================
+// Device Flow Commands
+// ============================================
+
+/// Start Device Flow - returns device code info for user to authorize
+///
+/// The user should:
+/// 1. Go to the verification_uri (https://github.com/login/device)
+/// 2. Enter the user_code shown
+/// 3. The app will poll for completion using poll_device_token
+#[command]
+pub async fn start_device_flow(state: State<'_, AppState>) -> Result<DeviceCodeResponse, String> {
+    let config = state
+        .device_flow_config
+        .as_ref()
+        .ok_or("Device Flow not configured. Please set GITHUB_CLIENT_ID")?
+        .clone();
+
+    // Use shared HTTP client for better performance
+    let flow = DeviceFlow::with_client(config, state.http_client.clone());
+    let device_response = flow
+        .start()
+        .await
+        .map_err(|e| format!("Failed to start device flow: {}", e))?;
+
+    // Store the device_code for polling
+    let mut device_state = state.device_flow_state.lock().await;
+    *device_state = Some(device_response.device_code.clone());
+
+    Ok(device_response)
+}
+
+/// Poll for device token - call this periodically after start_device_flow
+///
+/// Returns:
+/// - DeviceTokenStatus::Pending - user hasn't completed authorization yet
+/// - DeviceTokenStatus::Success - authorization complete, user is logged in
+/// - DeviceTokenStatus::Error - an error occurred
+#[command]
+pub async fn poll_device_token(state: State<'_, AppState>) -> Result<DeviceTokenStatus, String> {
+    let config = state
+        .device_flow_config
+        .as_ref()
+        .ok_or("Device Flow not configured")?
+        .clone();
+
+    let device_code = {
+        let device_state = state.device_flow_state.lock().await;
+        device_state.clone().ok_or("No device flow in progress")?
+    };
+
+    // Use shared HTTP client for better performance during polling
+    let flow = DeviceFlow::with_client(config, state.http_client.clone());
+
+    match flow.poll_token(&device_code).await {
+        Ok(token) => {
+            // Successfully got token - complete the login
+            let auth_state = complete_device_login(&state, token).await?;
+
+            // Clear device flow state
+            let mut device_state = state.device_flow_state.lock().await;
+            *device_state = None;
+
+            Ok(DeviceTokenStatus::Success { auth_state })
+        }
+        Err(OAuthError::AuthorizationPending) => {
+            // User hasn't completed authorization yet
+            Ok(DeviceTokenStatus::Pending)
+        }
+        Err(OAuthError::SlowDown) => {
+            // Too many requests - return pending (caller should slow down)
+            Ok(DeviceTokenStatus::Pending)
+        }
+        Err(OAuthError::ExpiredToken) => {
+            // Device code expired - clear state and return error
+            let mut device_state = state.device_flow_state.lock().await;
+            *device_state = None;
+            Ok(DeviceTokenStatus::Error {
+                message: "Device code expired. Please start over.".to_string(),
+            })
+        }
+        Err(OAuthError::AccessDenied) => {
+            // User denied access
+            let mut device_state = state.device_flow_state.lock().await;
+            *device_state = None;
+            Ok(DeviceTokenStatus::Error {
+                message: "Access denied by user.".to_string(),
+            })
+        }
+        Err(e) => Ok(DeviceTokenStatus::Error {
+            message: format!("Token exchange failed: {}", e),
+        }),
+    }
+}
+
+/// Cancel the current device flow
+#[command]
+pub async fn cancel_device_flow(state: State<'_, AppState>) -> Result<(), String> {
+    let mut device_state = state.device_flow_state.lock().await;
+    *device_state = None;
+    Ok(())
+}
+
+/// Open a URL in the system's default browser
+#[command]
+pub async fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    app.shell()
+        .open(&url, None)
+        .map_err(|e| format!("Failed to open URL: {}", e))
+}
+
+/// Helper function to complete login after getting token from device flow
+async fn complete_device_login(
+    state: &State<'_, AppState>,
+    token: AuthToken,
+) -> Result<AuthState, String> {
+    // Get user info from GitHub
+    let github_client = GitHubClient::new(token.access_token.clone());
+    let github_user = github_client
+        .get_user()
+        .await
+        .map_err(|e| format!("Failed to get user info: {}", e))?;
+
+    // Check if user already exists
+    let existing_user = state
+        .db
+        .get_user_by_github_id(github_user.id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let user = if let Some(existing) = existing_user {
+        // Update tokens for existing user
+        state
+            .token_manager
+            .save_tokens(existing.id, &token)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Retrieve the updated user - get_user_by_id uses fetch_one, so it will
+        // return an error if the user doesn't exist (which shouldn't happen here
+        // since we just saved tokens for this user)
+        state
+            .db
+            .get_user_by_id(existing.id)
+            .await
+            .map_err(|e| format!(
+                "Failed to retrieve user {} after saving tokens: {}. This may indicate a database inconsistency.",
+                existing.id, e
+            ))?
+    } else {
+        // Create new user
+        state
+            .token_manager
+            .create_user_from_token(
+                github_user.id,
+                &github_user.login,
+                Some(&github_user.avatar_url),
+                &token,
+            )
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    Ok(AuthState {
+        is_logged_in: true,
+        user: Some(UserInfo::from(user)),
+    })
+}

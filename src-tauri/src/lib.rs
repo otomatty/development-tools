@@ -4,63 +4,65 @@ mod database;
 mod github;
 mod types;
 
-use tauri::{Listener, Manager};
+use tauri::Manager;
 
 use commands::{
     // Tool commands
     get_tool_config, list_tools, run_tool,
-    // Auth commands
-    get_auth_state, get_current_user, handle_oauth_callback, logout, start_oauth_login,
+    // Auth commands (Device Flow)
+    cancel_device_flow, get_auth_state, get_current_user, logout, open_url, poll_device_token,
+    start_device_flow,
     // GitHub commands
     get_contribution_calendar, get_github_stats, get_github_user, get_user_stats, sync_github_stats,
     // Gamification commands
     add_xp, award_badge, get_badge_definitions, get_badges, get_level_info, get_xp_history,
+    // Settings commands
+    clear_cache, export_data, get_database_info, get_settings, get_sync_intervals, reset_all_data,
+    reset_settings, update_settings,
     // State
     AppState,
 };
 
-use auth::OAuthConfig;
+use auth::DeviceFlowConfig;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load .env file from multiple possible locations (for development)
+    // Try current directory first, then parent directory (for when running from src-tauri)
+    if dotenvy::dotenv().is_err() {
+        // Try parent directory (project root when running from src-tauri)
+        let _ = dotenvy::from_filename("../.env");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             // Initialize app state
-            let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-            
+            let runtime =
+                tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+
             let app_state = runtime.block_on(async {
-                let mut state = AppState::new().await.expect("Failed to initialize app state");
-                
-                // Load OAuth config from environment if available
-                if let (Ok(client_id), Ok(client_secret)) = (
-                    std::env::var("GITHUB_CLIENT_ID"),
-                    std::env::var("GITHUB_CLIENT_SECRET"),
-                ) {
-                    let oauth_config = OAuthConfig::new(client_id, client_secret);
-                    state = state.with_oauth_config(oauth_config);
+                let mut state = AppState::new()
+                    .await
+                    .expect("Failed to initialize app state");
+
+                // Load GitHub Client ID from environment for Device Flow
+                if let Ok(client_id) = std::env::var("GITHUB_CLIENT_ID") {
+                    eprintln!("GitHub Client ID loaded: {}...", &client_id[..8.min(client_id.len())]);
+                    let device_flow_config = DeviceFlowConfig::new(client_id);
+                    state = state.with_device_flow_config(device_flow_config);
+                } else {
+                    eprintln!("Warning: GITHUB_CLIENT_ID not set. GitHub login will not work.");
                 }
-                
+
                 state
             });
-            
+
             app.manage(app_state);
-            
-            // Setup deep link handler
-            #[cfg(desktop)]
-            {
-                let _handle = app.handle().clone();
-                app.listen("deep-link://new-url", move |event| {
-                    // Handle the OAuth callback URL
-                    eprintln!("Received deep link event: {:?}", event.payload());
-                    // The frontend will handle parsing the URL
-                });
-            }
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -68,12 +70,14 @@ pub fn run() {
             list_tools,
             get_tool_config,
             run_tool,
-            // Auth commands
+            // Auth commands (Device Flow)
             get_auth_state,
-            start_oauth_login,
-            handle_oauth_callback,
             logout,
             get_current_user,
+            start_device_flow,
+            poll_device_token,
+            cancel_device_flow,
+            open_url,
             // GitHub commands
             get_github_user,
             get_github_stats,
@@ -87,6 +91,15 @@ pub fn run() {
             award_badge,
             get_xp_history,
             get_badge_definitions,
+            // Settings commands
+            get_settings,
+            update_settings,
+            reset_settings,
+            clear_cache,
+            get_database_info,
+            reset_all_data,
+            export_data,
+            get_sync_intervals,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

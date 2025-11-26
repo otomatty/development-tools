@@ -192,5 +192,6 @@ pub struct GitHubStats {
     pub contribution_calendar: Option<ContributionCalendar>,
     pub current_streak: i32,
     pub longest_streak: i32,
+    pub languages_count: i32,
 }
 
