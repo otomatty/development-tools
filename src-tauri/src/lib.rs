@@ -11,7 +11,7 @@ use commands::{
     get_tool_config, list_tools, run_tool,
     // Auth commands (Device Flow)
     cancel_device_flow, get_auth_state, get_current_user, logout, open_url, poll_device_token,
-    start_device_flow,
+    start_device_flow, validate_token,
     // GitHub commands
     get_contribution_calendar, get_github_stats, get_github_user, get_user_stats, sync_github_stats,
     // Gamification commands
@@ -74,6 +74,7 @@ pub fn run() {
             get_auth_state,
             logout,
             get_current_user,
+            validate_token,
             start_device_flow,
             poll_device_token,
             cancel_device_flow,

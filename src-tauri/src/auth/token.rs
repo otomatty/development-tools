@@ -155,6 +155,7 @@ pub struct UserInfo {
     pub github_id: i64,
     pub username: String,
     pub avatar_url: Option<String>,
+    pub created_at: Option<String>,
 }
 
 impl From<User> for UserInfo {
@@ -164,6 +165,7 @@ impl From<User> for UserInfo {
             github_id: user.github_id,
             username: user.username,
             avatar_url: user.avatar_url,
+            created_at: Some(user.created_at.to_rfc3339()),
         }
     }
 }

@@ -186,6 +186,7 @@ pub struct UserInfo {
     pub github_id: i64,
     pub username: String,
     pub avatar_url: Option<String>,
+    pub created_at: Option<String>,
 }
 
 // ============================================

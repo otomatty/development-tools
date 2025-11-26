@@ -94,6 +94,27 @@ pub async fn get_current_user(state: State<'_, AppState>) -> Result<Option<UserI
     Ok(user.map(UserInfo::from))
 }
 
+/// Validate current token (check if token is still valid)
+/// 
+/// Note: GitHub Device Flow tokens don't expire, but users can revoke them manually.
+/// This command checks if the current token is still valid by making a test API call.
+#[command]
+pub async fn validate_token(state: State<'_, AppState>) -> Result<bool, String> {
+    let access_token = state
+        .token_manager
+        .get_access_token()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let is_valid = state
+        .token_manager
+        .validate_token(&access_token)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(is_valid)
+}
+
 // ============================================
 // Device Flow Commands
 // ============================================
@@ -262,4 +283,32 @@ async fn complete_device_login(
         is_logged_in: true,
         user: Some(UserInfo::from(user)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_current_user_includes_created_at() {
+        // This test would require a test database setup
+        // For now, we verify that UserInfo::from includes created_at
+        use crate::database::models::User;
+        use chrono::Utc;
+
+        let test_user = User {
+            id: 1,
+            github_id: 12345678,
+            username: "testuser".to_string(),
+            avatar_url: Some("https://example.com/avatar.png".to_string()),
+            access_token_encrypted: "encrypted_token".to_string(),
+            refresh_token_encrypted: None,
+            token_expires_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let user_info = UserInfo::from(test_user);
+        assert!(user_info.created_at.is_some());
+    }
 }
