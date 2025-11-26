@@ -1,7 +1,10 @@
 use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
 
-use crate::types::{ToolConfig, ToolInfo};
+use crate::types::{
+    AuthState, Badge, BadgeDefinition, GitHubStats, GitHubUser, 
+    LevelInfo, ToolConfig, ToolInfo, UserStats, XpHistoryEntry,
+};
 
 #[wasm_bindgen]
 extern "C" {
@@ -109,5 +112,151 @@ where
     closure.forget();
 
     Ok(UnlistenFn { _unlisten: unlisten })
+}
+
+// ============================================
+// 認証関連API
+// ============================================
+
+/// 認証状態を取得
+pub async fn get_auth_state() -> Result<AuthState, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_auth_state", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get auth state: {:?}", e))
+}
+
+/// OAuthログイン開始（認証URLを返す）
+pub async fn start_oauth_login() -> Result<String, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("start_oauth_login", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to start OAuth login: {:?}", e))
+}
+
+/// OAuthコールバック処理
+pub async fn handle_oauth_callback(code: &str, state: &str) -> Result<AuthState, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        code: &'a str,
+        callback_state: &'a str,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { code, callback_state: state }).unwrap();
+    let result = invoke("handle_oauth_callback", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to handle OAuth callback: {:?}", e))
+}
+
+/// ログアウト
+pub async fn logout() -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("logout", args).await;
+    
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+// ============================================
+// GitHub関連API
+// ============================================
+
+/// GitHubユーザー情報を取得
+pub async fn get_github_user() -> Result<GitHubUser, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_github_user", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get GitHub user: {:?}", e))
+}
+
+/// GitHub統計を取得
+pub async fn get_github_stats() -> Result<GitHubStats, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_github_stats", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get GitHub stats: {:?}", e))
+}
+
+/// コントリビューションカレンダーを取得
+pub async fn get_contribution_calendar() -> Result<serde_json::Value, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_contribution_calendar", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get contribution calendar: {:?}", e))
+}
+
+// ============================================
+// ゲーミフィケーション関連API
+// ============================================
+
+/// ユーザー統計を取得
+pub async fn get_user_stats() -> Result<Option<UserStats>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_user_stats", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get user stats: {:?}", e))
+}
+
+/// レベル情報を取得
+pub async fn get_level_info() -> Result<Option<LevelInfo>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_level_info", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get level info: {:?}", e))
+}
+
+/// バッジ一覧を取得
+pub async fn get_badges() -> Result<Vec<Badge>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_badges", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get badges: {:?}", e))
+}
+
+/// バッジ定義一覧を取得
+pub async fn get_badge_definitions() -> Result<Vec<BadgeDefinition>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_badge_definitions", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get badge definitions: {:?}", e))
+}
+
+/// XP履歴を取得
+pub async fn get_xp_history(limit: Option<i32>) -> Result<Vec<XpHistoryEntry>, String> {
+    #[derive(serde::Serialize)]
+    struct Args {
+        limit: Option<i32>,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { limit }).unwrap();
+    let result = invoke("get_xp_history", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get XP history: {:?}", e))
+}
+
+/// GitHub統計を同期
+pub async fn sync_github_stats() -> Result<UserStats, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("sync_github_stats", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to sync GitHub stats: {:?}", e))
 }
 

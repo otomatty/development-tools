@@ -166,3 +166,154 @@ pub struct LogEntry {
     pub timestamp: String,
 }
 
+// ============================================
+// 認証・ゲーミフィケーション関連の型
+// ============================================
+
+/// 認証状態
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthState {
+    pub is_logged_in: bool,
+    pub user: Option<UserInfo>,
+}
+
+/// ユーザー情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserInfo {
+    pub id: i64,
+    pub github_id: i64,
+    pub username: String,
+    pub avatar_url: Option<String>,
+}
+
+/// ユーザー統計
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UserStats {
+    pub id: i64,
+    pub user_id: i64,
+    pub total_xp: i32,
+    pub current_level: i32,
+    pub current_streak: i32,
+    pub longest_streak: i32,
+    pub last_activity_date: Option<String>,
+    pub total_commits: i32,
+    pub total_prs: i32,
+    pub total_reviews: i32,
+    pub total_issues: i32,
+    pub updated_at: String,
+}
+
+/// レベル情報
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LevelInfo {
+    pub current_level: u32,
+    pub total_xp: u32,
+    pub xp_for_current_level: u32,
+    pub xp_for_next_level: u32,
+    pub xp_to_next_level: u32,
+    pub progress_percent: f32,
+}
+
+/// GitHub統計
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubStats {
+    pub total_commits: i32,
+    pub total_prs: i32,
+    pub total_prs_merged: i32,
+    pub total_issues: i32,
+    pub total_issues_closed: i32,
+    pub total_reviews: i32,
+    pub total_stars_received: i32,
+    pub total_contributions: i32,
+    pub contribution_calendar: Option<ContributionCalendar>,
+    pub current_streak: i32,
+    pub longest_streak: i32,
+}
+
+/// GitHubユーザー
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubUser {
+    pub id: i64,
+    pub login: String,
+    pub avatar_url: String,
+    pub name: Option<String>,
+    pub bio: Option<String>,
+    pub public_repos: i32,
+    pub followers: i32,
+    pub following: i32,
+    pub created_at: String,
+}
+
+/// コントリビューションカレンダー
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionCalendar {
+    pub total_contributions: i32,
+    pub weeks: Vec<ContributionWeek>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionWeek {
+    pub contribution_days: Vec<ContributionDay>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionDay {
+    pub contribution_count: i32,
+    pub date: String,
+    pub weekday: i32,
+}
+
+/// バッジ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Badge {
+    pub id: i64,
+    pub user_id: i64,
+    pub badge_type: String,
+    pub badge_id: String,
+    pub earned_at: String,
+}
+
+/// バッジ定義
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeDefinition {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub badge_type: String,
+    pub rarity: String,
+    pub icon: String,
+}
+
+/// XP履歴エントリ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct XpHistoryEntry {
+    pub id: i64,
+    pub user_id: i64,
+    pub action_type: String,
+    pub xp_amount: i32,
+    pub description: Option<String>,
+    pub github_event_id: Option<String>,
+    pub created_at: String,
+}
+
+/// アプリのページ
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppPage {
+    #[default]
+    Home,
+    Tools,
+    Settings,
+}
+

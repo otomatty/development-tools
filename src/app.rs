@@ -3,10 +3,10 @@ use leptos::task::spawn_local;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
-use crate::components::{LogViewer, ResultView, Sidebar, ToolDetail};
+use crate::components::{HomePage, LogViewer, ResultView, Sidebar, ToolDetail};
 use crate::tauri_api;
 use crate::types::{
-    LogEntry, LogEvent, OptionValues, ToolConfig, ToolInfo, 
+    AppPage, LogEntry, LogEvent, OptionValues, ToolConfig, ToolInfo, 
     ToolResult, ToolStatus, ToolStatusEvent,
 };
 
@@ -18,7 +18,10 @@ extern "C" {
 
 #[component]
 pub fn App() -> impl IntoView {
-    // 状態管理
+    // ページ状態
+    let (current_page, set_current_page) = signal(AppPage::Home);
+    
+    // ツール関連の状態管理
     let (tools, set_tools) = signal(Vec::<ToolInfo>::new());
     let (loading_tools, set_loading_tools) = signal(true);
     let (selected_tool_name, set_selected_tool_name) = signal(Option::<String>::None);
@@ -170,39 +173,56 @@ pub fn App() -> impl IntoView {
                 tools=tools
                 selected_tool=selected_tool_name
                 set_selected_tool=set_selected_tool_name
+                current_page=current_page
+                set_current_page=set_current_page
                 loading=loading_tools
             />
 
             // メインコンテンツ
             <main class="flex-1 flex flex-col overflow-hidden">
-                // 上部: ツール詳細・オプション
-                <div class="flex-1 overflow-y-auto">
-                    <ToolDetail 
-                        config=tool_config
-                        option_values=option_values
-                        set_option_values=set_option_values
-                        trigger_run=set_trigger_run
-                        running=running
-                        status=status
-                    />
-                </div>
+                // ページに応じてコンテンツを表示
+                {move || match current_page.get() {
+                    AppPage::Home => view! {
+                        <HomePage />
+                    }.into_any(),
+                    
+                    AppPage::Tools => view! {
+                        // 上部: ツール詳細・オプション
+                        <div class="flex-1 overflow-y-auto">
+                            <ToolDetail 
+                                config=tool_config
+                                option_values=option_values
+                                set_option_values=set_option_values
+                                trigger_run=set_trigger_run
+                                running=running
+                                status=status
+                            />
+                        </div>
 
-                // 下部: 結果表示
-                <Show when=move || result.get().is_some() || show_logs.get()>
-                    <div class="border-t border-slate-700/50 bg-dt-card p-4 max-h-[50vh] overflow-y-auto">
-                        // ログビューア
-                        <LogViewer 
-                            logs=logs
-                            visible=show_logs
-                        />
+                        // 下部: 結果表示
+                        <Show when=move || result.get().is_some() || show_logs.get()>
+                            <div class="border-t border-slate-700/50 bg-dt-card p-4 max-h-[50vh] overflow-y-auto">
+                                // ログビューア
+                                <LogViewer 
+                                    logs=logs
+                                    visible=show_logs
+                                />
 
-                        // 結果表示
-                        <ResultView 
-                            result=result
-                            schema=result_schema
-                        />
-                    </div>
-                </Show>
+                                // 結果表示
+                                <ResultView 
+                                    result=result
+                                    schema=result_schema
+                                />
+                            </div>
+                        </Show>
+                    }.into_any(),
+                    
+                    AppPage::Settings => view! {
+                        <div class="flex-1 flex items-center justify-center text-dt-text-sub">
+                            "Settings page coming soon..."
+                        </div>
+                    }.into_any(),
+                }}
             </main>
         </div>
     }
