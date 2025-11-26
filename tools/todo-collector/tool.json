@@ -1,0 +1,104 @@
+{
+  "name": "todo-collector",
+  "displayName": "TODO Collector",
+  "description": "コードベース内のTODO/FIXME/HACKコメントを収集・一覧化",
+  "version": "1.0.0",
+  "binary": "target/release/todo-collector",
+  "icon": "search",
+  "category": "code-quality",
+  "options": [
+    {
+      "name": "scan-dir",
+      "flag": "--scan-dir",
+      "shortFlag": "-s",
+      "type": "path",
+      "description": "スキャン対象ディレクトリ（デフォルト: カレントディレクトリ）",
+      "placeholder": "~/projects/myapp",
+      "required": false
+    },
+    {
+      "name": "pattern",
+      "flag": "--pattern",
+      "shortFlag": "-p",
+      "type": "string",
+      "description": "検出パターン（カンマ区切り）",
+      "default": "TODO,FIXME,HACK,XXX,NOTE",
+      "placeholder": "TODO,FIXME,HACK"
+    },
+    {
+      "name": "exclude",
+      "flag": "--exclude",
+      "shortFlag": "-e",
+      "type": "string",
+      "description": "除外ディレクトリ（カンマ区切り）",
+      "default": "node_modules,target,.git,vendor,dist,build",
+      "placeholder": "node_modules,target,.git"
+    },
+    {
+      "name": "output",
+      "flag": "--output",
+      "shortFlag": "-o",
+      "type": "select",
+      "description": "出力形式",
+      "options": ["text", "json"],
+      "default": "json"
+    },
+    {
+      "name": "priority",
+      "flag": "--priority",
+      "type": "boolean",
+      "description": "優先度でソート（FIXME > TODO > HACK > XXX > NOTE）",
+      "default": false
+    }
+  ],
+  "resultParser": {
+    "type": "json",
+    "outputFlag": "--output json",
+    "schema": {
+      "summary": [
+        {
+          "key": "fixme",
+          "label": "FIXME",
+          "path": "$.summary.by_type.FIXME",
+          "countType": "value",
+          "color": "red",
+          "icon": "alert-circle"
+        },
+        {
+          "key": "todo",
+          "label": "TODO",
+          "path": "$.summary.by_type.TODO",
+          "countType": "value",
+          "color": "blue",
+          "icon": "check-square"
+        },
+        {
+          "key": "hack",
+          "label": "HACK",
+          "path": "$.summary.by_type.HACK",
+          "countType": "value",
+          "color": "yellow",
+          "icon": "tool"
+        },
+        {
+          "key": "note",
+          "label": "NOTE",
+          "path": "$.summary.by_type.NOTE",
+          "countType": "value",
+          "color": "green",
+          "icon": "file-text"
+        }
+      ],
+      "details": {
+        "items": "$.items",
+        "columns": [
+          { "key": "type", "label": "Type", "width": "80px" },
+          { "key": "file", "label": "File", "width": "300px" },
+          { "key": "line", "label": "Line", "width": "60px" },
+          { "key": "content", "label": "Content", "flex": 1 }
+        ]
+      }
+    }
+  }
+}
+
