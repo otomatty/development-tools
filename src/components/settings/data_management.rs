@@ -9,6 +9,16 @@ use wasm_bindgen_futures::spawn_local;
 use crate::tauri_api;
 use crate::types::DatabaseInfo;
 
+/// Helper to refresh database info and handle errors
+/// Returns Ok(info) on success, Err(error_message) on failure
+async fn refresh_database_info(context: &str) -> Result<DatabaseInfo, String> {
+    tauri_api::get_database_info().await.map_err(|e| {
+        let error_msg = format!("Failed to refresh database info after {}: {}", context, e);
+        web_sys::console::error_1(&error_msg.clone().into());
+        format!("{}は完了しましたが、情報のリフレッシュに失敗しました: {}", context, e)
+    })
+}
+
 /// Format bytes to human-readable string (KB, MB, GB)
 fn format_bytes(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -125,11 +135,7 @@ fn ResetConfirmDialog(
                             disabled=move || !is_confirm_enabled.get()
                             on:click={
                                 let on_confirm = on_confirm.clone();
-                                move |_| {
-                                    if is_confirm_enabled.get() {
-                                        on_confirm()
-                                    }
-                                }
+                                move |_| on_confirm()
                             }
                         >
                             "リセットを実行"
@@ -227,10 +233,10 @@ pub fn DataManagement() -> impl IntoView {
                         format_bytes(result.freed_bytes)
                     ));
                     
-                    // Refresh database info
-                    match tauri_api::get_database_info().await {
+                    // Refresh database info using helper function
+                    match refresh_database_info("キャッシュクリア").await {
                         Ok(info) => set_db_info.set(Some(info)),
-                        Err(e) => web_sys::console::error_1(&format!("Failed to refresh database info after cache clear: {}", e).into()),
+                        Err(e) => set_error.set(Some(e)),
                     }
                 }
                 Err(e) => {
@@ -307,10 +313,10 @@ pub fn DataManagement() -> impl IntoView {
                 Ok(_) => {
                     show_success("全てのデータをリセットしました".to_string());
                     
-                    // Refresh database info
-                    match tauri_api::get_database_info().await {
+                    // Refresh database info using helper function
+                    match refresh_database_info("データリセット").await {
                         Ok(info) => set_db_info.set(Some(info)),
-                        Err(e) => web_sys::console::error_1(&format!("Failed to refresh database info after data reset: {}", e).into()),
+                        Err(e) => set_error.set(Some(e)),
                     }
                 }
                 Err(e) => {
