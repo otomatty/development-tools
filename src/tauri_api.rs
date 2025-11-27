@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 use crate::types::{
     AuthState, Badge, BadgeDefinition, ClearCacheResult, DatabaseInfo, DeviceCodeResponse,
-    DeviceTokenStatus, GitHubStats, GitHubUser, LevelInfo, SyncResult, ToolConfig, ToolInfo,
-    UpdateSettingsRequest, UserSettings, UserStats, XpGainedEvent, XpHistoryEntry,
+    DeviceTokenStatus, GitHubStats, GitHubUser, LevelInfo, SyncIntervalOption, SyncResult,
+    ToolConfig, ToolInfo, UpdateSettingsRequest, UserSettings, UserStats, XpGainedEvent,
+    XpHistoryEntry,
 };
 
 #[wasm_bindgen]
@@ -362,6 +363,15 @@ pub async fn get_settings() -> Result<UserSettings, String> {
     
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to get settings: {:?}", e))
+}
+
+/// 同期間隔の選択肢を取得
+pub async fn get_sync_intervals() -> Result<Vec<SyncIntervalOption>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_sync_intervals", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get sync intervals: {:?}", e))
 }
 
 /// ユーザー設定を更新

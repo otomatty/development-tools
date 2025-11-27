@@ -579,3 +579,11 @@ pub fn get_sync_interval_label(minutes: i32) -> &'static str {
         .unwrap_or("不明")
 }
 
+/// 同期間隔オプション（バックエンドから取得）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncIntervalOption {
+    pub value: i32,
+    pub label: String,
+}
+
