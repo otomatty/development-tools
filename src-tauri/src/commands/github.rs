@@ -8,6 +8,7 @@ use tauri::{command, Emitter, State};
 use super::auth::AppState;
 use crate::database::{badge, level, streak, xp, UserStats, XpActionType};
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
+use crate::utils::notifications::send_notification;
 
 /// Get GitHub user profile
 #[command]
@@ -362,7 +363,14 @@ pub async fn sync_github_stats(
         total_xp: total_xp_gained,
     };
 
-    // Emit XP gained event for frontend
+    // Get user settings for notification preferences
+    let user_settings = state
+        .db
+        .get_or_create_user_settings(user.id)
+        .await
+        .ok();
+
+    // Emit XP gained event for frontend and send OS notification if enabled
     if total_xp_gained > 0 {
         let event = XpGainedEvent {
             xp_gained: total_xp_gained,
@@ -375,9 +383,33 @@ pub async fn sync_github_stats(
         };
         let _ = app.emit("xp-gained", &event);
 
+        // Send OS notification for XP gain if enabled
+        if let Some(ref settings) = user_settings {
+            if settings.notify_xp_gain {
+                let _ = send_notification(
+                    &app,
+                    settings,
+                    "XP獲得！",
+                    &format!("{} XPを獲得しました", total_xp_gained),
+                );
+            }
+        }
+
         // Emit level up event if level increased
         if level_up {
             let _ = app.emit("level-up", &event);
+
+            // Send OS notification for level up if enabled
+            if let Some(ref settings) = user_settings {
+                if settings.notify_level_up {
+                    let _ = send_notification(
+                        &app,
+                        settings,
+                        "レベルアップ！",
+                        &format!("レベル {} に上がりました！", new_level),
+                    );
+                }
+            }
         }
 
         // Emit streak milestone event if milestone reached
@@ -388,6 +420,33 @@ pub async fn sync_github_stats(
                 current_streak: streak_bonus_result.current_streak,
             };
             let _ = app.emit("streak-milestone", &milestone_event);
+
+            // Send OS notification for streak milestone if enabled
+            if let Some(ref settings) = user_settings {
+                if settings.notify_streak_milestone {
+                    let _ = send_notification(
+                        &app,
+                        settings,
+                        "ストリークマイルストーン達成！",
+                        &format!("{}日連続達成！", milestone_days),
+                    );
+                }
+            }
+        }
+    }
+
+    // Send OS notification for streak update if enabled
+    if streak_result.is_some() {
+        if let Some(ref settings) = user_settings {
+            if settings.notify_streak_update {
+                let current_streak = streak_bonus_result.current_streak;
+                let _ = send_notification(
+                    &app,
+                    settings,
+                    "ストリーク更新",
+                    &format!("現在のストリーク: {}日", current_streak),
+                );
+            }
         }
     }
 
@@ -445,6 +504,18 @@ pub async fn sync_github_stats(
                 icon: badge_info.icon.clone(),
             };
             let _ = app.emit("badge-earned", &badge_event);
+
+            // Send OS notification for badge earned if enabled
+            if let Some(ref settings) = user_settings {
+                if settings.notify_badge_earned {
+                    let _ = send_notification(
+                        &app,
+                        settings,
+                        "バッジ獲得！",
+                        &format!("{} を獲得しました", badge_info.name),
+                    );
+                }
+            }
 
             new_badges.push(badge_info);
         }

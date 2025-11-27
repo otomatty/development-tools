@@ -3,6 +3,7 @@ mod commands;
 mod database;
 mod github;
 mod types;
+mod utils;
 
 use tauri::Manager;
 
@@ -39,6 +40,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Initialize app state
             let runtime =
