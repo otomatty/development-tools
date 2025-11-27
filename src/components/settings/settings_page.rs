@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use std::collections::HashSet;
 
-use crate::components::settings::{AccountSettings, NotificationSettings};
+use crate::components::settings::{AccountSettings, NotificationSettings, SyncSettings};
 use crate::types::{AppPage, AuthState};
 
 /// Settings section enum
@@ -130,15 +130,14 @@ pub fn SettingsPage(
                     <NotificationSettings />
                 </AccordionSection>
 
-                // Sync Settings Section (placeholder)
+                // Sync Settings Section
                 <AccordionSection
                     title="同期設定".to_string()
                     is_expanded=sync_expanded
                     toggle=move || toggle_section(SettingsSection::Sync)
+                    max_height="1000px"
                 >
-                    <div class="text-dt-text-sub">
-                        "Coming soon..."
-                    </div>
+                    <SyncSettings />
                 </AccordionSection>
 
                 // Appearance Settings Section (placeholder)
