@@ -83,24 +83,44 @@ pub fn NotificationSettings() -> impl IntoView {
         }
     };
 
-    // Auto-save when settings change
+    // Auto-save when settings change with debouncing
+    let (timeout_id, set_timeout_id) = signal(None::<i32>);
     Effect::new(move |_| {
         let current_settings = settings.get();
         if current_settings.is_some() && !loading.get() {
+            // Clear previous timeout if exists
+            if let Some(id) = timeout_id.get() {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.clear_timeout_with_handle(id);
+                }
+            }
+            
             // Debounce: save after 500ms of no changes
+            let set_timeout_id_clone = set_timeout_id.clone();
             let closure = wasm_bindgen::closure::Closure::once(move || {
                 if let Some(current_settings) = settings.get() {
                     let update_request = UpdateSettingsRequest::from(&current_settings);
+                    let set_error = set_error.clone();
                     spawn_local(async move {
-                        let _ = tauri_api::update_settings(&update_request).await;
+                        match tauri_api::update_settings(&update_request).await {
+                            Ok(_) => {
+                                // Success - settings saved silently
+                            }
+                            Err(e) => {
+                                web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
+                                set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
+                            }
+                        }
                     });
                 }
+                set_timeout_id_clone.set(None);
             });
             if let Some(window) = web_sys::window() {
-                let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    closure.as_ref().dyn_ref::<js_sys::Function>().unwrap(),
+                let id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
                     500,
-                );
+                ).expect("Failed to set timeout");
+                set_timeout_id.set(Some(id));
                 closure.forget();
             }
         }

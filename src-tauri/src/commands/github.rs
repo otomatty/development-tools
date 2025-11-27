@@ -364,11 +364,17 @@ pub async fn sync_github_stats(
     };
 
     // Get user settings for notification preferences
-    let user_settings = state
+    let user_settings = match state
         .db
         .get_or_create_user_settings(user.id)
         .await
-        .ok();
+    {
+        Ok(settings) => Some(settings),
+        Err(e) => {
+            eprintln!("Failed to get or create user settings: {}", e);
+            None
+        }
+    };
 
     // Emit XP gained event for frontend and send OS notification if enabled
     if total_xp_gained > 0 {
@@ -386,12 +392,14 @@ pub async fn sync_github_stats(
         // Send OS notification for XP gain if enabled
         if let Some(ref settings) = user_settings {
             if settings.notify_xp_gain {
-                let _ = send_notification(
+                if let Err(e) = send_notification(
                     &app,
                     settings,
                     "XP獲得！",
                     &format!("{} XPを獲得しました", total_xp_gained),
-                );
+                ) {
+                    eprintln!("Failed to send XP gain notification: {}", e);
+                }
             }
         }
 
@@ -402,12 +410,14 @@ pub async fn sync_github_stats(
             // Send OS notification for level up if enabled
             if let Some(ref settings) = user_settings {
                 if settings.notify_level_up {
-                    let _ = send_notification(
+                    if let Err(e) = send_notification(
                         &app,
                         settings,
                         "レベルアップ！",
                         &format!("レベル {} に上がりました！", new_level),
-                    );
+                    ) {
+                        eprintln!("Failed to send level up notification: {}", e);
+                    }
                 }
             }
         }
@@ -424,28 +434,35 @@ pub async fn sync_github_stats(
             // Send OS notification for streak milestone if enabled
             if let Some(ref settings) = user_settings {
                 if settings.notify_streak_milestone {
-                    let _ = send_notification(
+                    if let Err(e) = send_notification(
                         &app,
                         settings,
                         "ストリークマイルストーン達成！",
                         &format!("{}日連続達成！", milestone_days),
-                    );
+                    ) {
+                        eprintln!("Failed to send streak milestone notification: {}", e);
+                    }
                 }
             }
         }
     }
 
-    // Send OS notification for streak update if enabled
+    // Send OS notification for streak update if enabled, but only if streak value changed
     if streak_result.is_some() {
-        if let Some(ref settings) = user_settings {
-            if settings.notify_streak_update {
-                let current_streak = streak_bonus_result.current_streak;
-                let _ = send_notification(
-                    &app,
-                    settings,
-                    "ストリーク更新",
-                    &format!("現在のストリーク: {}日", current_streak),
-                );
+        let previous_streak = old_streak;
+        let current_streak = streak_bonus_result.current_streak;
+        if previous_streak != current_streak {
+            if let Some(ref settings) = user_settings {
+                if settings.notify_streak_update {
+                    if let Err(e) = send_notification(
+                        &app,
+                        settings,
+                        "ストリーク更新",
+                        &format!("現在のストリーク: {}日", current_streak),
+                    ) {
+                        eprintln!("Failed to send streak update notification: {}", e);
+                    }
+                }
             }
         }
     }
@@ -508,12 +525,14 @@ pub async fn sync_github_stats(
             // Send OS notification for badge earned if enabled
             if let Some(ref settings) = user_settings {
                 if settings.notify_badge_earned {
-                    let _ = send_notification(
+                    if let Err(e) = send_notification(
                         &app,
                         settings,
                         "バッジ獲得！",
                         &format!("{} を獲得しました", badge_info.name),
-                    );
+                    ) {
+                        eprintln!("Failed to send badge earned notification: {}", e);
+                    }
                 }
             }
 
