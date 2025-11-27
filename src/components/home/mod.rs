@@ -14,7 +14,7 @@ pub use profile_card::ProfileCard;
 pub use stats_display::StatsDisplay;
 pub use contribution_graph::ContributionGraph;
 pub use badge_grid::BadgeGrid;
-pub use xp_notification::{BadgeNotification, LevelUpModal, MultipleBadgesNotification, XpNotification};
+pub use xp_notification::{LevelUpModal, MultipleBadgesNotification, XpNotification};
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -23,7 +23,87 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::tauri_api;
-use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, UserStats, XpGainedEvent};
+use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, NotificationMethod, UserSettings, UserStats, SyncResult, XpGainedEvent};
+
+/// Handle sync result notifications
+/// 
+/// Shows app-internal notifications based on sync result and notification settings.
+/// This function centralizes the notification logic to avoid duplication.
+fn handle_sync_result_notifications(
+    sync_result: &SyncResult,
+    notification_settings: ReadSignal<Option<UserSettings>>,
+    set_xp_event: WriteSignal<Option<XpGainedEvent>>,
+    set_level_up_event: WriteSignal<Option<XpGainedEvent>>,
+    set_new_badges_event: WriteSignal<Vec<NewBadgeInfo>>,
+) {
+    // Show notification if XP gained (check notification settings)
+    if sync_result.xp_gained > 0 {
+        let should_show_app_notification = notification_settings.get()
+            .map(|s| {
+                let method = NotificationMethod::from_str(&s.notification_method);
+                method != NotificationMethod::None && method != NotificationMethod::OsOnly
+            })
+            .unwrap_or(true); // Default to showing if settings not loaded
+        
+        if should_show_app_notification {
+            let event = XpGainedEvent {
+                xp_gained: sync_result.xp_gained,
+                total_xp: sync_result.user_stats.total_xp as u32,
+                old_level: sync_result.old_level,
+                new_level: sync_result.new_level,
+                level_up: sync_result.level_up,
+                xp_breakdown: sync_result.xp_breakdown.clone(),
+                streak_bonus: sync_result.streak_bonus.clone(),
+            };
+            
+            if sync_result.level_up {
+                // Check if level up notifications are enabled
+                let should_show_level_up = notification_settings.get()
+                    .map(|s| s.notify_level_up)
+                    .unwrap_or(true);
+                
+                if should_show_level_up {
+                    set_level_up_event.set(Some(event));
+                }
+            } else {
+                // Check if XP gain notifications are enabled
+                let should_show_xp = notification_settings.get()
+                    .map(|s| s.notify_xp_gain)
+                    .unwrap_or(true);
+                
+                if should_show_xp {
+                    set_xp_event.set(Some(event));
+                    
+                    // Auto-hide after 5 seconds
+                    if let Some(window) = web_sys::window() {
+                        let closure = wasm_bindgen::closure::Closure::once(move || {
+                            set_xp_event.set(None);
+                        });
+                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            closure.as_ref().unchecked_ref(),
+                            5000,
+                        );
+                        closure.forget();
+                    }
+                }
+            }
+        }
+    }
+    
+    // Show badge notifications if any (check notification settings)
+    if !sync_result.new_badges.is_empty() {
+        let should_show_badge_notification = notification_settings.get()
+            .map(|s| {
+                let method = NotificationMethod::from_str(&s.notification_method);
+                (method != NotificationMethod::None && method != NotificationMethod::OsOnly) && s.notify_badge_earned
+            })
+            .unwrap_or(true); // Default to showing if settings not loaded
+        
+        if should_show_badge_notification {
+            set_new_badges_event.set(sync_result.new_badges.clone());
+        }
+    }
+}
 
 /// Home page component
 #[component]
@@ -46,6 +126,9 @@ pub fn HomePage(
     
     // Badge notification state
     let (new_badges_event, set_new_badges_event) = signal(Vec::<NewBadgeInfo>::new());
+    
+    // Notification settings
+    let (notification_settings, set_notification_settings) = signal(Option::<UserSettings>::None);
     
     // Auto-sync state
     let (auto_sync_enabled, set_auto_sync_enabled) = signal(true);
@@ -81,8 +164,17 @@ pub fn HomePage(
             Ok(state) => {
                 set_auth_state.set(state.clone());
                 
-                // If logged in, load additional data
+                // If logged in, load additional data and settings
                 if state.is_logged_in {
+                    // Load notification settings
+                    match tauri_api::get_settings().await {
+                        Ok(settings) => set_notification_settings.set(Some(settings)),
+                        Err(e) => {
+                            web_sys::console::error_1(&format!("Failed to load notification settings: {}", e).into());
+                            set_error.set(Some(format!("通知設定の読み込みに失敗しました: {}", e)));
+                        }
+                    }
+                    
                     load_user_data(
                         set_github_stats,
                         set_level_info,
@@ -147,39 +239,14 @@ pub fn HomePage(
                                 );
                                 set_last_sync_time.set(Some(time_str));
                                 
-                                // Show notification if XP gained
-                                if sync_result.xp_gained > 0 {
-                                    let event = XpGainedEvent {
-                                        xp_gained: sync_result.xp_gained,
-                                        total_xp: sync_result.user_stats.total_xp as u32,
-                                        old_level: sync_result.old_level,
-                                        new_level: sync_result.new_level,
-                                        level_up: sync_result.level_up,
-                                        xp_breakdown: sync_result.xp_breakdown,
-                                        streak_bonus: sync_result.streak_bonus,
-                                    };
-                                    
-                                    if sync_result.level_up {
-                                        set_level_up_event.set(Some(event.clone()));
-                                    } else {
-                                        set_xp_event.set(Some(event));
-                                        
-                                        // Auto-hide after 5 seconds
-                                        let closure = wasm_bindgen::closure::Closure::once(move || {
-                                            set_xp_event.set(None);
-                                        });
-                                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                                            closure.as_ref().unchecked_ref(),
-                                            5000,
-                                        );
-                                        closure.forget();
-                                    }
-                                }
-                                
-                                // Show badge notifications if any
-                                if !sync_result.new_badges.is_empty() {
-                                    set_new_badges_event.set(sync_result.new_badges);
-                                }
+                                // Handle notifications based on sync result
+                                handle_sync_result_notifications(
+                                    &sync_result,
+                                    notification_settings,
+                                    set_xp_event,
+                                    set_level_up_event,
+                                    set_new_badges_event,
+                                );
                                 
                                 // Reload level info and badges
                                 if let Ok(info) = tauri_api::get_level_info().await {
@@ -380,41 +447,16 @@ pub fn HomePage(
                     // Update user stats from sync result
                     set_user_stats.set(Some(sync_result.user_stats.clone()));
                     
-                    // Show XP notification if XP was gained
-                    if sync_result.xp_gained > 0 {
-                        let event = XpGainedEvent {
-                            xp_gained: sync_result.xp_gained,
-                            total_xp: sync_result.user_stats.total_xp as u32,
-                            old_level: sync_result.old_level,
-                            new_level: sync_result.new_level,
-                            level_up: sync_result.level_up,
-                            xp_breakdown: sync_result.xp_breakdown,
-                            streak_bonus: sync_result.streak_bonus,
-                        };
-                        
-                        if sync_result.level_up {
-                            set_level_up_event.set(Some(event.clone()));
-                        } else {
-                            set_xp_event.set(Some(event));
-                            
-                            // Auto-hide XP notification after 5 seconds using web_sys
-                            if let Some(window) = web_sys::window() {
-                                let closure = wasm_bindgen::closure::Closure::once(move || {
-                                    set_xp_event.set(None);
-                                });
-                                let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                                    closure.as_ref().unchecked_ref(),
-                                    5000,
-                                );
-                                closure.forget(); // Prevent closure from being dropped
-                            }
-                        }
-                    }
+                    // Note: Notification settings are loaded on mount, no need to reload here
                     
-                    // Show badge notifications if any
-                    if !sync_result.new_badges.is_empty() {
-                        set_new_badges_event.set(sync_result.new_badges);
-                    }
+                    // Handle notifications based on sync result
+                    handle_sync_result_notifications(
+                        &sync_result,
+                        notification_settings,
+                        set_xp_event,
+                        set_level_up_event,
+                        set_new_badges_event,
+                    );
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Failed to sync: {}", e).into());
