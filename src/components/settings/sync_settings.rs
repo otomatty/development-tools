@@ -9,6 +9,16 @@ use wasm_bindgen_futures::spawn_local;
 use crate::tauri_api;
 use crate::types::{UpdateSettingsRequest, UserSettings, SyncIntervalOption};
 
+/// Helper to clear a timeout handle stored in a signal
+fn clear_timeout_signal(handle_signal: ReadSignal<Option<i32>>, set_handle_signal: WriteSignal<Option<i32>>) {
+    if let Some(id) = handle_signal.get() {
+        if let Some(window) = web_sys::window() {
+            window.clear_timeout_with_handle(id);
+        }
+        set_handle_signal.set(None);
+    }
+}
+
 /// Sync settings component
 #[component]
 pub fn SyncSettings() -> impl IntoView {
@@ -19,44 +29,46 @@ pub fn SyncSettings() -> impl IntoView {
     let (error, set_error) = signal(None::<String>);
     let (success_message, set_success_message) = signal(None::<String>);
     let (last_sync_time, set_last_sync_time) = signal(None::<String>);
+    
+    // Track initial load to avoid triggering auto-save on first load
+    let (initial_load_complete, set_initial_load_complete) = signal(false);
+    
+    // Store timeout handles for cleanup (using signals for timeout IDs)
+    let (debounce_handle, set_debounce_handle) = signal(Option::<i32>::None);
+    let (success_msg_handle, set_success_msg_handle) = signal(Option::<i32>::None);
 
-    // Load settings and sync intervals on mount
-    Effect::new(move |_| {
-        set_loading.set(true);
-        set_error.set(None);
-        set_success_message.set(None);
-
-        spawn_local(async move {
-            // Load sync intervals from backend
-            match tauri_api::get_sync_intervals().await {
-                Ok(intervals) => {
-                    set_sync_intervals.set(intervals);
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Failed to load sync intervals: {}", e).into());
-                    // Use fallback intervals
-                    set_sync_intervals.set(vec![
-                        SyncIntervalOption { value: 5, label: "5分".to_string() },
-                        SyncIntervalOption { value: 15, label: "15分".to_string() },
-                        SyncIntervalOption { value: 30, label: "30分".to_string() },
-                        SyncIntervalOption { value: 60, label: "1時間".to_string() },
-                        SyncIntervalOption { value: 180, label: "3時間".to_string() },
-                        SyncIntervalOption { value: 0, label: "手動のみ".to_string() },
-                    ]);
-                }
+    // Load settings and sync intervals on mount (spawn_local, not Effect)
+    spawn_local(async move {
+        // Load sync intervals from backend
+        match tauri_api::get_sync_intervals().await {
+            Ok(intervals) => {
+                set_sync_intervals.set(intervals);
             }
-
-            // Load user settings
-            match tauri_api::get_settings().await {
-                Ok(loaded_settings) => {
-                    set_settings.set(Some(loaded_settings));
-                }
-                Err(e) => {
-                    set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
-                }
+            Err(e) => {
+                web_sys::console::error_1(&format!("Failed to load sync intervals: {}", e).into());
+                // Use fallback intervals
+                set_sync_intervals.set(vec![
+                    SyncIntervalOption { value: 5, label: "5分".to_string() },
+                    SyncIntervalOption { value: 15, label: "15分".to_string() },
+                    SyncIntervalOption { value: 30, label: "30分".to_string() },
+                    SyncIntervalOption { value: 60, label: "1時間".to_string() },
+                    SyncIntervalOption { value: 180, label: "3時間".to_string() },
+                    SyncIntervalOption { value: 0, label: "手動のみ".to_string() },
+                ]);
             }
-            set_loading.set(false);
-        });
+        }
+
+        // Load user settings
+        match tauri_api::get_settings().await {
+            Ok(loaded_settings) => {
+                set_settings.set(Some(loaded_settings));
+            }
+            Err(e) => {
+                set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
+            }
+        }
+        set_loading.set(false);
+        set_initial_load_complete.set(true);
     });
 
     // Update sync interval
@@ -88,6 +100,9 @@ pub fn SyncSettings() -> impl IntoView {
         set_syncing.set(true);
         set_error.set(None);
         set_success_message.set(None);
+        
+        // Clear any existing success message timeout
+        clear_timeout_signal(success_msg_handle, set_success_msg_handle);
 
         spawn_local(async move {
             match tauri_api::sync_github_stats().await {
@@ -116,11 +131,14 @@ pub fn SyncSettings() -> impl IntoView {
                     if let Some(window) = web_sys::window() {
                         let closure = wasm_bindgen::closure::Closure::once(move || {
                             set_success_message.set(None);
+                            set_success_msg_handle.set(None);
                         });
-                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                        if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
                             closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
                             3000,
-                        );
+                        ) {
+                            set_success_msg_handle.set(Some(id));
+                        }
                         closure.forget();
                     }
                 }
@@ -133,46 +151,54 @@ pub fn SyncSettings() -> impl IntoView {
     };
 
     // Auto-save when settings change with debouncing
-    let (timeout_id, set_timeout_id) = signal(None::<i32>);
     Effect::new(move |_| {
+        // Capture current settings value BEFORE creating the closure to avoid stale value
         let current_settings = settings.get();
-        if current_settings.is_some() && !loading.get() {
-            // Clear previous timeout if exists
-            if let Some(id) = timeout_id.get() {
-                if let Some(window) = web_sys::window() {
-                    let _ = window.clear_timeout_with_handle(id);
-                }
-            }
-            
-            // Debounce: save after 500ms of no changes
-            let set_timeout_id_clone = set_timeout_id.clone();
-            let closure = wasm_bindgen::closure::Closure::once(move || {
-                if let Some(current_settings) = settings.get() {
-                    let update_request = UpdateSettingsRequest::from(&current_settings);
-                    let set_error = set_error.clone();
-                    spawn_local(async move {
-                        match tauri_api::update_settings(&update_request).await {
-                            Ok(_) => {
-                                // Success - settings saved silently
-                            }
-                            Err(e) => {
-                                web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
-                                set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
-                            }
-                        }
-                    });
-                }
-                set_timeout_id_clone.set(None);
-            });
-            if let Some(window) = web_sys::window() {
-                let id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
-                    500,
-                ).expect("Failed to set timeout");
-                set_timeout_id.set(Some(id));
-                closure.forget();
-            }
+        let is_loading = loading.get();
+        let is_initial_load_complete = initial_load_complete.get();
+        
+        // Skip if settings are not loaded or initial load is not complete
+        if current_settings.is_none() || is_loading || !is_initial_load_complete {
+            return;
         }
+        
+        // Capture settings value for closure
+        let settings_to_save = current_settings.unwrap();
+        
+        // Clear previous timeout if exists
+        clear_timeout_signal(debounce_handle, set_debounce_handle);
+        
+        // Debounce: save after 500ms of no changes
+        if let Some(window) = web_sys::window() {
+            let closure = wasm_bindgen::closure::Closure::once(move || {
+                let update_request = UpdateSettingsRequest::from(&settings_to_save);
+                spawn_local(async move {
+                    match tauri_api::update_settings(&update_request).await {
+                        Ok(_) => {
+                            web_sys::console::log_1(&"Settings saved successfully".into());
+                        }
+                        Err(e) => {
+                            web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
+                            set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
+                        }
+                    }
+                });
+                set_debounce_handle.set(None);
+            });
+            if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                500,
+            ) {
+                set_debounce_handle.set(Some(id));
+            }
+            closure.forget();
+        }
+    });
+    
+    // Cleanup timeouts on component unmount
+    on_cleanup(move || {
+        clear_timeout_signal(debounce_handle, set_debounce_handle);
+        clear_timeout_signal(success_msg_handle, set_success_msg_handle);
     });
 
     view! {
@@ -208,16 +234,22 @@ pub fn SyncSettings() -> impl IntoView {
                         view! {
                             // Sync interval selection
                             <div class="space-y-3">
-                                <h3 class="text-lg font-gaming font-bold text-white">
+                                <h3 class="text-lg font-gaming font-bold text-white" id="sync-interval-label">
                                     "自動同期間隔"
                                 </h3>
                                 <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
                                     <select
                                         class="w-full px-4 py-3 bg-gm-bg-primary border border-gm-accent-cyan/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gm-accent-cyan/50 focus:border-gm-accent-cyan cursor-pointer appearance-none"
                                         style="background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2306b6d4' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E\"); background-position: right 0.75rem center; background-repeat: no-repeat; background-size: 1.5em 1.5em; padding-right: 2.5rem;"
+                                        aria-labelledby="sync-interval-label"
                                         on:change=move |ev| {
-                                            let value: i32 = event_target_value(&ev).parse().unwrap_or(60);
-                                            update_sync_interval(value);
+                                            match event_target_value(&ev).parse::<i32>() {
+                                                Ok(value) => update_sync_interval(value),
+                                                Err(e) => {
+                                                    web_sys::console::error_1(&format!("Failed to parse interval value: {}", e).into());
+                                                    // Keep current setting unchanged
+                                                }
+                                            }
                                         }
                                     >
                                         {intervals.iter().map(|interval| {
@@ -258,7 +290,7 @@ pub fn SyncSettings() -> impl IntoView {
                                     // Background sync toggle
                                     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
                                         <div class="flex-1">
-                                            <span class="text-white block">
+                                            <span class="text-white block" id="background-sync-label">
                                                 "バックグラウンド同期"
                                             </span>
                                             <span class="text-sm text-dt-text-sub">
@@ -274,6 +306,9 @@ pub fn SyncSettings() -> impl IntoView {
                                                     "bg-slate-600"
                                                 }
                                             )
+                                            role="switch"
+                                            aria-checked=move || current_settings.background_sync.to_string()
+                                            aria-labelledby="background-sync-label"
                                             on:click=toggle_background_sync
                                         >
                                             <span
@@ -288,7 +323,7 @@ pub fn SyncSettings() -> impl IntoView {
                                     // Sync on startup toggle
                                     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
                                         <div class="flex-1">
-                                            <span class="text-white block">
+                                            <span class="text-white block" id="sync-on-startup-label">
                                                 "起動時に同期"
                                             </span>
                                             <span class="text-sm text-dt-text-sub">
@@ -304,6 +339,9 @@ pub fn SyncSettings() -> impl IntoView {
                                                     "bg-slate-600"
                                                 }
                                             )
+                                            role="switch"
+                                            aria-checked=move || current_settings.sync_on_startup.to_string()
+                                            aria-labelledby="sync-on-startup-label"
                                             on:click=toggle_sync_on_startup
                                         >
                                             <span
@@ -339,6 +377,8 @@ pub fn SyncSettings() -> impl IntoView {
                                         class="w-full px-4 py-3 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-lg text-white font-gaming font-bold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                         on:click=on_manual_sync
                                         disabled=move || syncing.get()
+                                        aria-busy=move || syncing.get().to_string()
+                                        aria-label="GitHubの統計情報を今すぐ同期"
                                     >
                                         <span class=move || if syncing.get() { "animate-spin" } else { "" }>
                                             "🔄"

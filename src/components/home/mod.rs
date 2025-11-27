@@ -193,6 +193,15 @@ pub fn HomePage(
                                         );
                                         set_last_sync_time.set(Some(time_str));
                                         
+                                        // Handle notifications to provide consistent UX with other syncs
+                                        handle_sync_result_notifications(
+                                            &sync_result,
+                                            notification_settings,
+                                            set_xp_event,
+                                            set_level_up_event,
+                                            set_new_badges_event,
+                                        );
+                                        
                                         web_sys::console::log_1(&format!("Startup sync: Completed, XP gained: {}", sync_result.xp_gained).into());
                                     }
                                     Err(e) => {
@@ -233,20 +242,35 @@ pub fn HomePage(
     // Setup auto-sync timer - interval is determined by user settings
     {
         let auth_state = auth_state.clone();
-        let auto_sync_enabled = auto_sync_enabled.clone();
+        let _auto_sync_enabled = auto_sync_enabled.clone(); // Kept for potential future use
         let component_mounted = component_mounted_for_auto_sync;
         
         spawn_local(async move {
-            // Wait for initial settings to load (1 second)
-            if let Some(window) = web_sys::window() {
-                let promise = js_sys::Promise::new(&mut |resolve, _| {
-                    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                        &resolve,
-                        1000,
-                    );
-                });
-                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            // Poll for settings with timeout (max 5 seconds, check every 200ms)
+            let max_wait_ms = 5000;
+            let poll_interval_ms = 200;
+            let mut waited = 0;
+            
+            while notification_settings.get_untracked().is_none() && waited < max_wait_ms {
+                if !component_mounted.load(Ordering::SeqCst) {
+                    web_sys::console::log_1(&"Auto-sync: Component unmounted while waiting for settings".into());
+                    return;
+                }
+                if let Some(window) = web_sys::window() {
+                    let promise = js_sys::Promise::new(&mut |resolve, _| {
+                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            &resolve,
+                            poll_interval_ms,
+                        );
+                    });
+                    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                    waited += poll_interval_ms;
+                } else {
+                    break;
+                }
             }
+            
+            web_sys::console::log_1(&"Auto-sync: Settings loaded, starting timer loop.".into());
             
             // Auto-sync loop - runs based on user settings while component is mounted
             loop {
@@ -256,13 +280,13 @@ pub fn HomePage(
                     break;
                 }
                 
-                // Get current sync interval from settings
+                // Get current sync interval from settings (use saturating_mul to avoid overflow)
                 let sync_interval_ms = notification_settings.get_untracked()
                     .map(|s| {
                         if s.sync_interval_minutes == 0 {
                             0 // Manual only
                         } else {
-                            s.sync_interval_minutes * 60 * 1000 // Convert minutes to ms
+                            s.sync_interval_minutes.saturating_mul(60).saturating_mul(1000) // Convert minutes to ms safely
                         }
                     })
                     .unwrap_or(60 * 60 * 1000); // Default: 1 hour
@@ -285,14 +309,13 @@ pub fn HomePage(
                     // Use get_untracked() since we're in an async context outside reactive tracking
                     // This is intentional - we poll these values periodically, not reactively
                     let auth = auth_state.get_untracked();
-                    let enabled = auto_sync_enabled.get_untracked();
                     
                     // Check background_sync setting
                     let background_sync_enabled = notification_settings.get_untracked()
                         .map(|s| s.background_sync)
                         .unwrap_or(true);
                     
-                    if auth.is_logged_in && enabled && background_sync_enabled {
+                    if auth.is_logged_in && background_sync_enabled {
                         web_sys::console::log_1(&format!("Auto-sync: Syncing GitHub stats (interval: {}ms)...", sync_interval_ms).into());
                         
                         match tauri_api::sync_github_stats().await {
