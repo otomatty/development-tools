@@ -23,18 +23,25 @@ pub fn AppearanceSettings() -> impl IntoView {
     // Store timeout handle for cleanup
     let (debounce_handle, set_debounce_handle) = signal(Option::<i32>::None);
 
-    // Load settings on mount
-    spawn_local(async move {
-        match tauri_api::get_settings().await {
-            Ok(loaded_settings) => {
-                set_settings.set(Some(loaded_settings));
-            }
-            Err(e) => {
-                set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
-            }
+    // Load settings on mount (only once)
+    Effect::new(move |_| {
+        // Only load once
+        if initial_load_complete.get() {
+            return;
         }
-        set_loading.set(false);
-        set_initial_load_complete.set(true);
+        
+        spawn_local(async move {
+            match tauri_api::get_settings().await {
+                Ok(loaded_settings) => {
+                    set_settings.set(Some(loaded_settings));
+                }
+                Err(e) => {
+                    set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
+                }
+            }
+            set_loading.set(false);
+            set_initial_load_complete.set(true);
+        });
     });
 
     // Get animation context to update global state
@@ -54,14 +61,16 @@ pub fn AppearanceSettings() -> impl IntoView {
         }
     };
 
-    // Helper to clear a timeout handle
-    let clear_timeout = move || {
-        if let Some(id) = debounce_handle.get() {
-            if let Some(window) = web_sys::window() {
-                window.clear_timeout_with_handle(id);
+    // Helper to clear a timeout handle (uses untrack to avoid Effect dependency)
+    let clear_timeout_untracked = move || {
+        leptos::prelude::untrack(|| {
+            if let Some(id) = debounce_handle.get() {
+                if let Some(window) = web_sys::window() {
+                    window.clear_timeout_with_handle(id);
+                }
+                set_debounce_handle.set(None);
             }
-            set_debounce_handle.set(None);
-        }
+        });
     };
 
     // Auto-save when settings change with debouncing
@@ -78,44 +87,46 @@ pub fn AppearanceSettings() -> impl IntoView {
         // Capture settings value for closure
         let settings_to_save = current_settings.unwrap();
 
-        // Clear previous timeout if exists
-        clear_timeout();
+        // Clear previous timeout if exists (untracked to avoid dependency loop)
+        clear_timeout_untracked();
 
-        // Debounce: save after 500ms of no changes
-        if let Some(window) = web_sys::window() {
-            let closure = wasm_bindgen::closure::Closure::once(move || {
-                let update_request = UpdateSettingsRequest::from(&settings_to_save);
-                spawn_local(async move {
-                    match tauri_api::update_settings(&update_request).await {
-                        Ok(_) => {
-                            web_sys::console::log_1(&"Appearance settings saved successfully".into());
+        // Debounce: save after 500ms of no changes (untracked to avoid dependency loop)
+        leptos::prelude::untrack(|| {
+            if let Some(window) = web_sys::window() {
+                let closure = wasm_bindgen::closure::Closure::once(move || {
+                    let update_request = UpdateSettingsRequest::from(&settings_to_save);
+                    spawn_local(async move {
+                        match tauri_api::update_settings(&update_request).await {
+                            Ok(_) => {
+                                web_sys::console::log_1(&"Appearance settings saved successfully".into());
+                            }
+                            Err(e) => {
+                                web_sys::console::error_1(
+                                    &format!("Failed to save appearance settings: {}", e).into(),
+                                );
+                                set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
+                            }
                         }
-                        Err(e) => {
-                            web_sys::console::error_1(
-                                &format!("Failed to save appearance settings: {}", e).into(),
-                            );
-                            set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
-                        }
-                    }
+                    });
+                    set_debounce_handle.set(None);
                 });
-                set_debounce_handle.set(None);
-            });
-            if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                closure
-                    .as_ref()
-                    .dyn_ref::<js_sys::Function>()
-                    .expect("Closure should be a function"),
-                500,
-            ) {
-                set_debounce_handle.set(Some(id));
+                if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    closure
+                        .as_ref()
+                        .dyn_ref::<js_sys::Function>()
+                        .expect("Closure should be a function"),
+                    500,
+                ) {
+                    set_debounce_handle.set(Some(id));
+                }
+                closure.forget();
             }
-            closure.forget();
-        }
+        });
     });
 
     // Cleanup timeout on component unmount
     on_cleanup(move || {
-        clear_timeout();
+        clear_timeout_untracked();
     });
 
     view! {

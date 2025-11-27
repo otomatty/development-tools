@@ -16,13 +16,17 @@ pub fn NotificationSettings() -> impl IntoView {
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(None::<String>);
     let (success_message, set_success_message) = signal(None::<String>);
+    
+    // Track initial load to avoid triggering auto-save on first load
+    let (initial_load_complete, set_initial_load_complete) = signal(false);
 
-    // Load settings on mount
+    // Load settings on mount (only once)
     Effect::new(move |_| {
-        set_loading.set(true);
-        set_error.set(None);
-        set_success_message.set(None);
-
+        // Only load once
+        if initial_load_complete.get() {
+            return;
+        }
+        
         spawn_local(async move {
             match tauri_api::get_settings().await {
                 Ok(loaded_settings) => {
@@ -33,6 +37,7 @@ pub fn NotificationSettings() -> impl IntoView {
                 }
             }
             set_loading.set(false);
+            set_initial_load_complete.set(true);
         });
     });
 
@@ -83,28 +88,47 @@ pub fn NotificationSettings() -> impl IntoView {
         }
     };
 
-    // Auto-save when settings change with debouncing
+    // Store timeout handle for debouncing
     let (timeout_id, set_timeout_id) = signal(None::<i32>);
-    Effect::new(move |_| {
-        let current_settings = settings.get();
-        if current_settings.is_some() && !loading.get() {
-            // Clear previous timeout if exists
+    
+    // Helper to clear timeout (uses untrack to avoid Effect dependency)
+    let clear_timeout_untracked = move || {
+        leptos::prelude::untrack(|| {
             if let Some(id) = timeout_id.get() {
                 if let Some(window) = web_sys::window() {
                     let _ = window.clear_timeout_with_handle(id);
                 }
+                set_timeout_id.set(None);
             }
+        });
+    };
+    
+    // Auto-save when settings change with debouncing
+    Effect::new(move |_| {
+        let current_settings = settings.get();
+        let is_loading = loading.get();
+        let is_initial_load_complete = initial_load_complete.get();
+        
+        // Skip if settings are not loaded or initial load is not complete
+        if current_settings.is_none() || is_loading || !is_initial_load_complete {
+            return;
+        }
+        
+        // Capture settings value for closure
+        let settings_to_save = current_settings.unwrap();
+        
+        // Clear previous timeout if exists (untracked to avoid dependency loop)
+        clear_timeout_untracked();
             
-            // Debounce: save after 500ms of no changes
-            let set_timeout_id_clone = set_timeout_id.clone();
-            let closure = wasm_bindgen::closure::Closure::once(move || {
-                if let Some(current_settings) = settings.get() {
-                    let update_request = UpdateSettingsRequest::from(&current_settings);
-                    let set_error = set_error.clone();
+        // Debounce: save after 500ms of no changes (untracked to avoid dependency loop)
+        leptos::prelude::untrack(|| {
+            if let Some(window) = web_sys::window() {
+                let closure = wasm_bindgen::closure::Closure::once(move || {
+                    let update_request = UpdateSettingsRequest::from(&settings_to_save);
                     spawn_local(async move {
                         match tauri_api::update_settings(&update_request).await {
                             Ok(_) => {
-                                // Success - settings saved silently
+                                web_sys::console::log_1(&"Notification settings saved successfully".into());
                             }
                             Err(e) => {
                                 web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
@@ -112,18 +136,22 @@ pub fn NotificationSettings() -> impl IntoView {
                             }
                         }
                     });
-                }
-                set_timeout_id_clone.set(None);
-            });
-            if let Some(window) = web_sys::window() {
-                let id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    set_timeout_id.set(None);
+                });
+                if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
                     closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
                     500,
-                ).expect("Failed to set timeout");
-                set_timeout_id.set(Some(id));
+                ) {
+                    set_timeout_id.set(Some(id));
+                }
                 closure.forget();
             }
-        }
+        });
+    });
+    
+    // Cleanup timeout on component unmount
+    on_cleanup(move || {
+        clear_timeout_untracked();
     });
 
     view! {

@@ -9,14 +9,16 @@ use wasm_bindgen_futures::spawn_local;
 use crate::tauri_api;
 use crate::types::{UpdateSettingsRequest, UserSettings, SyncIntervalOption};
 
-/// Helper to clear a timeout handle stored in a signal
-fn clear_timeout_signal(handle_signal: ReadSignal<Option<i32>>, set_handle_signal: WriteSignal<Option<i32>>) {
-    if let Some(id) = handle_signal.get() {
-        if let Some(window) = web_sys::window() {
-            window.clear_timeout_with_handle(id);
+/// Helper to clear a timeout handle stored in a signal (uses untrack to avoid Effect dependency)
+fn clear_timeout_signal_untracked(handle_signal: ReadSignal<Option<i32>>, set_handle_signal: WriteSignal<Option<i32>>) {
+    leptos::prelude::untrack(|| {
+        if let Some(id) = handle_signal.get() {
+            if let Some(window) = web_sys::window() {
+                window.clear_timeout_with_handle(id);
+            }
+            set_handle_signal.set(None);
         }
-        set_handle_signal.set(None);
-    }
+    });
 }
 
 /// Sync settings component
@@ -37,38 +39,45 @@ pub fn SyncSettings() -> impl IntoView {
     let (debounce_handle, set_debounce_handle) = signal(Option::<i32>::None);
     let (success_msg_handle, set_success_msg_handle) = signal(Option::<i32>::None);
 
-    // Load settings and sync intervals on mount (spawn_local, not Effect)
-    spawn_local(async move {
-        // Load sync intervals from backend
-        match tauri_api::get_sync_intervals().await {
-            Ok(intervals) => {
-                set_sync_intervals.set(intervals);
-            }
-            Err(e) => {
-                web_sys::console::error_1(&format!("Failed to load sync intervals: {}", e).into());
-                // Use fallback intervals
-                set_sync_intervals.set(vec![
-                    SyncIntervalOption { value: 5, label: "5分".to_string() },
-                    SyncIntervalOption { value: 15, label: "15分".to_string() },
-                    SyncIntervalOption { value: 30, label: "30分".to_string() },
-                    SyncIntervalOption { value: 60, label: "1時間".to_string() },
-                    SyncIntervalOption { value: 180, label: "3時間".to_string() },
-                    SyncIntervalOption { value: 0, label: "手動のみ".to_string() },
-                ]);
-            }
+    // Load settings and sync intervals on mount (only once)
+    Effect::new(move |_| {
+        // Only load once
+        if initial_load_complete.get() {
+            return;
         }
+        
+        spawn_local(async move {
+            // Load sync intervals from backend
+            match tauri_api::get_sync_intervals().await {
+                Ok(intervals) => {
+                    set_sync_intervals.set(intervals);
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Failed to load sync intervals: {}", e).into());
+                    // Use fallback intervals
+                    set_sync_intervals.set(vec![
+                        SyncIntervalOption { value: 5, label: "5分".to_string() },
+                        SyncIntervalOption { value: 15, label: "15分".to_string() },
+                        SyncIntervalOption { value: 30, label: "30分".to_string() },
+                        SyncIntervalOption { value: 60, label: "1時間".to_string() },
+                        SyncIntervalOption { value: 180, label: "3時間".to_string() },
+                        SyncIntervalOption { value: 0, label: "手動のみ".to_string() },
+                    ]);
+                }
+            }
 
-        // Load user settings
-        match tauri_api::get_settings().await {
-            Ok(loaded_settings) => {
-                set_settings.set(Some(loaded_settings));
+            // Load user settings
+            match tauri_api::get_settings().await {
+                Ok(loaded_settings) => {
+                    set_settings.set(Some(loaded_settings));
+                }
+                Err(e) => {
+                    set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
+                }
             }
-            Err(e) => {
-                set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
-            }
-        }
-        set_loading.set(false);
-        set_initial_load_complete.set(true);
+            set_loading.set(false);
+            set_initial_load_complete.set(true);
+        });
     });
 
     // Update sync interval
@@ -102,7 +111,7 @@ pub fn SyncSettings() -> impl IntoView {
         set_success_message.set(None);
         
         // Clear any existing success message timeout
-        clear_timeout_signal(success_msg_handle, set_success_msg_handle);
+        clear_timeout_signal_untracked(success_msg_handle, set_success_msg_handle);
 
         spawn_local(async move {
             match tauri_api::sync_github_stats().await {
@@ -165,40 +174,42 @@ pub fn SyncSettings() -> impl IntoView {
         // Capture settings value for closure
         let settings_to_save = current_settings.unwrap();
         
-        // Clear previous timeout if exists
-        clear_timeout_signal(debounce_handle, set_debounce_handle);
+        // Clear previous timeout if exists (untracked to avoid dependency loop)
+        clear_timeout_signal_untracked(debounce_handle, set_debounce_handle);
         
-        // Debounce: save after 500ms of no changes
-        if let Some(window) = web_sys::window() {
-            let closure = wasm_bindgen::closure::Closure::once(move || {
-                let update_request = UpdateSettingsRequest::from(&settings_to_save);
-                spawn_local(async move {
-                    match tauri_api::update_settings(&update_request).await {
-                        Ok(_) => {
-                            web_sys::console::log_1(&"Settings saved successfully".into());
+        // Debounce: save after 500ms of no changes (untracked to avoid dependency loop)
+        leptos::prelude::untrack(|| {
+            if let Some(window) = web_sys::window() {
+                let closure = wasm_bindgen::closure::Closure::once(move || {
+                    let update_request = UpdateSettingsRequest::from(&settings_to_save);
+                    spawn_local(async move {
+                        match tauri_api::update_settings(&update_request).await {
+                            Ok(_) => {
+                                web_sys::console::log_1(&"Settings saved successfully".into());
+                            }
+                            Err(e) => {
+                                web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
+                                set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
+                            }
                         }
-                        Err(e) => {
-                            web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
-                            set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
-                        }
-                    }
+                    });
+                    set_debounce_handle.set(None);
                 });
-                set_debounce_handle.set(None);
-            });
-            if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
-                500,
-            ) {
-                set_debounce_handle.set(Some(id));
+                if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                    500,
+                ) {
+                    set_debounce_handle.set(Some(id));
+                }
+                closure.forget();
             }
-            closure.forget();
-        }
+        });
     });
     
     // Cleanup timeouts on component unmount
     on_cleanup(move || {
-        clear_timeout_signal(debounce_handle, set_debounce_handle);
-        clear_timeout_signal(success_msg_handle, set_success_msg_handle);
+        clear_timeout_signal_untracked(debounce_handle, set_debounce_handle);
+        clear_timeout_signal_untracked(success_msg_handle, set_success_msg_handle);
     });
 
     view! {

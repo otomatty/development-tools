@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use std::collections::HashSet;
 
-use crate::components::settings::{AccountSettings, AppearanceSettings, NotificationSettings, SyncSettings};
+use crate::components::settings::{AccountSettings, AppearanceSettings, DataManagement, NotificationSettings, SyncSettings};
 use crate::types::{AppPage, AuthState};
 
 /// Settings section enum
@@ -150,15 +150,14 @@ pub fn SettingsPage(
                     <AppearanceSettings />
                 </AccordionSection>
 
-                // Data Management Section (placeholder)
+                // Data Management Section
                 <AccordionSection
                     title="データ管理".to_string()
                     is_expanded=data_management_expanded
                     toggle=move || toggle_section(SettingsSection::DataManagement)
+                    max_height="1200px"
                 >
-                    <div class="text-dt-text-sub">
-                        "Coming soon..."
-                    </div>
+                    <DataManagement />
                 </AccordionSection>
 
                 // App Info Section (placeholder)
