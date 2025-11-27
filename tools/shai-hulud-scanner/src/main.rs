@@ -6,9 +6,11 @@
 //! - https://codebook.machinarecord.com/threatreport/silobreaker-cyber-alert/42718/
 //! - https://github.com/wiz-sec-public/wiz-research-iocs/blob/main/reports/shai-hulud-2-packages.csv
 
+mod additional_scanner;
 mod cli;
 mod csv_loader;
 mod detector;
+mod extension_scanner;
 mod global_scanner;
 mod output;
 mod parsers;
@@ -23,9 +25,11 @@ use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 
+use additional_scanner::scan_additional_locations;
 use cli::Args;
 use csv_loader::load_affected_packages;
 use detector::detect_affected_packages;
+use extension_scanner::scan_ide_extensions;
 use global_scanner::scan_global_packages;
 use output::{output_results, print_summary};
 use scanner::scan_directory;
@@ -77,6 +81,26 @@ fn main() -> Result<()> {
         );
         found_packages.extend(global_packages);
     }
+
+    // Scan IDE extensions (VSCode and Cursor)
+    println!("\n{} Scanning IDE extensions (VSCode/Cursor)...", "→".blue());
+    let extension_packages = scan_ide_extensions()?;
+    println!(
+        "{} Found {} packages in IDE extensions",
+        "✓".green(),
+        extension_packages.len()
+    );
+    found_packages.extend(extension_packages);
+
+    // Scan additional locations (Electron apps, Node version managers, etc.)
+    println!("\n{} Scanning additional locations...", "→".blue());
+    let additional_packages = scan_additional_locations()?;
+    println!(
+        "{} Found {} packages in additional locations",
+        "✓".green(),
+        additional_packages.len()
+    );
+    found_packages.extend(additional_packages);
 
     // Detect affected packages
     let detections = detect_affected_packages(&found_packages, &affected_map);
