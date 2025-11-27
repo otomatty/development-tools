@@ -5,6 +5,8 @@ edition = "2021"
 description = "A security tool to detect npm packages affected by the Shai-Hulud supply chain attack"
 authors = ["For All Learners Team"]
 
+[workspace]
+
 [dependencies]
 # CSV parsing
 csv = "1.3"

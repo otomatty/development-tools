@@ -142,6 +142,18 @@ pub async fn logout() -> Result<(), String> {
     }
 }
 
+/// 現在のトークンの有効性を確認
+/// 
+/// 注意: GitHub Device Flowのトークンは期限切れしませんが、
+/// ユーザーがGitHubで手動で無効化した場合に検証できます。
+pub async fn validate_token() -> Result<bool, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("validate_token", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to validate token: {:?}", e))
+}
+
 /// システムのデフォルトブラウザでURLを開く
 pub async fn open_url(url: &str) -> Result<(), String> {
     #[derive(serde::Serialize)]

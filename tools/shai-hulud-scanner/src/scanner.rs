@@ -23,13 +23,18 @@ const SKIP_DIRS: &[&str] = &[
     ".npm",
     ".yarn",
     ".pnpm-store",
-    "Library",
     "Applications",
     ".Trash",
     "Pictures",
     "Music",
     "Movies",
     "Downloads",
+    // Skip Library subdirectories except Application Support
+    "Caches",
+    "Logs",
+    "Preferences",
+    "Saved Application State",
+    "WebKit",
 ];
 
 /// Scan directory for package files
@@ -42,10 +47,13 @@ pub fn scan_directory(dir: &Path) -> Result<Vec<FoundPackage>> {
         .max_depth(10) // Limit depth to avoid too deep recursion
         .into_iter()
         .filter_entry(|e| {
-            e.file_name()
-                .to_str()
-                .map(|s| !skip_dirs.contains(s) && !s.starts_with('.'))
-                .unwrap_or(true)
+            let file_name = e.file_name().to_str().unwrap_or("");
+            // Skip dot-prefixed directories except .vscode and .cursor
+            if file_name.starts_with('.') && file_name != ".vscode" && file_name != ".cursor" {
+                return false;
+            }
+            // Skip directories in SKIP_DIRS
+            !skip_dirs.contains(&file_name)
         })
     {
         let entry = match entry {

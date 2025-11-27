@@ -35,6 +35,14 @@ pub enum PackageSource {
     GlobalYarn, // yarn global
     GlobalPnpm, // pnpm global
     GlobalBun,  // bun global
+    VSCodeExtension, // VSCode extension
+    CursorExtension,  // Cursor extension
+    ElectronApp, // Electron application
+    NodeVersionManager, // Node.js version manager (nvm, n, fnm, volta)
+    OtherIDE, // Other IDE extensions (WebStorm, IntelliJ, Atom, etc.)
+    NpmCache, // npm cache directory
+    CICD, // CI/CD tool local cache
+    SystemPackageManager, // System package manager (Homebrew, apt, yum)
 }
 
 impl std::fmt::Display for PackageSource {
@@ -45,6 +53,14 @@ impl std::fmt::Display for PackageSource {
             PackageSource::GlobalYarn => write!(f, "yarn (global)"),
             PackageSource::GlobalPnpm => write!(f, "pnpm (global)"),
             PackageSource::GlobalBun => write!(f, "bun (global)"),
+            PackageSource::VSCodeExtension => write!(f, "VSCode extension"),
+            PackageSource::CursorExtension => write!(f, "Cursor extension"),
+            PackageSource::ElectronApp => write!(f, "Electron app"),
+            PackageSource::NodeVersionManager => write!(f, "Node version manager"),
+            PackageSource::OtherIDE => write!(f, "Other IDE extension"),
+            PackageSource::NpmCache => write!(f, "npm cache"),
+            PackageSource::CICD => write!(f, "CI/CD cache"),
+            PackageSource::SystemPackageManager => write!(f, "System package manager"),
         }
     }
 }

@@ -126,6 +126,7 @@ fn scan_global_dir(dir: &PathBuf, source: PackageSource) -> Result<Vec<FoundPack
         PackageSource::GlobalPnpm => "pnpm global",
         PackageSource::GlobalBun => "bun global",
         PackageSource::Local => "local",
+        _ => "package.json", // Other sources are handled elsewhere
     };
 
     for entry in fs::read_dir(dir).into_iter().flatten() {

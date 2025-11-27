@@ -7,6 +7,12 @@ A comprehensive security tool to detect npm packages affected by the **Shai-Hulu
 - ✅ **Full PC scan by default** - Scans your entire home directory
 - ✅ **Multiple package managers** - npm, yarn, pnpm, bun
 - ✅ **Global packages detection** - Scans globally installed packages
+- ✅ **IDE extensions scanning** - Scans VSCode, Cursor, WebStorm, IntelliJ IDEA, Atom, Sublime Text
+- ✅ **Electron applications** - Scans Slack, Discord, Notion, Figma, and other Electron apps
+- ✅ **Node.js version managers** - Scans nvm, n, fnm, volta installations
+- ✅ **CI/CD tool caches** - Scans GitHub Actions, CircleCI, GitLab Runner caches
+- ✅ **System package managers** - Scans Homebrew, apt, yum installations
+- ✅ **npm cache** - Scans npm cache directory
 - ✅ **Suspicious file detection** - Detects malicious binaries and scripts
 - ✅ **All lockfile formats** - package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lock
 - ✅ **Offline mode** - Cache CSV for offline scanning
@@ -121,6 +127,54 @@ Options:
 | pnpm | `pnpm root -g` | ✅ |
 | bun | `~/.bun/install/global/` | ✅ |
 
+### IDE Extensions
+
+| IDE | Location | Supported |
+|-----|----------|-----------|
+| VSCode | macOS: `~/Library/Application Support/Code/User/extensions/`<br>Linux: `~/.vscode/extensions/`<br>Windows: `%APPDATA%\Code\User\extensions\` | ✅ |
+| Cursor | macOS: `~/Library/Application Support/Cursor/User/extensions/`<br>Linux: `~/.cursor/extensions/`<br>Windows: `%APPDATA%\Cursor\User\extensions\` | ✅ |
+| WebStorm/IntelliJ IDEA | macOS: `~/Library/Application Support/JetBrains/{IDE}/plugins/`<br>Linux: `~/.IntelliJIdea{version}/config/plugins/`<br>Windows: `%APPDATA%\JetBrains\{IDE}\plugins\` | ✅ |
+| Atom | macOS/Linux: `~/.atom/packages/`<br>Windows: `%APPDATA%\atom\packages\` | ✅ |
+| Sublime Text | macOS: `~/Library/Application Support/Sublime Text/Packages/`<br>Linux: `~/.config/sublime-text/Packages/`<br>Windows: `%APPDATA%\Sublime Text\Packages\` | ✅ |
+
+### Electron Applications
+
+The tool scans common Electron applications for npm packages:
+
+| Application | Location |
+|-------------|----------|
+| Slack, Discord, Notion, Figma, Spotify, WhatsApp, Telegram, Signal, Microsoft Teams, Zoom, Postman, Insomnia, Hyper, Atom, Code, Cursor | macOS: `~/Library/Application Support/{AppName}/`<br>Windows: `%APPDATA%\{AppName}\`<br>Linux: `~/.config/{AppName}/` |
+
+### Node.js Version Managers
+
+| Manager | Location | Supported |
+|---------|----------|-----------|
+| nvm | `~/.nvm/versions/node/{version}/lib/node_modules/` | ✅ |
+| n | `/usr/local/n/versions/node/{version}/lib/node_modules/` or `~/.n/versions/node/{version}/lib/node_modules/` | ✅ |
+| fnm | `~/.fnm/node-versions/{version}/lib/node_modules/` | ✅ |
+| volta | `~/.volta/tools/image/node/{version}/lib/node_modules/` | ✅ |
+
+### CI/CD Tool Caches
+
+| Tool | Location | Supported |
+|------|----------|-----------|
+| GitHub Actions | `~/actions-runner/_work/` | ✅ |
+| CircleCI | `~/.circleci/` | ✅ |
+| GitLab Runner | `~/gitlab-runner/builds/` | ✅ |
+
+### System Package Managers
+
+| Package Manager | Location | Supported |
+|-----------------|----------|-----------|
+| Homebrew (macOS) | `/opt/homebrew/lib/node_modules/` or `/usr/local/lib/node_modules/` | ✅ |
+| apt/yum (Linux) | `/usr/lib/node_modules/` | ✅ |
+
+### npm Cache
+
+| Location | Supported |
+|----------|-----------|
+| `~/.npm/_cacache/` | ✅ |
+
 ### Suspicious Files
 
 The tool also scans for:
@@ -138,8 +192,11 @@ The tool also scans for:
 The following directories are automatically skipped for performance:
 - `node_modules`, `.git`, `target`, `dist`, `build`
 - `.next`, `out`, `.cache`, `.npm`, `.yarn`, `.pnpm-store`
-- `Library`, `Applications`, `.Trash` (macOS system directories)
+- `Applications`, `.Trash` (macOS system directories)
 - `Pictures`, `Music`, `Movies`, `Downloads`
+- `Library/Caches`, `Library/Logs`, `Library/Preferences` (macOS system subdirectories)
+
+**Note:** `Library/Application Support` is **not** skipped, allowing VSCode and Cursor extensions to be scanned.
 
 ## Output
 
@@ -159,6 +216,17 @@ The following directories are automatically skipped for performance:
 
 → Scanning global packages...
 ✓ Found 25 global packages (npm/yarn/pnpm/bun)
+
+→ Scanning IDE extensions (VSCode/Cursor)...
+✓ Found 150 packages in IDE extensions
+
+→ Scanning additional locations...
+✓ Found 200 packages in additional locations
+  → Electron apps: 50 packages
+  → Node version managers: 100 packages
+  → Other IDE extensions: 30 packages
+  → CI/CD caches: 10 packages
+  → System package managers: 10 packages
 
 → Scanning for suspicious files...
 ✓ Checked for suspicious patterns
@@ -194,6 +262,12 @@ WARNINGS (package name match, different version):
 Scanned:
   → Local projects (package.json, lockfiles)
   → Global packages (npm, yarn, pnpm, bun)
+  → IDE extensions (VSCode, Cursor, WebStorm, IntelliJ IDEA, Atom, Sublime Text)
+  → Electron applications (Slack, Discord, Notion, Figma, etc.)
+  → Node.js version managers (nvm, n, fnm, volta)
+  → CI/CD tool caches (GitHub Actions, CircleCI, GitLab Runner)
+  → System package managers (Homebrew, apt, yum)
+  → npm cache directory
   → Suspicious files and binaries
 
 Recommended Actions:

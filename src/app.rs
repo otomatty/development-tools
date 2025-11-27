@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 use crate::components::{HomePage, LogViewer, ResultView, Sidebar, ToolDetail};
+use crate::components::settings::SettingsPage;
 use crate::tauri_api;
 use crate::types::{
-    AppPage, LogEntry, LogEvent, OptionValues, ToolConfig, ToolInfo, 
+    AppPage, AuthState, LogEntry, LogEvent, OptionValues, ToolConfig, ToolInfo, 
     ToolResult, ToolStatus, ToolStatusEvent,
 };
 
@@ -20,6 +21,21 @@ extern "C" {
 pub fn App() -> impl IntoView {
     // ページ状態
     let (current_page, set_current_page) = signal(AppPage::Home);
+    
+    // 認証状態（SettingsPageで使用）
+    let (auth_state, set_auth_state) = signal(AuthState::default());
+    
+    // 認証状態を初期化
+    spawn_local(async move {
+        match tauri_api::get_auth_state().await {
+            Ok(state) => {
+                set_auth_state.set(state);
+            }
+            Err(e) => {
+                web_sys::console::error_1(&format!("Failed to get auth state: {}", e).into());
+            }
+        }
+    });
     
     // ツール関連の状態管理
     let (tools, set_tools) = signal(Vec::<ToolInfo>::new());
@@ -218,9 +234,11 @@ pub fn App() -> impl IntoView {
                     }.into_any(),
                     
                     AppPage::Settings => view! {
-                        <div class="flex-1 flex items-center justify-center text-dt-text-sub">
-                            "Settings page coming soon..."
-                        </div>
+                        <SettingsPage
+                            auth_state=auth_state
+                            set_auth_state=set_auth_state
+                            set_current_page=set_current_page
+                        />
                     }.into_any(),
                 }}
             </main>

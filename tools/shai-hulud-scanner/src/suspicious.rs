@@ -66,12 +66,17 @@ const SKIP_DIRS: &[&str] = &[
     "build",
     ".next",
     "out",
-    "Library",
     "Applications",
     ".Trash",
     "Pictures",
     "Music",
     "Movies",
+    // Skip Library subdirectories except Application Support
+    "Caches",
+    "Logs",
+    "Preferences",
+    "Saved Application State",
+    "WebKit",
 ];
 
 /// Detect suspicious files that might be malicious
