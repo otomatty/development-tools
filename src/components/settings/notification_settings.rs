@@ -91,14 +91,16 @@ pub fn NotificationSettings() -> impl IntoView {
     // Store timeout handle for debouncing
     let (timeout_id, set_timeout_id) = signal(None::<i32>);
     
-    // Helper to clear timeout
-    let clear_timeout = move || {
-        if let Some(id) = timeout_id.get() {
-            if let Some(window) = web_sys::window() {
-                let _ = window.clear_timeout_with_handle(id);
+    // Helper to clear timeout (uses untrack to avoid Effect dependency)
+    let clear_timeout_untracked = move || {
+        leptos::prelude::untrack(|| {
+            if let Some(id) = timeout_id.get() {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.clear_timeout_with_handle(id);
+                }
+                set_timeout_id.set(None);
             }
-            set_timeout_id.set(None);
-        }
+        });
     };
     
     // Auto-save when settings change with debouncing
@@ -115,39 +117,41 @@ pub fn NotificationSettings() -> impl IntoView {
         // Capture settings value for closure
         let settings_to_save = current_settings.unwrap();
         
-        // Clear previous timeout if exists
-        clear_timeout();
+        // Clear previous timeout if exists (untracked to avoid dependency loop)
+        clear_timeout_untracked();
             
-        // Debounce: save after 500ms of no changes
-        if let Some(window) = web_sys::window() {
-            let closure = wasm_bindgen::closure::Closure::once(move || {
-                let update_request = UpdateSettingsRequest::from(&settings_to_save);
-                spawn_local(async move {
-                    match tauri_api::update_settings(&update_request).await {
-                        Ok(_) => {
-                            web_sys::console::log_1(&"Notification settings saved successfully".into());
+        // Debounce: save after 500ms of no changes (untracked to avoid dependency loop)
+        leptos::prelude::untrack(|| {
+            if let Some(window) = web_sys::window() {
+                let closure = wasm_bindgen::closure::Closure::once(move || {
+                    let update_request = UpdateSettingsRequest::from(&settings_to_save);
+                    spawn_local(async move {
+                        match tauri_api::update_settings(&update_request).await {
+                            Ok(_) => {
+                                web_sys::console::log_1(&"Notification settings saved successfully".into());
+                            }
+                            Err(e) => {
+                                web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
+                                set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
+                            }
                         }
-                        Err(e) => {
-                            web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
-                            set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
-                        }
-                    }
+                    });
+                    set_timeout_id.set(None);
                 });
-                set_timeout_id.set(None);
-            });
-            if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
-                500,
-            ) {
-                set_timeout_id.set(Some(id));
+                if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                    500,
+                ) {
+                    set_timeout_id.set(Some(id));
+                }
+                closure.forget();
             }
-            closure.forget();
-        }
+        });
     });
     
     // Cleanup timeout on component unmount
     on_cleanup(move || {
-        clear_timeout();
+        clear_timeout_untracked();
     });
 
     view! {
