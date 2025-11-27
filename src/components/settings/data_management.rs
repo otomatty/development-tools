@@ -228,8 +228,9 @@ pub fn DataManagement() -> impl IntoView {
                     ));
                     
                     // Refresh database info
-                    if let Ok(info) = tauri_api::get_database_info().await {
-                        set_db_info.set(Some(info));
+                    match tauri_api::get_database_info().await {
+                        Ok(info) => set_db_info.set(Some(info)),
+                        Err(e) => web_sys::console::error_1(&format!("Failed to refresh database info after cache clear: {}", e).into()),
                     }
                 }
                 Err(e) => {
@@ -249,36 +250,42 @@ pub fn DataManagement() -> impl IntoView {
             match tauri_api::export_data().await {
                 Ok(json_data) => {
                     // Create a downloadable file using data URL
-                    if let Some(window) = web_sys::window() {
-                        if let Some(document) = window.document() {
-                            // Create download link using data URL
-                            if let Ok(a) = document.create_element("a") {
-                                let a: web_sys::HtmlAnchorElement = a.dyn_into().unwrap();
-                                
-                                // Use data URL for the JSON content
-                                let encoded_data = js_sys::encode_uri_component(&json_data);
-                                let data_url = format!("data:application/json;charset=utf-8,{}", encoded_data);
-                                a.set_href(&data_url);
-                                
-                                // Generate filename with timestamp
-                                let now = js_sys::Date::new_0();
-                                let filename = format!(
-                                    "development-tools-export-{:04}{:02}{:02}-{:02}{:02}{:02}.json",
-                                    now.get_full_year(),
-                                    now.get_month() + 1,
-                                    now.get_date(),
-                                    now.get_hours(),
-                                    now.get_minutes(),
-                                    now.get_seconds()
-                                );
-                                a.set_download(&filename);
-                                
-                                // Trigger download
-                                a.click();
-                                
-                                show_success("データをエクスポートしました".to_string());
-                            }
-                        }
+                    let download_result = (|| -> Result<(), String> {
+                        let window = web_sys::window()
+                            .ok_or("windowオブジェクトの取得に失敗しました")?;
+                        let document = window.document()
+                            .ok_or("documentオブジェクトの取得に失敗しました")?;
+                        let element = document.create_element("a")
+                            .map_err(|_| "ダウンロードリンクの作成に失敗しました")?;
+                        let a: web_sys::HtmlAnchorElement = element.dyn_into()
+                            .map_err(|_| "ダウンロードリンクの型変換に失敗しました")?;
+                        
+                        // Use data URL for the JSON content
+                        let encoded_data = js_sys::encode_uri_component(&json_data);
+                        let data_url = format!("data:application/json;charset=utf-8,{}", encoded_data);
+                        a.set_href(&data_url);
+                        
+                        // Generate filename with timestamp
+                        let now = js_sys::Date::new_0();
+                        let filename = format!(
+                            "development-tools-export-{:04}{:02}{:02}-{:02}{:02}{:02}.json",
+                            now.get_full_year(),
+                            now.get_month() + 1,
+                            now.get_date(),
+                            now.get_hours(),
+                            now.get_minutes(),
+                            now.get_seconds()
+                        );
+                        a.set_download(&filename);
+                        
+                        // Trigger download
+                        a.click();
+                        Ok(())
+                    })();
+                    
+                    match download_result {
+                        Ok(()) => show_success("データをエクスポートしました".to_string()),
+                        Err(e) => set_error.set(Some(e)),
                     }
                 }
                 Err(e) => {
@@ -301,8 +308,9 @@ pub fn DataManagement() -> impl IntoView {
                     show_success("全てのデータをリセットしました".to_string());
                     
                     // Refresh database info
-                    if let Ok(info) = tauri_api::get_database_info().await {
-                        set_db_info.set(Some(info));
+                    match tauri_api::get_database_info().await {
+                        Ok(info) => set_db_info.set(Some(info)),
+                        Err(e) => web_sys::console::error_1(&format!("Failed to refresh database info after data reset: {}", e).into()),
                     }
                 }
                 Err(e) => {
@@ -466,7 +474,8 @@ pub fn DataManagement() -> impl IntoView {
                                     {move || {
                                         db_info.get().map(|i| {
                                             // Show only the last part of the path for readability
-                                            i.path.split('/').last().unwrap_or(&i.path).to_string()
+                                            // Handle both Unix (/) and Windows (\) path separators
+                                            i.path.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(&i.path).to_string()
                                         }).unwrap_or_else(|| "不明".to_string())
                                     }}
                                 </span>
