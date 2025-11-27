@@ -1,3 +1,4 @@
+pub mod animation_context;
 pub mod confirm_dialog;
 pub mod home;
 pub mod icons;
@@ -8,6 +9,7 @@ pub mod settings;
 pub mod sidebar;
 pub mod tool_detail;
 
+pub use animation_context::{AnimationContext, use_animation_context};
 pub use confirm_dialog::ConfirmDialog;
 pub use home::HomePage;
 pub use log_viewer::LogViewer;

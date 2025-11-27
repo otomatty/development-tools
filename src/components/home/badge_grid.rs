@@ -4,6 +4,7 @@
 
 use leptos::prelude::*;
 
+use crate::components::use_animation_context;
 use crate::types::{Badge, BadgeDefinition};
 
 /// Badge grid component
@@ -136,6 +137,10 @@ fn BadgeDetailModal<F>(
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
+    // Get animation context
+    let animation_ctx = use_animation_context();
+    let animations_enabled = move || animation_ctx.map(|ctx| ctx.enabled.get()).unwrap_or(true);
+
     view! {
         <Show when=move || badge_info.get().is_some()>
             {
@@ -144,6 +149,8 @@ where
                     let (def, earned) = badge_info.get().unwrap();
                     let on_close_overlay = on_close.clone();
                     let on_close_button = on_close.clone();
+                    let fade_class = if animations_enabled() { "animate-fade-in" } else { "" };
+                    let scale_class = if animations_enabled() { "animate-scale-in" } else { "" };
                     
                     let (border_class, text_class) = match def.rarity.as_str() {
                         "bronze" => ("border-badge-bronze", "text-badge-bronze"),
@@ -165,14 +172,14 @@ where
                     view! {
                         // Overlay
                         <div 
-                            class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-fade-in"
+                            class=format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", fade_class)
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
                             <div 
                                 class=format!(
-                                    "relative p-6 bg-gm-bg-card rounded-2xl border-2 {} max-w-sm w-full mx-4 animate-scale-in",
-                                    border_class
+                                    "relative p-6 bg-gm-bg-card rounded-2xl border-2 {} max-w-sm w-full mx-4 {}",
+                                    border_class, scale_class
                                 )
                                 on:click=|ev| ev.stop_propagation()
                             >
