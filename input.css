@@ -271,3 +271,25 @@
   }
 }
 
+/* Animation control classes */
+/* Applied to body or root element when animations are disabled */
+.no-animation,
+.no-animation *,
+.no-animation *::before,
+.no-animation *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* For reduced motion preference (accessibility) */
+/* Uses same approach as .no-animation for consistency */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+

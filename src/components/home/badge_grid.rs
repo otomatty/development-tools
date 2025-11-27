@@ -4,6 +4,7 @@
 
 use leptos::prelude::*;
 
+use crate::components::use_animation_context_or_default;
 use crate::types::{Badge, BadgeDefinition};
 
 /// Badge grid component
@@ -136,6 +137,9 @@ fn BadgeDetailModal<F>(
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
+    // Get animation context with default
+    let animation_ctx = use_animation_context_or_default();
+
     view! {
         <Show when=move || badge_info.get().is_some()>
             {
@@ -165,14 +169,14 @@ where
                     view! {
                         // Overlay
                         <div 
-                            class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-fade-in"
+                            class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
                             <div 
-                                class=format!(
-                                    "relative p-6 bg-gm-bg-card rounded-2xl border-2 {} max-w-sm w-full mx-4 animate-scale-in",
-                                    border_class
+                                class=move || format!(
+                                    "relative p-6 bg-gm-bg-card rounded-2xl border-2 {} max-w-sm w-full mx-4 {}",
+                                    border_class, animation_ctx.get_animation_class("animate-scale-in")
                                 )
                                 on:click=|ev| ev.stop_propagation()
                             >

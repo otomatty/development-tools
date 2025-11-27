@@ -1,9 +1,10 @@
+use futures::join;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
-use crate::components::{HomePage, LogViewer, ResultView, Sidebar, ToolDetail};
+use crate::components::{AnimationContext, HomePage, LogViewer, ResultView, Sidebar, ToolDetail};
 use crate::components::settings::SettingsPage;
 use crate::tauri_api;
 use crate::types::{
@@ -25,17 +26,42 @@ pub fn App() -> impl IntoView {
     // 認証状態（SettingsPageで使用）
     let (auth_state, set_auth_state) = signal(AuthState::default());
     
-    // 認証状態を初期化
-    spawn_local(async move {
-        match tauri_api::get_auth_state().await {
-            Ok(state) => {
-                set_auth_state.set(state);
+    // アニメーション状態（グローバル）
+    let animation_context = AnimationContext::new(true);
+    provide_context(animation_context);
+    
+    // 認証状態とアニメーション設定を並列で初期化
+    {
+        let animation_ctx = animation_context;
+        spawn_local(async move {
+            // 認証状態と設定を並列で取得
+            let (auth_result, settings_result) = join!(
+                tauri_api::get_auth_state(),
+                tauri_api::get_settings()
+            );
+            
+            // 認証状態を処理
+            match auth_result {
+                Ok(state) => {
+                    set_auth_state.set(state);
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Failed to get auth state: {}", e).into());
+                }
             }
-            Err(e) => {
-                web_sys::console::error_1(&format!("Failed to get auth state: {}", e).into());
+            
+            // 設定を処理してアニメーション状態を更新
+            match settings_result {
+                Ok(settings) => {
+                    animation_ctx.set_enabled.set(settings.animations_enabled);
+                }
+                Err(e) => {
+                    // ログインしていない場合はエラーが出るが、デフォルト値を使用
+                    web_sys::console::log_1(&format!("Settings not loaded (may not be logged in): {}", e).into());
+                }
             }
-        }
-    });
+        });
+    }
     
     // ツール関連の状態管理
     let (tools, set_tools) = signal(Vec::<ToolInfo>::new());
@@ -183,7 +209,14 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <div class="flex h-screen bg-dt-bg">
+        <div class=move || {
+            let base = "flex h-screen bg-dt-bg";
+            if animation_context.enabled.get() {
+                base.to_string()
+            } else {
+                format!("{} no-animation", base)
+            }
+        }>
             // サイドバー
             <Sidebar 
                 tools=tools
