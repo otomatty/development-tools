@@ -186,17 +186,31 @@ pub fn DataManagement() -> impl IntoView {
         }
     };
     
-    // Load database info on mount
-    spawn_local(async move {
-        match tauri_api::get_database_info().await {
-            Ok(info) => {
-                set_db_info.set(Some(info));
-            }
-            Err(e) => {
-                set_error.set(Some(format!("データベース情報の取得に失敗しました: {}", e)));
-            }
+    // Track initial load to avoid re-fetching on re-render
+    let (initial_load_complete, set_initial_load_complete) = signal(false);
+    
+    // Load database info on mount (only once)
+    Effect::new(move |_| {
+        // Only load once
+        if initial_load_complete.get() {
+            return;
         }
-        set_loading.set(false);
+        
+        set_loading.set(true);
+        set_error.set(None);
+        
+        spawn_local(async move {
+            match tauri_api::get_database_info().await {
+                Ok(info) => {
+                    set_db_info.set(Some(info));
+                }
+                Err(e) => {
+                    set_error.set(Some(format!("データベース情報の取得に失敗しました: {}", e)));
+                }
+            }
+            set_loading.set(false);
+            set_initial_load_complete.set(true);
+        });
     });
     
     // Clear cache handler
