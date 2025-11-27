@@ -37,38 +37,45 @@ pub fn SyncSettings() -> impl IntoView {
     let (debounce_handle, set_debounce_handle) = signal(Option::<i32>::None);
     let (success_msg_handle, set_success_msg_handle) = signal(Option::<i32>::None);
 
-    // Load settings and sync intervals on mount (spawn_local, not Effect)
-    spawn_local(async move {
-        // Load sync intervals from backend
-        match tauri_api::get_sync_intervals().await {
-            Ok(intervals) => {
-                set_sync_intervals.set(intervals);
-            }
-            Err(e) => {
-                web_sys::console::error_1(&format!("Failed to load sync intervals: {}", e).into());
-                // Use fallback intervals
-                set_sync_intervals.set(vec![
-                    SyncIntervalOption { value: 5, label: "5分".to_string() },
-                    SyncIntervalOption { value: 15, label: "15分".to_string() },
-                    SyncIntervalOption { value: 30, label: "30分".to_string() },
-                    SyncIntervalOption { value: 60, label: "1時間".to_string() },
-                    SyncIntervalOption { value: 180, label: "3時間".to_string() },
-                    SyncIntervalOption { value: 0, label: "手動のみ".to_string() },
-                ]);
-            }
+    // Load settings and sync intervals on mount (only once)
+    Effect::new(move |_| {
+        // Only load once
+        if initial_load_complete.get() {
+            return;
         }
+        
+        spawn_local(async move {
+            // Load sync intervals from backend
+            match tauri_api::get_sync_intervals().await {
+                Ok(intervals) => {
+                    set_sync_intervals.set(intervals);
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Failed to load sync intervals: {}", e).into());
+                    // Use fallback intervals
+                    set_sync_intervals.set(vec![
+                        SyncIntervalOption { value: 5, label: "5分".to_string() },
+                        SyncIntervalOption { value: 15, label: "15分".to_string() },
+                        SyncIntervalOption { value: 30, label: "30分".to_string() },
+                        SyncIntervalOption { value: 60, label: "1時間".to_string() },
+                        SyncIntervalOption { value: 180, label: "3時間".to_string() },
+                        SyncIntervalOption { value: 0, label: "手動のみ".to_string() },
+                    ]);
+                }
+            }
 
-        // Load user settings
-        match tauri_api::get_settings().await {
-            Ok(loaded_settings) => {
-                set_settings.set(Some(loaded_settings));
+            // Load user settings
+            match tauri_api::get_settings().await {
+                Ok(loaded_settings) => {
+                    set_settings.set(Some(loaded_settings));
+                }
+                Err(e) => {
+                    set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
+                }
             }
-            Err(e) => {
-                set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
-            }
-        }
-        set_loading.set(false);
-        set_initial_load_complete.set(true);
+            set_loading.set(false);
+            set_initial_load_complete.set(true);
+        });
     });
 
     // Update sync interval

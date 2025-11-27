@@ -23,18 +23,25 @@ pub fn AppearanceSettings() -> impl IntoView {
     // Store timeout handle for cleanup
     let (debounce_handle, set_debounce_handle) = signal(Option::<i32>::None);
 
-    // Load settings on mount
-    spawn_local(async move {
-        match tauri_api::get_settings().await {
-            Ok(loaded_settings) => {
-                set_settings.set(Some(loaded_settings));
-            }
-            Err(e) => {
-                set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
-            }
+    // Load settings on mount (only once)
+    Effect::new(move |_| {
+        // Only load once
+        if initial_load_complete.get() {
+            return;
         }
-        set_loading.set(false);
-        set_initial_load_complete.set(true);
+        
+        spawn_local(async move {
+            match tauri_api::get_settings().await {
+                Ok(loaded_settings) => {
+                    set_settings.set(Some(loaded_settings));
+                }
+                Err(e) => {
+                    set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
+                }
+            }
+            set_loading.set(false);
+            set_initial_load_complete.set(true);
+        });
     });
 
     // Get animation context to update global state
