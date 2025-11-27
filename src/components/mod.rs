@@ -9,7 +9,7 @@ pub mod settings;
 pub mod sidebar;
 pub mod tool_detail;
 
-pub use animation_context::{AnimationContext, use_animation_context};
+pub use animation_context::{AnimationContext, use_animation_context, use_animation_context_or_default};
 pub use confirm_dialog::ConfirmDialog;
 pub use home::HomePage;
 pub use log_viewer::LogViewer;

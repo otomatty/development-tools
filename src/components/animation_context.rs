@@ -2,8 +2,6 @@
 //!
 //! Provides a context for controlling animation state across the app.
 
-#![allow(dead_code)]
-
 use leptos::prelude::*;
 
 /// Animation state context
@@ -43,6 +41,7 @@ impl AnimationContext {
 
     /// Get conditional class based on enabled state
     /// Returns the first class if enabled, second class otherwise
+    #[allow(dead_code)]
     pub fn conditional_class(&self, enabled_class: &str, disabled_class: &str) -> String {
         if self.enabled.get() {
             enabled_class.to_string()
@@ -59,6 +58,7 @@ impl Default for AnimationContext {
 }
 
 /// Provide animation context to children
+#[allow(dead_code)]
 #[component]
 pub fn AnimationProvider(
     /// Initial enabled state
@@ -85,6 +85,7 @@ pub fn use_animation_context_or_default() -> AnimationContext {
 }
 
 /// Helper to conditionally apply animation class
+#[allow(dead_code)]
 pub fn animation_class(enabled: bool, class: &str) -> String {
     if enabled {
         class.to_string()
@@ -94,6 +95,7 @@ pub fn animation_class(enabled: bool, class: &str) -> String {
 }
 
 /// Helper to get body class for global animation control
+#[allow(dead_code)]
 pub fn get_body_animation_class(enabled: bool) -> &'static str {
     if enabled {
         ""

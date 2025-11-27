@@ -1,3 +1,4 @@
+use futures::join;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashMap;
@@ -29,12 +30,18 @@ pub fn App() -> impl IntoView {
     let animation_context = AnimationContext::new(true);
     provide_context(animation_context);
     
-    // 認証状態とアニメーション設定を初期化
+    // 認証状態とアニメーション設定を並列で初期化
     {
         let animation_ctx = animation_context;
         spawn_local(async move {
-            // 認証状態を取得
-            match tauri_api::get_auth_state().await {
+            // 認証状態と設定を並列で取得
+            let (auth_result, settings_result) = join!(
+                tauri_api::get_auth_state(),
+                tauri_api::get_settings()
+            );
+            
+            // 認証状態を処理
+            match auth_result {
                 Ok(state) => {
                     set_auth_state.set(state);
                 }
@@ -43,8 +50,8 @@ pub fn App() -> impl IntoView {
                 }
             }
             
-            // 設定を取得してアニメーション状態を更新
-            match tauri_api::get_settings().await {
+            // 設定を処理してアニメーション状態を更新
+            match settings_result {
                 Ok(settings) => {
                     animation_ctx.set_enabled.set(settings.animations_enabled);
                 }

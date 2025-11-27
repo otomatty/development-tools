@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::use_animation_context;
+use crate::components::use_animation_context_or_default;
 use crate::types::{NewBadgeInfo, XpGainedEvent};
 
 /// XP notification component
@@ -16,9 +16,8 @@ pub fn XpNotification<F>(
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
-    // Get animation context
-    let animation_ctx = use_animation_context();
-    let animations_enabled = move || animation_ctx.map(|ctx| ctx.enabled.get()).unwrap_or(true);
+    // Get animation context with default
+    let animation_ctx = use_animation_context_or_default();
 
     view! {
         <Show when=move || event.get().is_some()>
@@ -27,17 +26,14 @@ where
                 move || {
                     let e = event.get().unwrap();
                     let on_close_inner = on_close.clone();
-                    let slide_class = if animations_enabled() { "animate-slide-in" } else { "" };
-                    let bounce_class = if animations_enabled() { "animate-bounce" } else { "" };
-                    let pulse_class = if animations_enabled() { "animate-pulse" } else { "" };
                     
                     view! {
-                        <div class=format!("fixed top-4 right-4 z-50 {}", slide_class)>
+                        <div class=move || format!("fixed top-4 right-4 z-50 {}", animation_ctx.get_animation_class("animate-slide-in"))>
                             <div class="p-4 bg-gm-bg-card/95 backdrop-blur-sm rounded-xl border border-gm-accent-cyan/30 shadow-neon-cyan min-w-80">
                                 // Header
                                 <div class="flex items-center justify-between mb-3">
                                     <div class="flex items-center gap-2">
-                                        <span class=format!("text-2xl {}", bounce_class)>"✨"</span>
+                                        <span class=move || format!("text-2xl {}", animation_ctx.get_animation_class("animate-bounce"))>"✨"</span>
                                         <span class="text-gm-accent-cyan font-gaming font-bold">
                                             "XP Gained!"
                                         </span>
@@ -52,7 +48,7 @@ where
                                 
                                 // XP amount
                                 <div class="text-center mb-3">
-                                    <span class=format!("text-4xl font-gaming-mono font-bold text-gm-success {}", pulse_class)>
+                                    <span class=move || format!("text-4xl font-gaming-mono font-bold text-gm-success {}", animation_ctx.get_animation_class("animate-pulse"))>
                                         "+" {e.xp_gained} " XP"
                                     </span>
                                 </div>
@@ -182,9 +178,8 @@ pub fn LevelUpModal<F>(
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
-    // Get animation context
-    let animation_ctx = use_animation_context();
-    let animations_enabled = move || animation_ctx.map(|ctx| ctx.enabled.get()).unwrap_or(true);
+    // Get animation context with default
+    let animation_ctx = use_animation_context_or_default();
 
     view! {
         <Show when=move || event.get().map(|e| e.level_up).unwrap_or(false)>
@@ -194,25 +189,20 @@ where
                     let e = event.get().unwrap();
                     let on_close_overlay = on_close.clone();
                     let on_close_button = on_close.clone();
-                    let fade_class = if animations_enabled() { "animate-fade-in" } else { "" };
-                    let scale_class = if animations_enabled() { "animate-scale-in" } else { "" };
-                    let bounce_slow_class = if animations_enabled() { "animate-bounce-slow" } else { "" };
-                    let pulse_class = if animations_enabled() { "animate-pulse" } else { "" };
-                    let show_particles = animations_enabled();
                     
                     view! {
                         // Overlay
                         <div 
-                            class=format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", fade_class)
+                            class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
                             <div 
-                                class=format!("relative p-8 bg-gm-bg-card rounded-2xl border-2 border-gm-accent-purple shadow-neon-purple max-w-md w-full mx-4 {}", scale_class)
+                                class=move || format!("relative p-8 bg-gm-bg-card rounded-2xl border-2 border-gm-accent-purple shadow-neon-purple max-w-md w-full mx-4 {}", animation_ctx.get_animation_class("animate-scale-in"))
                                 on:click=|ev| ev.stop_propagation()
                             >
                                 // Particles effect (CSS only) - only show when animations enabled
-                                <Show when=move || show_particles>
+                                <Show when=move || animation_ctx.is_enabled()>
                                     <div class="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
                                         <div class="particle particle-1"/>
                                         <div class="particle particle-2"/>
@@ -225,12 +215,12 @@ where
                                 // Content
                                 <div class="relative text-center space-y-6">
                                     // Trophy icon with glow
-                                    <div class=format!("text-8xl {}", bounce_slow_class)>
+                                    <div class=move || format!("text-8xl {}", animation_ctx.get_animation_class("animate-bounce-slow"))>
                                         "🏆"
                                     </div>
                                     
                                     // Title
-                                    <h2 class=format!("text-3xl font-gaming font-bold bg-gradient-to-r from-gm-accent-cyan via-gm-accent-purple to-gm-accent-pink bg-clip-text text-transparent {}", pulse_class)>
+                                    <h2 class=move || format!("text-3xl font-gaming font-bold bg-gradient-to-r from-gm-accent-cyan via-gm-accent-purple to-gm-accent-pink bg-clip-text text-transparent {}", animation_ctx.get_animation_class("animate-pulse"))>
                                         "LEVEL UP!"
                                     </h2>
                                     
@@ -239,7 +229,7 @@ where
                                         <span class="text-4xl font-gaming-mono text-dt-text-sub">
                                             "Lv." {e.old_level}
                                         </span>
-                                        <span class=format!("text-2xl text-gm-accent-cyan {}", pulse_class)>"→"</span>
+                                        <span class=move || format!("text-2xl text-gm-accent-cyan {}", animation_ctx.get_animation_class("animate-pulse"))>"→"</span>
                                         <span class="text-5xl font-gaming-mono font-bold text-gm-accent-cyan">
                                             "Lv." {e.new_level}
                                         </span>
@@ -279,9 +269,8 @@ pub fn BadgeNotification<F>(
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
-    // Get animation context
-    let animation_ctx = use_animation_context();
-    let animations_enabled = move || animation_ctx.map(|ctx| ctx.enabled.get()).unwrap_or(true);
+    // Get animation context with default
+    let animation_ctx = use_animation_context_or_default();
 
     // Get rarity styling
     let rarity_styles = move || {
@@ -308,27 +297,23 @@ where
                     let border_class = styles.0;
                     let text_class = styles.1;
                     let shadow_class = styles.2;
-                    let fade_class = if animations_enabled() { "animate-fade-in" } else { "" };
-                    let scale_class = if animations_enabled() { "animate-scale-in" } else { "" };
-                    let bounce_slow_class = if animations_enabled() { "animate-bounce-slow" } else { "" };
-                    let show_sparkles = animations_enabled();
                     
                     view! {
                         // Overlay
                         <div 
-                            class=format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", fade_class)
+                            class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
                             <div 
-                                class=format!(
+                                class=move || format!(
                                     "relative p-8 bg-gm-bg-card rounded-2xl border-2 {} {} max-w-md w-full mx-4 {}",
-                                    border_class, shadow_class, scale_class
+                                    border_class, shadow_class, animation_ctx.get_animation_class("animate-scale-in")
                                 )
                                 on:click=|ev| ev.stop_propagation()
                             >
                                 // Sparkle effects - only show when animations enabled
-                                <Show when=move || show_sparkles>
+                                <Show when=move || animation_ctx.is_enabled()>
                                     <div class="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
                                         <div class="sparkle sparkle-1"/>
                                         <div class="sparkle sparkle-2"/>
@@ -345,7 +330,7 @@ where
                                     
                                     // Badge icon with glow
                                     <div class="py-4">
-                                        <span class=format!("text-8xl {}", bounce_slow_class)>
+                                        <span class=move || format!("text-8xl {}", animation_ctx.get_animation_class("animate-bounce-slow"))>
                                             {b.icon.clone()}
                                         </span>
                                     </div>
@@ -398,9 +383,8 @@ pub fn MultipleBadgesNotification<F>(
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
-    // Get animation context
-    let animation_ctx = use_animation_context();
-    let animations_enabled = move || animation_ctx.map(|ctx| ctx.enabled.get()).unwrap_or(true);
+    // Get animation context with default
+    let animation_ctx = use_animation_context_or_default();
 
     view! {
         <Show when=move || !badges.get().is_empty()>
@@ -410,18 +394,16 @@ where
                     let badge_list = badges.get();
                     let on_close_overlay = on_close.clone();
                     let on_close_button = on_close.clone();
-                    let fade_class = if animations_enabled() { "animate-fade-in" } else { "" };
-                    let scale_class = if animations_enabled() { "animate-scale-in" } else { "" };
                     
                     view! {
                         // Overlay
                         <div 
-                            class=format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", fade_class)
+                            class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
                             <div 
-                                class=format!("relative p-8 bg-gm-bg-card rounded-2xl border-2 border-gm-accent-purple shadow-neon-purple max-w-lg w-full mx-4 {}", scale_class)
+                                class=move || format!("relative p-8 bg-gm-bg-card rounded-2xl border-2 border-gm-accent-purple shadow-neon-purple max-w-lg w-full mx-4 {}", animation_ctx.get_animation_class("animate-scale-in"))
                                 on:click=|ev| ev.stop_propagation()
                             >
                                 // Content
