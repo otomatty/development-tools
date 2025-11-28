@@ -116,6 +116,10 @@
     @apply bg-green-500/20 text-green-400;
   }
 
+  .badge-info {
+    @apply bg-blue-500/20 text-blue-400;
+  }
+
   /* Log viewer */
   .log-line {
     @apply font-mono text-sm leading-6 whitespace-pre-wrap break-all;
