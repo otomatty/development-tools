@@ -9,6 +9,17 @@ use crate::database::models::{ClearCacheResult, DatabaseInfo, NotificationMethod
 
 use super::AppState;
 
+/// Application information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    pub build_date: String,
+    pub tauri_version: String,
+    pub leptos_version: String,
+    pub rust_version: String,
+}
+
 /// Settings update request (without id and user_id)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -249,6 +260,28 @@ pub async fn export_data(state: tauri::State<'_, AppState>) -> Result<String, St
     // Serialize to JSON
     serde_json::to_string_pretty(&export)
         .map_err(|e| format!("Failed to serialize data: {}", e))
+}
+
+/// Get application information
+#[tauri::command]
+pub fn get_app_info() -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        build_date: env!("BUILD_DATE").to_string(),
+        tauri_version: tauri::VERSION.to_string(),
+        leptos_version: "0.7.2".to_string(), // Updated based on typical Leptos version
+        rust_version: env!("RUST_VERSION").to_string(),
+    }
+}
+
+/// Open URL in external browser
+#[tauri::command]
+pub async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| format!("Failed to open URL: {}", e))
 }
 
 #[cfg(test)]

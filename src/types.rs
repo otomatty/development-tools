@@ -508,6 +508,17 @@ pub struct ClearCacheResult {
     pub freed_bytes: u64,
 }
 
+/// アプリケーション情報
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    pub build_date: String,
+    pub tauri_version: String,
+    pub leptos_version: String,
+    pub rust_version: String,
+}
+
 /// 通知方法の選択肢
 /// 
 /// **IMPORTANT**: This enum must be kept in sync with the backend definition at:
