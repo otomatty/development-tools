@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -9,7 +9,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  
+
   body {
     @apply bg-dt-bg text-dt-text font-sans;
   }
@@ -18,15 +18,15 @@
   ::-webkit-scrollbar {
     @apply w-2;
   }
-  
+
   ::-webkit-scrollbar-track {
     @apply bg-dt-bg;
   }
-  
+
   ::-webkit-scrollbar-thumb {
     @apply bg-slate-600 rounded-full;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-500;
   }
@@ -150,37 +150,41 @@
   .animate-spin-slow {
     animation: spin 2s linear infinite;
   }
-  
+
   .animate-bounce-slow {
     animation: bounce 2s infinite;
   }
-  
+
   .animate-slide-in {
     animation: slideIn 0.3s ease-out;
   }
-  
+
   .animate-scale-in {
     animation: scaleIn 0.3s ease-out;
   }
-  
+
   .animate-fade-in {
     animation: fadeIn 0.2s ease-out;
+  }
+
+  .animate-slide-in-up {
+    animation: slideInUp 0.3s ease-out;
   }
 
   /* Glass effect */
   .glass {
     @apply bg-slate-800/50 backdrop-blur-sm;
   }
-  
+
   /* Neon glow effects */
   .shadow-neon-cyan {
     box-shadow: 0 0 20px rgba(0, 245, 255, 0.3), 0 0 40px rgba(0, 245, 255, 0.1);
   }
-  
+
   .shadow-neon-purple {
     box-shadow: 0 0 20px rgba(191, 0, 255, 0.3), 0 0 40px rgba(191, 0, 255, 0.1);
   }
-  
+
   .shadow-neon-pink {
     box-shadow: 0 0 20px rgba(255, 0, 245, 0.3), 0 0 40px rgba(255, 0, 245, 0.1);
   }
@@ -218,6 +222,17 @@
   }
 }
 
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 /* Level up particles */
 .particle {
   position: absolute;
@@ -228,31 +243,31 @@
 }
 
 .particle-1 {
-  background: #00F5FF;
+  background: #00f5ff;
   left: 20%;
   animation-delay: 0s;
 }
 
 .particle-2 {
-  background: #BF00FF;
+  background: #bf00ff;
   left: 40%;
   animation-delay: 0.2s;
 }
 
 .particle-3 {
-  background: #FF00F5;
+  background: #ff00f5;
   left: 60%;
   animation-delay: 0.4s;
 }
 
 .particle-4 {
-  background: #00FF85;
+  background: #00ff85;
   left: 80%;
   animation-delay: 0.6s;
 }
 
 .particle-5 {
-  background: #FFD700;
+  background: #ffd700;
   left: 50%;
   animation-delay: 0.8s;
 }
@@ -292,4 +307,3 @@
     scroll-behavior: auto !important;
   }
 }
-

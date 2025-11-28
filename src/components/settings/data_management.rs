@@ -58,19 +58,21 @@ fn ResetConfirmDialog(
     view! {
         <Show when=move || visible.get()>
             <div 
-                class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fadeIn"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="reset-dialog-title"
             >
                 <div 
-                    class="bg-gm-bg-card rounded-2xl border border-red-500/30 shadow-lg p-6 max-w-md w-full mx-4"
+                    class="bg-gm-bg-card rounded-2xl border-2 border-red-500/50 shadow-[0_0_30px_rgba(239,68,68,0.3)] p-6 max-w-md w-full mx-4 animate-scaleIn"
                 >
                     <div class="flex items-center gap-3 mb-4">
-                        <span class="text-3xl">"⚠️"</span>
+                        <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30">
+                            <span class="text-2xl">"⚠️"</span>
+                        </div>
                         <h3 
                             id="reset-dialog-title"
-                            class="text-xl font-gaming font-bold text-white"
+                            class="text-xl font-gaming font-bold text-red-400"
                         >
                             "データリセットの確認"
                         </h3>
@@ -78,32 +80,45 @@ fn ResetConfirmDialog(
                     
                     <div class="space-y-4 mb-6">
                         <p class="text-dt-text-sub">
-                            "この操作により以下のデータが削除されます："
+                            "この操作により以下のデータが" <span class="text-red-400 font-bold">"完全に削除"</span> "されます："
                         </p>
                         
-                        <ul class="list-disc list-inside text-dt-text-sub space-y-1 pl-2">
-                            <li>"経験値（XP）"</li>
-                            <li>"レベル"</li>
-                            <li>"バッジ"</li>
-                            <li>"ストリーク記録"</li>
-                            <li>"チャレンジ履歴"</li>
-                            <li>"キャッシュデータ"</li>
+                        <ul class="list-none space-y-2 pl-2">
+                            <li class="flex items-center gap-2 text-dt-text-sub">
+                                <span class="text-red-400">"✗"</span>"経験値（XP）"
+                            </li>
+                            <li class="flex items-center gap-2 text-dt-text-sub">
+                                <span class="text-red-400">"✗"</span>"レベル"
+                            </li>
+                            <li class="flex items-center gap-2 text-dt-text-sub">
+                                <span class="text-red-400">"✗"</span>"バッジ"
+                            </li>
+                            <li class="flex items-center gap-2 text-dt-text-sub">
+                                <span class="text-red-400">"✗"</span>"ストリーク記録"
+                            </li>
+                            <li class="flex items-center gap-2 text-dt-text-sub">
+                                <span class="text-red-400">"✗"</span>"チャレンジ履歴"
+                            </li>
+                            <li class="flex items-center gap-2 text-dt-text-sub">
+                                <span class="text-red-400">"✗"</span>"キャッシュデータ"
+                            </li>
                         </ul>
                         
-                        <div class="p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
-                            <p class="text-red-200 text-sm font-bold">
-                                "⚠️ この操作は取り消せません"
+                        <div class="p-4 bg-red-900/30 border border-red-500/40 rounded-xl">
+                            <p class="text-red-200 text-sm font-bold flex items-center gap-2">
+                                <span>"🚫"</span>
+                                "この操作は取り消せません"
                             </p>
                         </div>
                         
                         <div class="space-y-2">
-                            <label for="reset-confirm-input" class="text-white text-sm">
-                                "続行するには「RESET」と入力してください："
+                            <label for="reset-confirm-input" class="text-white text-sm font-gaming">
+                                "続行するには「"<span class="text-red-400 font-bold">"RESET"</span>"」と入力してください："
                             </label>
                             <input
                                 id="reset-confirm-input"
                                 type="text"
-                                class="w-full px-4 py-3 bg-gm-bg-primary border border-gm-accent-cyan/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500 placeholder-gray-500"
+                                class="w-full px-4 py-3 bg-gm-bg-primary border-2 border-red-500/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500 placeholder-red-300/30 font-mono tracking-wider"
                                 placeholder="RESET"
                                 prop:value=move || input_value.get()
                                 on:input=move |ev| set_input_value.set(event_target_value(&ev))
@@ -115,7 +130,7 @@ fn ResetConfirmDialog(
                     
                     <div class="flex gap-3 justify-end">
                         <button
-                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+                            class="px-5 py-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all duration-200 font-medium border border-slate-600"
                             on:click={
                                 let on_cancel = on_cancel.clone();
                                 move |_| on_cancel()
@@ -125,11 +140,11 @@ fn ResetConfirmDialog(
                         </button>
                         <button
                             class=move || format!(
-                                "px-4 py-2 rounded-lg text-white transition-colors {}",
+                                "px-5 py-2.5 rounded-lg text-white transition-all duration-200 font-gaming font-bold {}",
                                 if is_confirm_enabled.get() {
-                                    "bg-red-600 hover:bg-red-500 cursor-pointer"
+                                    "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 cursor-pointer shadow-[0_0_15px_rgba(239,68,68,0.4)] hover:shadow-[0_0_20px_rgba(239,68,68,0.6)]"
                                 } else {
-                                    "bg-red-900/50 cursor-not-allowed opacity-50"
+                                    "bg-red-900/50 cursor-not-allowed opacity-50 border border-red-500/20"
                                 }
                             )
                             disabled=move || !is_confirm_enabled.get()
@@ -374,20 +389,22 @@ pub fn DataManagement() -> impl IntoView {
                     </h3>
                     <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-2">
-                                <span class="text-2xl">"📦"</span>
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-gm-accent-cyan/10 flex items-center justify-center border border-gm-accent-cyan/20">
+                                    <span class="text-xl">"📦"</span>
+                                </div>
                                 <div>
-                                    <span class="text-white font-medium block">
+                                    <span class="text-white font-gaming font-bold block">
                                         "キャッシュサイズ"
                                     </span>
-                                    <span class="text-gm-accent-cyan font-gaming">
+                                    <span class="text-gm-accent-cyan font-gaming text-lg">
                                         {move || db_info.get().map(|i| format_bytes(i.cache_size_bytes)).unwrap_or_else(|| "不明".to_string())}
                                     </span>
                                 </div>
                             </div>
                         </div>
                         <button
-                            class="w-full px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            class="w-full px-4 py-3 bg-amber-600/80 hover:bg-amber-500 rounded-lg text-white font-gaming font-bold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-amber-500/30 hover:shadow-[0_0_15px_rgba(251,191,36,0.3)]"
                             on:click=on_clear_cache
                             disabled=move || clearing_cache.get()
                             aria-busy=move || clearing_cache.get().to_string()
@@ -435,23 +452,32 @@ pub fn DataManagement() -> impl IntoView {
                 
                 // Data reset section
                 <div class="space-y-3">
-                    <h3 class="text-lg font-gaming font-bold text-white">
-                        "データリセット"
+                    <h3 class="text-lg font-gaming font-bold text-red-400 flex items-center gap-2">
+                        <span>"⚠️"</span>
+                        "危険な操作"
                     </h3>
-                    <div class="p-4 bg-red-900/10 rounded-xl border border-red-500/30">
+                    <div class="p-4 bg-red-900/20 rounded-xl border-2 border-red-500/30">
                         <div class="flex items-start gap-3 mb-4">
-                            <span class="text-2xl">"⚠️"</span>
+                            <div class="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center border border-red-500/30 flex-shrink-0">
+                                <span class="text-xl">"🚫"</span>
+                            </div>
                             <div>
-                                <span class="text-red-200 font-bold block">
-                                    "全てのXP、バッジ、統計データを削除します"
+                                <span class="text-red-200 font-gaming font-bold block text-lg">
+                                    "全データをリセット"
                                 </span>
                                 <span class="text-red-200/70 text-sm">
-                                    "この操作は取り消せません"
+                                    "全てのXP、バッジ、統計データを" <span class="font-bold">"完全に削除"</span> "します"
                                 </span>
                             </div>
                         </div>
+                        <div class="p-3 bg-red-900/30 rounded-lg mb-4 border border-red-500/20">
+                            <p class="text-red-200/80 text-xs flex items-center gap-2">
+                                <span>"💡"</span>
+                                "この操作を実行すると、リセットを確認するダイアログが表示されます"
+                            </p>
+                        </div>
                         <button
-                            class="w-full px-4 py-3 bg-red-600 hover:bg-red-500 rounded-lg text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            class="w-full px-4 py-3 bg-gradient-to-r from-red-700 to-red-600 hover:from-red-600 hover:to-red-500 rounded-lg text-white font-gaming font-bold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.2)] hover:shadow-[0_0_25px_rgba(239,68,68,0.4)]"
                             on:click=move |_| set_show_reset_dialog.set(true)
                             disabled=move || resetting.get()
                             aria-busy=move || resetting.get().to_string()

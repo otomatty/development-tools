@@ -8,6 +8,8 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::tauri_api;
 use crate::types::{UpdateSettingsRequest, UserSettings, SyncIntervalOption};
+use super::toast::{InlineToast, ToastType};
+use super::toggle_switch::ToggleSwitch;
 
 /// Helper to clear a timeout handle stored in a signal (uses untrack to avoid Effect dependency)
 fn clear_timeout_signal_untracked(handle_signal: ReadSignal<Option<i32>>, set_handle_signal: WriteSignal<Option<i32>>) {
@@ -89,7 +91,7 @@ pub fn SyncSettings() -> impl IntoView {
     };
 
     // Toggle background sync
-    let toggle_background_sync = move |_| {
+    let toggle_background_sync = move || {
         if let Some(mut current_settings) = settings.get() {
             current_settings.background_sync = !current_settings.background_sync;
             set_settings.set(Some(current_settings));
@@ -97,7 +99,7 @@ pub fn SyncSettings() -> impl IntoView {
     };
 
     // Toggle sync on startup
-    let toggle_sync_on_startup = move |_| {
+    let toggle_sync_on_startup = move || {
         if let Some(mut current_settings) = settings.get() {
             current_settings.sync_on_startup = !current_settings.sync_on_startup;
             set_settings.set(Some(current_settings));
@@ -212,6 +214,10 @@ pub fn SyncSettings() -> impl IntoView {
         clear_timeout_signal_untracked(success_msg_handle, set_success_msg_handle);
     });
 
+    // Create derived signals for toast messages
+    let error_message_signal = Signal::derive(move || error.get().unwrap_or_default());
+    let success_message_signal = Signal::derive(move || success_message.get().unwrap_or_default());
+    
     view! {
         <div class="space-y-6">
             // Loading state
@@ -221,19 +227,19 @@ pub fn SyncSettings() -> impl IntoView {
                 </div>
             </Show>
 
-            // Error message
-            <Show when=move || error.get().is_some()>
-                <div class="p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 text-sm">
-                    {move || error.get().unwrap_or_default()}
-                </div>
-            </Show>
+            // Error message with InlineToast
+            <InlineToast
+                visible=move || error.get().is_some()
+                message=error_message_signal
+                toast_type=ToastType::Error
+            />
 
-            // Success message
-            <Show when=move || success_message.get().is_some()>
-                <div class="p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-green-200 text-sm">
-                    {move || success_message.get().unwrap_or_default()}
-                </div>
-            </Show>
+            // Success message with InlineToast
+            <InlineToast
+                visible=move || success_message.get().is_some()
+                message=success_message_signal
+                toast_type=ToastType::Success
+            />
 
             // Settings form
             <Show when=move || settings.get().is_some() && !loading.get()>
@@ -301,67 +307,35 @@ pub fn SyncSettings() -> impl IntoView {
                                     // Background sync toggle
                                     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
                                         <div class="flex-1">
-                                            <span class="text-white block" id="background-sync-label">
+                                            <span class="text-white block font-gaming font-bold" id="background-sync-label">
                                                 "バックグラウンド同期"
                                             </span>
-                                            <span class="text-sm text-dt-text-sub">
+                                            <span class="text-sm text-dt-text-sub mt-1 block">
                                                 "アプリがバックグラウンドにある時も同期を続ける"
                                             </span>
                                         </div>
-                                        <button
-                                            class=move || format!(
-                                                "relative w-12 h-6 rounded-full transition-colors duration-200 {}",
-                                                if current_settings.background_sync {
-                                                    "bg-gm-accent-cyan"
-                                                } else {
-                                                    "bg-slate-600"
-                                                }
-                                            )
-                                            role="switch"
-                                            aria-checked=move || current_settings.background_sync.to_string()
-                                            aria-labelledby="background-sync-label"
-                                            on:click=toggle_background_sync
-                                        >
-                                            <span
-                                                class=move || format!(
-                                                    "absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 {}",
-                                                    if current_settings.background_sync { "translate-x-6" } else { "translate-x-0" }
-                                                )
-                                            ></span>
-                                        </button>
+                                        <ToggleSwitch
+                                            enabled=current_settings.background_sync
+                                            on_toggle=toggle_background_sync.clone()
+                                            label_id="background-sync-label"
+                                        />
                                     </div>
 
                                     // Sync on startup toggle
                                     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
                                         <div class="flex-1">
-                                            <span class="text-white block" id="sync-on-startup-label">
+                                            <span class="text-white block font-gaming font-bold" id="sync-on-startup-label">
                                                 "起動時に同期"
                                             </span>
-                                            <span class="text-sm text-dt-text-sub">
+                                            <span class="text-sm text-dt-text-sub mt-1 block">
                                                 "アプリ起動時に自動的に同期を実行する"
                                             </span>
                                         </div>
-                                        <button
-                                            class=move || format!(
-                                                "relative w-12 h-6 rounded-full transition-colors duration-200 {}",
-                                                if current_settings.sync_on_startup {
-                                                    "bg-gm-accent-cyan"
-                                                } else {
-                                                    "bg-slate-600"
-                                                }
-                                            )
-                                            role="switch"
-                                            aria-checked=move || current_settings.sync_on_startup.to_string()
-                                            aria-labelledby="sync-on-startup-label"
-                                            on:click=toggle_sync_on_startup
-                                        >
-                                            <span
-                                                class=move || format!(
-                                                    "absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 {}",
-                                                    if current_settings.sync_on_startup { "translate-x-6" } else { "translate-x-0" }
-                                                )
-                                            ></span>
-                                        </button>
+                                        <ToggleSwitch
+                                            enabled=current_settings.sync_on_startup
+                                            on_toggle=toggle_sync_on_startup.clone()
+                                            label_id="sync-on-startup-label"
+                                        />
                                     </div>
                                 </div>
                             </div>
