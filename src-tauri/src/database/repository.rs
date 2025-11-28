@@ -381,6 +381,59 @@ impl Database {
             .ok_or_else(|| DatabaseError::Query("User stats not found after update".to_string()))
     }
 
+    /// Update streak from GitHub contribution calendar data
+    /// 
+    /// This method takes pre-calculated streak information from the GitHub contribution
+    /// calendar and updates the database accordingly. Unlike `update_streak`, this method
+    /// uses the actual GitHub contribution history rather than app usage dates.
+    /// 
+    /// # Arguments
+    /// * `user_id` - The user's database ID
+    /// * `current_streak` - Current consecutive days with contributions (from GitHub)
+    /// * `longest_streak` - Longest consecutive days ever (from GitHub)
+    /// * `last_activity_date` - The last date with contributions (YYYY-MM-DD format)
+    pub async fn update_streak_from_github(
+        &self,
+        user_id: i64,
+        current_streak: i32,
+        longest_streak: i32,
+        last_activity_date: Option<&str>,
+    ) -> DbResult<UserStats> {
+        let now = Utc::now().to_rfc3339();
+
+        // Get current stats to compare longest_streak
+        let current_stats = self
+            .get_user_stats(user_id)
+            .await?
+            .ok_or_else(|| DatabaseError::Query("User stats not found".to_string()))?;
+
+        // Ensure longest_streak never decreases (keep the max)
+        let final_longest_streak = longest_streak.max(current_stats.longest_streak);
+
+        // Parse the date string if provided
+        let activity_date_str = last_activity_date.map(|s| s.to_string());
+
+        sqlx::query(
+            r#"
+            UPDATE user_stats 
+            SET current_streak = ?, longest_streak = ?, last_activity_date = ?, updated_at = ?
+            WHERE user_id = ?
+            "#,
+        )
+        .bind(current_streak)
+        .bind(final_longest_streak)
+        .bind(activity_date_str)
+        .bind(now)
+        .bind(user_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        self.get_user_stats(user_id)
+            .await?
+            .ok_or_else(|| DatabaseError::Query("User stats not found after update".to_string()))
+    }
+
     /// Increment activity counts
     pub async fn increment_activity_count(
         &self,

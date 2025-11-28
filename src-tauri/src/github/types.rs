@@ -177,6 +177,18 @@ pub struct ContributionsCollection {
     pub total_pull_request_review_contributions: i32,
 }
 
+/// Streak information calculated from contribution calendar
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StreakInfo {
+    /// Current consecutive days with contributions
+    pub current_streak: i32,
+    /// Longest consecutive days with contributions ever
+    pub longest_streak: i32,
+    /// Date of last activity (YYYY-MM-DD format)
+    pub last_activity_date: Option<String>,
+}
+
 /// User statistics aggregated from various sources
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -193,5 +205,7 @@ pub struct GitHubStats {
     pub current_streak: i32,
     pub longest_streak: i32,
     pub languages_count: i32,
+    /// Detailed streak information from contribution calendar
+    pub streak_info: Option<StreakInfo>,
 }
 
