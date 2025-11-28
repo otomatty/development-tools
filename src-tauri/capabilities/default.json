@@ -10,6 +10,8 @@
     "shell:default",
     "shell:allow-open",
     "http:default",
-    "deep-link:default"
+    "deep-link:default",
+    "notification:allow-is-permission-granted",
+    "notification:default"
   ]
 }

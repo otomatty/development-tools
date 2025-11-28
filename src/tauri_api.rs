@@ -376,7 +376,12 @@ pub async fn get_sync_intervals() -> Result<Vec<SyncIntervalOption>, String> {
 
 /// ユーザー設定を更新
 pub async fn update_settings(settings: &UpdateSettingsRequest) -> Result<UserSettings, String> {
-    let args = serde_wasm_bindgen::to_value(settings).unwrap();
+    #[derive(serde::Serialize)]
+    struct Args<'a> {
+        settings: &'a UpdateSettingsRequest,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { settings }).unwrap();
     let result = invoke("update_settings", args).await;
     
     serde_wasm_bindgen::from_value(result)
