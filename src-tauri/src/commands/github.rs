@@ -2,7 +2,6 @@
 //!
 //! These commands handle fetching data from the GitHub API.
 
-use chrono::Utc;
 use tauri::{command, Emitter, State};
 
 use super::auth::AppState;
@@ -236,13 +235,18 @@ pub async fn sync_github_stats(
     let old_level = level::level_from_xp(current_stats.total_xp as u32);
     let old_streak = current_stats.current_streak;
 
-    // Update streak if there was activity today
-    let today = Utc::now().date_naive();
-    let streak_result = if github_stats.total_contributions > 0 {
-        // Update streak and get the result
+    // Update streak from GitHub contribution calendar data
+    // This uses the actual GitHub contribution history rather than app sync dates
+    let streak_result = if let Some(streak_info) = &github_stats.streak_info {
+        // Update streak using GitHub contribution calendar data
         let updated_stats = state
             .db
-            .update_streak(user.id, today)
+            .update_streak_from_github(
+                user.id,
+                streak_info.current_streak,
+                streak_info.longest_streak,
+                streak_info.last_activity_date.as_deref(),
+            )
             .await
             .map_err(|e| e.to_string())?;
         
@@ -251,6 +255,12 @@ pub async fn sync_github_stats(
         
         Some((bonus, new_streak))
     } else {
+        // Log warning when streak_info is not available
+        // This can happen if GitHub API doesn't return contribution calendar data
+        eprintln!(
+            "Warning: streak_info is None for user {}: GitHub contribution calendar data not available. Streak will not be updated.",
+            user.id
+        );
         None
     };
 

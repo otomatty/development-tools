@@ -323,10 +323,16 @@ impl GitHubClient {
     }
 
     /// Calculate streak from contribution calendar
-    pub fn calculate_streak(calendar: &ContributionCalendar) -> (i32, i32) {
+    /// 
+    /// Returns StreakInfo containing:
+    /// - current_streak: consecutive days with contributions up to today/yesterday
+    /// - longest_streak: longest consecutive days with contributions ever
+    /// - last_activity_date: the most recent date with contributions
+    pub fn calculate_streak(calendar: &ContributionCalendar) -> StreakInfo {
         let mut current_streak = 0;
         let mut longest_streak = 0;
         let mut temp_streak = 0;
+        let mut last_activity_date: Option<String> = None;
 
         // Flatten all days and sort by date
         let mut all_days: Vec<&ContributionDay> = calendar
@@ -346,6 +352,7 @@ impl GitHubClient {
             if day.contribution_count > 0 {
                 temp_streak += 1;
                 longest_streak = longest_streak.max(temp_streak);
+                last_activity_date = Some(day.date.clone());
 
                 // Check if this could be current streak
                 if day.date == today || day.date == yesterday {
@@ -364,7 +371,20 @@ impl GitHubClient {
             }
         }
 
-        (current_streak, longest_streak)
+        StreakInfo {
+            current_streak,
+            longest_streak,
+            last_activity_date,
+        }
+    }
+
+    /// Calculate streak from contribution calendar (legacy tuple return)
+    /// 
+    /// This is kept for backward compatibility. Use calculate_streak for new code.
+    #[deprecated(note = "Use calculate_streak which returns StreakInfo")]
+    pub fn calculate_streak_tuple(calendar: &ContributionCalendar) -> (i32, i32) {
+        let info = Self::calculate_streak(calendar);
+        (info.current_streak, info.longest_streak)
     }
 
     /// Get aggregated user stats
@@ -375,8 +395,7 @@ impl GitHubClient {
     pub async fn get_user_stats(&self, username: &str) -> GitHubResult<GitHubStats> {
         // Get contribution calendar (uses GraphQL - higher rate limit)
         let contributions = self.get_contribution_calendar(username).await?;
-        let (current_streak, longest_streak) =
-            Self::calculate_streak(&contributions.contribution_calendar);
+        let streak_info = Self::calculate_streak(&contributions.contribution_calendar);
 
         // Get total stars received and languages count (uses REST API)
         let repos = self.get_repositories(100, 1).await?;
@@ -448,9 +467,10 @@ impl GitHubClient {
             total_stars_received: total_stars,
             total_contributions: contributions.contribution_calendar.total_contributions,
             contribution_calendar: Some(contributions.contribution_calendar),
-            current_streak,
-            longest_streak,
+            current_streak: streak_info.current_streak,
+            longest_streak: streak_info.longest_streak,
             languages_count: languages.len() as i32,
+            streak_info: Some(streak_info),
         })
     }
 }
@@ -466,9 +486,10 @@ mod tests {
             weeks: vec![],
         };
 
-        let (current, longest) = GitHubClient::calculate_streak(&calendar);
-        assert_eq!(current, 0);
-        assert_eq!(longest, 0);
+        let streak_info = GitHubClient::calculate_streak(&calendar);
+        assert_eq!(streak_info.current_streak, 0);
+        assert_eq!(streak_info.longest_streak, 0);
+        assert_eq!(streak_info.last_activity_date, None);
     }
 
     #[test]
@@ -501,8 +522,9 @@ mod tests {
             }],
         };
 
-        let (_, longest) = GitHubClient::calculate_streak(&calendar);
-        assert_eq!(longest, 2); // 2 consecutive days at the start
+        let streak_info = GitHubClient::calculate_streak(&calendar);
+        assert_eq!(streak_info.longest_streak, 2); // 2 consecutive days at the start
+        assert_eq!(streak_info.last_activity_date, Some("2024-01-04".to_string()));
     }
 }
 
