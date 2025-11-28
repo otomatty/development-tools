@@ -131,10 +131,6 @@ pub fn HomePage(
     // Notification settings
     let (notification_settings, set_notification_settings) = signal(Option::<UserSettings>::None);
     
-    // Auto-sync state
-    let (auto_sync_enabled, set_auto_sync_enabled) = signal(true);
-    let (last_sync_time, set_last_sync_time) = signal(Option::<String>::None);
-    
     // Device Flow login state
     let (login_state, set_login_state) = signal(LoginState::default());
     let (polling_active, set_polling_active) = signal(false);
@@ -173,9 +169,6 @@ pub fn HomePage(
                             // Check sync_on_startup setting
                             let should_sync_on_startup = settings.sync_on_startup;
                             
-                            // Set auto_sync_enabled based on sync_interval_minutes (0 = manual only)
-                            set_auto_sync_enabled.set(settings.sync_interval_minutes > 0);
-                            
                             set_notification_settings.set(Some(settings));
                             
                             // Perform startup sync if enabled
@@ -184,15 +177,6 @@ pub fn HomePage(
                                 match tauri_api::sync_github_stats().await {
                                     Ok(sync_result) => {
                                         set_user_stats.set(Some(sync_result.user_stats.clone()));
-                                        
-                                        // Update last sync time
-                                        let now = js_sys::Date::new_0();
-                                        let time_str = format!(
-                                            "{:02}:{:02}",
-                                            now.get_hours(),
-                                            now.get_minutes()
-                                        );
-                                        set_last_sync_time.set(Some(time_str));
                                         
                                         // Handle notifications to provide consistent UX with other syncs
                                         handle_sync_result_notifications(
@@ -243,7 +227,6 @@ pub fn HomePage(
     // Setup auto-sync timer - interval is determined by user settings
     {
         let auth_state = auth_state.clone();
-        let _auto_sync_enabled = auto_sync_enabled.clone(); // Kept for potential future use
         let component_mounted = component_mounted_for_auto_sync;
         
         spawn_local(async move {
@@ -322,15 +305,6 @@ pub fn HomePage(
                         match tauri_api::sync_github_stats().await {
                             Ok(sync_result) => {
                                 set_user_stats.set(Some(sync_result.user_stats.clone()));
-                                
-                                // Update last sync time
-                                let now = js_sys::Date::new_0();
-                                let time_str = format!(
-                                    "{:02}:{:02}",
-                                    now.get_hours(),
-                                    now.get_minutes()
-                                );
-                                set_last_sync_time.set(Some(time_str));
                                 
                                 // Handle notifications based on sync result
                                 handle_sync_result_notifications(
@@ -528,46 +502,6 @@ pub fn HomePage(
             set_loading.set(false);
         });
     });
-
-    // Handle sync
-    let on_sync = Callback::new(move |_: leptos::ev::MouseEvent| {
-        spawn_local(async move {
-            set_loading.set(true);
-            
-            // Use sync_github_stats which returns XP info
-            match tauri_api::sync_github_stats().await {
-                Ok(sync_result) => {
-                    // Update user stats from sync result
-                    set_user_stats.set(Some(sync_result.user_stats.clone()));
-                    
-                    // Note: Notification settings are loaded on mount, no need to reload here
-                    
-                    // Handle notifications based on sync result
-                    handle_sync_result_notifications(
-                        &sync_result,
-                        notification_settings,
-                        set_xp_event,
-                        set_level_up_event,
-                        set_new_badges_event,
-                    );
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Failed to sync: {}", e).into());
-                    set_error.set(Some(format!("Sync failed: {}", e)));
-                }
-            }
-            
-            // Load other data
-            load_user_data(
-                set_github_stats,
-                set_level_info,
-                set_user_stats,
-                set_badges,
-                set_error,
-            ).await;
-            set_loading.set(false);
-        });
-    });
     
     // Callbacks for closing notifications
     let on_close_xp = move || set_xp_event.set(None);
@@ -586,53 +520,6 @@ pub fn HomePage(
             <MultipleBadgesNotification badges=new_badges_event on_close=on_close_badges />
             
             <div class="max-w-6xl mx-auto p-6 space-y-6">
-                // Header
-                <div class="flex items-center justify-between">
-                    <h1 class="text-3xl font-gaming font-bold text-gm-accent-cyan">
-                        "Dashboard"
-                    </h1>
-                    
-                    <Show when=move || auth_state.get().is_logged_in>
-                        <div class="flex items-center gap-4">
-                            // Auto-sync toggle
-                            <div class="flex items-center gap-2 text-sm">
-                                <span class="text-dt-text-sub">"Auto-sync"</span>
-                                <button
-                                    class=move || format!(
-                                        "relative w-12 h-6 rounded-full transition-colors duration-200 {}",
-                                        if auto_sync_enabled.get() { "bg-gm-accent-cyan" } else { "bg-slate-600" }
-                                    )
-                                    on:click=move |_| set_auto_sync_enabled.set(!auto_sync_enabled.get())
-                                >
-                                    <span
-                                        class=move || format!(
-                                            "absolute top-1 w-4 h-4 rounded-full bg-white transition-transform duration-200 {}",
-                                            if auto_sync_enabled.get() { "translate-x-7" } else { "translate-x-1" }
-                                        )
-                                    />
-                                </button>
-                            </div>
-                            
-                            // Last sync time
-                            <Show when=move || last_sync_time.get().is_some()>
-                                <span class="text-xs text-dt-text-sub">
-                                    "Last: " {move || last_sync_time.get().unwrap_or_default()}
-                                </span>
-                            </Show>
-                            
-                            // Manual sync button
-                            <button
-                                class="px-4 py-2 bg-gm-bg-card border border-gm-accent-cyan/30 rounded-lg text-gm-accent-cyan hover:bg-gm-accent-cyan/10 transition-all duration-200 flex items-center gap-2"
-                                on:click=move |e| on_sync.run(e)
-                                disabled=move || loading.get()
-                            >
-                                <span class=move || if loading.get() { "animate-spin" } else { "" }>"↻"</span>
-                                "Sync"
-                            </button>
-                        </div>
-                    </Show>
-                </div>
-
                 // Error display
                 <Show when=move || error.get().is_some()>
                     <div class="p-4 bg-gm-error/20 border border-gm-error/50 rounded-lg text-gm-error">
