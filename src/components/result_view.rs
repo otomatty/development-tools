@@ -55,11 +55,22 @@ pub fn ResultView(
 
 /// JSONPathライクなパス（例: $.summary.by_type.TODO）から値を取得
 fn get_value_by_path(json: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
+    // ルート要素自体を返すケース
+    if path == "$" {
+        return Some(json.clone());
+    }
+    
     // $. で始まるパスを正規化
     let path = path.strip_prefix("$.").unwrap_or(path);
     
+    // 空パスの場合はルート要素を返す
+    if path.is_empty() {
+        return Some(json.clone());
+    }
+    
     let mut current = json;
-    for part in path.split('.') {
+    // 空のパス部分をフィルタリング（連続ドット対策）
+    for part in path.split('.').filter(|p| !p.is_empty()) {
         match current {
             serde_json::Value::Object(map) => {
                 current = map.get(part)?;
@@ -249,7 +260,8 @@ fn DetailsViewInner(
                                 </thead>
                                 <tbody>
                                     {items.into_iter().map(|item| {
-                                        let cols = columns_clone.clone();
+                                        // 参照を使用して不要なクローンを回避
+                                        let cols = &columns_clone;
                                         view! {
                                             <tr class="border-b border-slate-700/30 hover:bg-slate-800/50">
                                                 {cols.iter().map(|col| {

@@ -82,15 +82,35 @@
 これを解析する `get_value_by_path()` 関数を実装：
 
 ```rust
-fn get_value_by_path(value: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
-    let path = path.trim_start_matches("$.");
-    let parts: Vec<&str> = path.split('.').collect();
-
-    let mut current = value.clone();
-    for part in parts {
-        current = current.get(part)?.clone();
+fn get_value_by_path(json: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
+    // ルート要素自体を返すケース
+    if path == "$" {
+        return Some(json.clone());
     }
-    Some(current)
+    
+    // $. で始まるパスを正規化
+    let path = path.strip_prefix("$.").unwrap_or(path);
+    
+    // 空パスの場合はルート要素を返す
+    if path.is_empty() {
+        return Some(json.clone());
+    }
+    
+    let mut current = json;
+    // 空のパス部分をフィルタリング（連続ドット対策）
+    for part in path.split('.').filter(|p| !p.is_empty()) {
+        match current {
+            serde_json::Value::Object(map) => {
+                current = map.get(part)?;
+            }
+            serde_json::Value::Array(arr) => {
+                let idx: usize = part.parse().ok()?;
+                current = arr.get(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(current.clone())
 }
 ```
 
