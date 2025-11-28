@@ -255,6 +255,12 @@ pub async fn sync_github_stats(
         
         Some((bonus, new_streak))
     } else {
+        // Log warning when streak_info is not available
+        // This can happen if GitHub API doesn't return contribution calendar data
+        eprintln!(
+            "Warning: streak_info is None for user {}: GitHub contribution calendar data not available. Streak will not be updated.",
+            user.id
+        );
         None
     };
 
