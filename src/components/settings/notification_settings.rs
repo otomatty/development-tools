@@ -8,6 +8,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::tauri_api;
 use crate::types::{NotificationMethod, UpdateSettingsRequest, UserSettings};
+use super::toggle_switch::ToggleSwitch;
 
 /// Notification settings component
 #[component]
@@ -265,27 +266,13 @@ pub fn NotificationSettings() -> impl IntoView {
                                         
                                         view! {
                                             <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
-                                                <span class="text-white">
+                                                <span class="text-white font-gaming">
                                                     {label}
                                                 </span>
-                                                <button
-                                                    class=move || format!(
-                                                        "relative w-12 h-6 rounded-full transition-colors duration-200 {}",
-                                                        if enabled {
-                                                            "bg-gm-accent-cyan"
-                                                        } else {
-                                                            "bg-slate-600"
-                                                        }
-                                                    )
-                                                    on:click=move |_| toggle_fn(field_str)
-                                                >
-                                                    <span
-                                                        class=move || format!(
-                                                            "absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 {}",
-                                                            if enabled { "translate-x-6" } else { "translate-x-0" }
-                                                        )
-                                                    ></span>
-                                                </button>
+                                                <ToggleSwitch
+                                                    enabled=enabled
+                                                    on_toggle=move || toggle_fn(field_str)
+                                                />
                                             </div>
                                         }
                                     }).collect::<Vec<_>>()}

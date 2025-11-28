@@ -9,6 +9,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::components::use_animation_context;
 use crate::tauri_api;
 use crate::types::{UpdateSettingsRequest, UserSettings};
+use super::toggle_switch::ToggleSwitch;
 
 /// Appearance settings component
 #[component]
@@ -149,6 +150,7 @@ pub fn AppearanceSettings() -> impl IntoView {
             <Show when=move || settings.get().is_some() && !loading.get()>
                 {move || {
                     let current_settings = settings.get().unwrap();
+                    let toggle_animations = toggle_animations.clone();
 
                     view! {
                         // Animation toggle
@@ -164,27 +166,11 @@ pub fn AppearanceSettings() -> impl IntoView {
                                             "アニメーション効果を有効にする"
                                         </span>
                                     </div>
-                                    <button
-                                        class=move || format!(
-                                            "relative w-12 h-6 rounded-full transition-colors duration-200 {}",
-                                            if current_settings.animations_enabled {
-                                                "bg-gm-accent-cyan"
-                                            } else {
-                                                "bg-slate-600"
-                                            }
-                                        )
-                                        role="switch"
-                                        aria-checked=move || current_settings.animations_enabled.to_string()
-                                        aria-labelledby="animations-label"
-                                        on:click=toggle_animations
-                                    >
-                                        <span
-                                            class=move || format!(
-                                                "absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 {}",
-                                                if current_settings.animations_enabled { "translate-x-6" } else { "translate-x-0" }
-                                            )
-                                        ></span>
-                                    </button>
+                                    <ToggleSwitch
+                                        enabled=current_settings.animations_enabled
+                                        on_toggle=move || toggle_animations(())
+                                        label_id="animations-label"
+                                    />
                                 </div>
                             </div>
 
