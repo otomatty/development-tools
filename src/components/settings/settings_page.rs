@@ -53,7 +53,6 @@ fn AccordionSection(
                 aria-expanded=move || is_expanded.get()
                 aria-controls=content_id.clone()
                 id=section_id.clone()
-                tabindex="0"
             >
                 <div class="flex items-center gap-3">
                     <span class="text-gm-accent-cyan group-hover:scale-110 transition-transform duration-200">

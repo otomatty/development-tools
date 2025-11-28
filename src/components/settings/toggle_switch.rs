@@ -75,9 +75,8 @@ pub fn ToggleSwitch(
             type="button"
             role="switch"
             aria-checked=move || enabled.to_string()
-            aria-labelledby=label_id.unwrap_or_default()
+            aria-labelledby=label_id
             disabled=disabled
-            tabindex="0"
             on:click=move |_| {
                 if !disabled {
                     on_toggle_click();
@@ -124,14 +123,13 @@ pub fn LabeledToggle(
     #[prop(default = false)] disabled: bool,
 ) -> impl IntoView {
     let label_id = format!("toggle-label-{}", label.replace(" ", "-").to_lowercase());
-    let label_id_static: &'static str = Box::leak(label_id.clone().into_boxed_str());
     
     view! {
         <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
             <div class="flex-1">
                 <span 
                     class="text-white block font-gaming" 
-                    id=label_id_static
+                    id=label_id.clone()
                 >
                     {label}
                 </span>
@@ -144,7 +142,6 @@ pub fn LabeledToggle(
             <ToggleSwitch
                 enabled=enabled
                 on_toggle=on_toggle
-                label_id=label_id_static
                 size=size
                 disabled=disabled
             />

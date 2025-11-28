@@ -171,7 +171,7 @@ pub fn SaveStatusIndicator(
                             </div>
                         }.into_any(),
                         None => view! {
-                            <div></div>
+                            <></>
                         }.into_any(),
                     }
                 }

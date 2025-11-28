@@ -49,7 +49,7 @@ pub fn AppearanceSettings() -> impl IntoView {
     let animation_context = use_animation_context();
 
     // Toggle animations
-    let toggle_animations = move |_| {
+    let toggle_animations = move || {
         if let Some(mut current_settings) = settings.get() {
             current_settings.animations_enabled = !current_settings.animations_enabled;
             
@@ -168,7 +168,7 @@ pub fn AppearanceSettings() -> impl IntoView {
                                     </div>
                                     <ToggleSwitch
                                         enabled=current_settings.animations_enabled
-                                        on_toggle=move || toggle_animations(())
+                                        on_toggle=toggle_animations.clone()
                                         label_id="animations-label"
                                     />
                                 </div>

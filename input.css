@@ -167,6 +167,10 @@
     animation: fadeIn 0.2s ease-out;
   }
 
+  .animate-slide-in-up {
+    animation: slideInUp 0.3s ease-out;
+  }
+
   /* Glass effect */
   .glass {
     @apply bg-slate-800/50 backdrop-blur-sm;
@@ -227,19 +231,6 @@
     transform: translateY(0);
     opacity: 1;
   }
-}
-
-/* Toast and dialog animations */
-.animate-fadeIn {
-  animation: fadeIn 0.2s ease-out;
-}
-
-.animate-scaleIn {
-  animation: scaleIn 0.25s ease-out;
-}
-
-.animate-slideInUp {
-  animation: slideInUp 0.3s ease-out;
 }
 
 /* Level up particles */
