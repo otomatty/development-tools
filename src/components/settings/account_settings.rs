@@ -108,10 +108,10 @@ pub fn AccountSettings(
             <div class="flex gap-3">
                 <button
                     class="flex-1 px-4 py-2 rounded-lg bg-gm-accent-cyan/20 hover:bg-gm-accent-cyan/30 text-gm-accent-cyan transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled=loading.get()
+                    disabled=move || loading.get()
                     on:click=move |_| handle_validate_token()
                 >
-                    {if loading.get() {
+                    {move || if loading.get() {
                         "確認中..."
                     } else {
                         "🔄 トークンを確認"
@@ -119,7 +119,7 @@ pub fn AccountSettings(
                 </button>
                 <button
                     class="flex-1 px-4 py-2 rounded-lg bg-gm-error/20 hover:bg-gm-error/30 text-gm-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled=loading.get()
+                    disabled=move || loading.get()
                     on:click=move |_| set_show_logout_dialog.set(true)
                 >
                     "🚪 ログアウト"

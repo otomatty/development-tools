@@ -37,8 +37,9 @@ fn handle_sync_result_notifications(
     set_new_badges_event: WriteSignal<Vec<NewBadgeInfo>>,
 ) {
     // Show notification if XP gained (check notification settings)
+    // Use get_untracked() since this is called from event handlers (non-reactive context)
     if sync_result.xp_gained > 0 {
-        let should_show_app_notification = notification_settings.get()
+        let should_show_app_notification = notification_settings.get_untracked()
             .map(|s| {
                 let method = NotificationMethod::from_str(&s.notification_method);
                 method != NotificationMethod::None && method != NotificationMethod::OsOnly
@@ -58,7 +59,7 @@ fn handle_sync_result_notifications(
             
             if sync_result.level_up {
                 // Check if level up notifications are enabled
-                let should_show_level_up = notification_settings.get()
+                let should_show_level_up = notification_settings.get_untracked()
                     .map(|s| s.notify_level_up)
                     .unwrap_or(true);
                 
@@ -67,7 +68,7 @@ fn handle_sync_result_notifications(
                 }
             } else {
                 // Check if XP gain notifications are enabled
-                let should_show_xp = notification_settings.get()
+                let should_show_xp = notification_settings.get_untracked()
                     .map(|s| s.notify_xp_gain)
                     .unwrap_or(true);
                 
@@ -92,7 +93,7 @@ fn handle_sync_result_notifications(
     
     // Show badge notifications if any (check notification settings)
     if !sync_result.new_badges.is_empty() {
-        let should_show_badge_notification = notification_settings.get()
+        let should_show_badge_notification = notification_settings.get_untracked()
             .map(|s| {
                 let method = NotificationMethod::from_str(&s.notification_method);
                 (method != NotificationMethod::None && method != NotificationMethod::OsOnly) && s.notify_badge_earned
