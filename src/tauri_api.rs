@@ -457,6 +457,7 @@ pub async fn open_external_url(url: &str) -> Result<(), String> {
     } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
         Err(err)
     } else {
-        Ok(())
+        // Unexpected return value should be treated as an error
+        Err("Unexpected return value from Tauri command".to_string())
     }
 }

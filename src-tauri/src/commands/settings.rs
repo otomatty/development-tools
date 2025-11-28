@@ -269,7 +269,7 @@ pub fn get_app_info() -> AppInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
         build_date: env!("BUILD_DATE").to_string(),
         tauri_version: tauri::VERSION.to_string(),
-        leptos_version: "0.7.2".to_string(), // Updated based on typical Leptos version
+        leptos_version: env!("LEPTOS_VERSION").to_string(),
         rust_version: env!("RUST_VERSION").to_string(),
     }
 }
@@ -280,7 +280,7 @@ pub async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(),
     use tauri_plugin_opener::OpenerExt;
     
     app.opener()
-        .open_url(&url, None::<&str>)
+        .open_url(&url, None::<String>)
         .map_err(|e| format!("Failed to open URL: {}", e))
 }
 

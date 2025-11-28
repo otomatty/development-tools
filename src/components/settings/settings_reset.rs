@@ -3,6 +3,7 @@
 //! Allows users to reset all settings to defaults.
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::tauri_api;
@@ -95,11 +96,17 @@ pub fn SettingsResetSection() -> impl IntoView {
             match tauri_api::reset_settings().await {
                 Ok(_) => {
                     set_success_message.set(Some("設定をリセットしました".to_string()));
-                    // Clear success message after 3 seconds
-                    gloo_timers::callback::Timeout::new(3000, move || {
-                        set_success_message.set(None);
-                    })
-                    .forget();
+                    // Clear success message after 3 seconds using web_sys timeout
+                    if let Some(window) = web_sys::window() {
+                        let closure = wasm_bindgen::closure::Closure::once(move || {
+                            set_success_message.set(None);
+                        });
+                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                            3000,
+                        );
+                        closure.forget();
+                    }
                 }
                 Err(e) => {
                     set_error_message.set(Some(format!("設定のリセットに失敗しました: {}", e)));

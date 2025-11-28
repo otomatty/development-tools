@@ -8,6 +8,9 @@ use wasm_bindgen_futures::spawn_local;
 use crate::tauri_api;
 use crate::types::AppInfo;
 
+/// GitHub repository URL
+const GITHUB_REPO_URL: &str = "https://github.com/otomatty/development-tools";
+
 /// Application information component
 #[component]
 pub fn AppInfoSection() -> impl IntoView {
@@ -17,6 +20,7 @@ pub fn AppInfoSection() -> impl IntoView {
     let (opening_url, set_opening_url) = signal(false);
 
     // Load app info on mount
+    // Note: Effect::new is the correct API for Leptos 0.7.x
     Effect::new(move |_| {
         spawn_local(async move {
             match tauri_api::get_app_info().await {
@@ -35,7 +39,7 @@ pub fn AppInfoSection() -> impl IntoView {
     let open_github = move |_| {
         set_opening_url.set(true);
         spawn_local(async move {
-            if let Err(e) = tauri_api::open_external_url("https://github.com/otomatty/development-tools").await {
+            if let Err(e) = tauri_api::open_external_url(GITHUB_REPO_URL).await {
                 web_sys::console::error_1(&format!("Failed to open URL: {}", e).into());
             }
             set_opening_url.set(false);
