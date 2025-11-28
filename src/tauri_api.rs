@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
 
 use crate::types::{
-    AuthState, Badge, BadgeDefinition, ClearCacheResult, DatabaseInfo, DeviceCodeResponse,
+    AppInfo, AuthState, Badge, BadgeDefinition, ClearCacheResult, DatabaseInfo, DeviceCodeResponse,
     DeviceTokenStatus, GitHubStats, GitHubUser, LevelInfo, SyncIntervalOption, SyncResult,
     ToolConfig, ToolInfo, UpdateSettingsRequest, UserSettings, UserStats, XpGainedEvent,
     XpHistoryEntry,
@@ -433,3 +433,31 @@ pub async fn export_data() -> Result<String, String> {
         .map_err(|e| format!("Failed to export data: {:?}", e))
 }
 
+/// アプリケーション情報を取得
+pub async fn get_app_info() -> Result<AppInfo, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_app_info", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get app info: {:?}", e))
+}
+
+/// 外部URLをブラウザで開く
+pub async fn open_external_url(url: &str) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Args<'a> {
+        url: &'a str,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { url }).unwrap();
+    let result = invoke("open_external_url", args).await;
+    
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        // Unexpected return value should be treated as an error
+        Err("Unexpected return value from Tauri command".to_string())
+    }
+}
