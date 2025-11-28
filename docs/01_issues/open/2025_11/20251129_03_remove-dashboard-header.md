@@ -33,8 +33,8 @@
 
 1. **`HomePage` コンポーネントの修正**
    - ヘッダー部分の JSX を削除
-   - 関連する state（`auto_sync_enabled`, `last_sync_time`）は自動同期ロジックで使用するため維持
-   - 手動同期ボタンのコールバック（`on_sync`）は削除可能
+   - 関連する state（`auto_sync_enabled`, `last_sync_time`）を削除。自動同期ロジックは `notification_settings`（`sync_interval_minutes` および `background_sync`）を直接参照するように変更済み
+   - 手動同期ボタンのコールバック（`on_sync`）を削除
 
 ## 影響範囲
 
@@ -83,4 +83,4 @@
 
 ## 関連 Issue
 
-- なし
+- #36
