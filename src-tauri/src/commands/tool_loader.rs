@@ -117,6 +117,50 @@ pub fn get_tool_binary_path(tool_name: &str) -> Result<PathBuf, String> {
     Ok(binary_path)
 }
 
+/// ファイルまたはディレクトリを選択するダイアログを表示
+/// 
+/// # Arguments
+/// * `app` - Tauri AppHandle
+/// * `path_type` - 選択するパスの種類 ("file", "directory", "any")
+/// * `title` - ダイアログのタイトル (オプション)
+/// * `default_path` - デフォルトのパス (オプション)
+#[tauri::command]
+pub async fn select_path(
+    app: tauri::AppHandle,
+    path_type: String,
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let dialog = app.dialog().file();
+    
+    // タイトルを設定
+    let dialog = if let Some(t) = title {
+        dialog.set_title(t)
+    } else {
+        dialog
+    };
+    
+    // デフォルトパスを設定
+    let dialog = if let Some(path) = default_path {
+        dialog.set_directory(path)
+    } else {
+        dialog
+    };
+
+    let result = match path_type.as_str() {
+        "directory" => dialog.blocking_pick_folder(),
+        "file" => dialog.blocking_pick_file(),
+        _ => {
+            // "any" の場合は両方対応（ファイル優先）
+            dialog.blocking_pick_file()
+        }
+    };
+
+    Ok(result.map(|p| p.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

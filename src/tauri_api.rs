@@ -60,6 +60,37 @@ pub async fn run_tool(tool_name: &str, options: &HashMap<String, serde_json::Val
     }
 }
 
+/// ファイルまたはディレクトリを選択するダイアログを表示
+///
+/// # Arguments
+/// * `path_type` - 選択するパスの種類 ("file", "directory", "any")
+/// * `title` - ダイアログのタイトル (オプション)
+/// * `default_path` - デフォルトのパス (オプション)
+pub async fn select_path(
+    path_type: &str,
+    title: Option<&str>,
+    default_path: Option<&str>,
+) -> Result<Option<String>, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        path_type: &'a str,
+        title: Option<&'a str>,
+        default_path: Option<&'a str>,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args {
+        path_type,
+        title,
+        default_path,
+    })
+    .unwrap();
+    let result = invoke("select_path", args).await;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to select path: {:?}", e))
+}
+
 /// Tauriイベントリスナーをセットアップ
 #[wasm_bindgen]
 extern "C" {
