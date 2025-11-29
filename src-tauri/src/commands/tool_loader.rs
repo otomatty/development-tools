@@ -132,33 +132,42 @@ pub async fn select_path(
     default_path: Option<String>,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
+    use tokio::sync::oneshot;
 
-    let dialog = app.dialog().file();
+    let (tx, rx) = oneshot::channel();
+    
+    let mut dialog = app.dialog().file();
     
     // タイトルを設定
-    let dialog = if let Some(t) = title {
-        dialog.set_title(t)
-    } else {
-        dialog
-    };
+    if let Some(t) = title {
+        dialog = dialog.set_title(t);
+    }
     
     // デフォルトパスを設定
-    let dialog = if let Some(path) = default_path {
-        dialog.set_directory(path)
-    } else {
-        dialog
-    };
+    if let Some(path) = default_path {
+        dialog = dialog.set_directory(path);
+    }
 
-    let result = match path_type.as_str() {
-        "directory" => dialog.blocking_pick_folder(),
-        "file" => dialog.blocking_pick_file(),
+    match path_type.as_str() {
+        "directory" => {
+            dialog.pick_folder(move |result| {
+                let _ = tx.send(result.map(|p| p.to_string()));
+            });
+        }
+        "file" => {
+            dialog.pick_file(move |result| {
+                let _ = tx.send(result.map(|p| p.to_string()));
+            });
+        }
         _ => {
             // "any" の場合は両方対応（ファイル優先）
-            dialog.blocking_pick_file()
+            dialog.pick_file(move |result| {
+                let _ = tx.send(result.map(|p| p.to_string()));
+            });
         }
     };
 
-    Ok(result.map(|p| p.to_string()))
+    rx.await.map_err(|_| "Dialog was cancelled".to_string())
 }
 
 #[cfg(test)]

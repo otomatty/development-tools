@@ -44,6 +44,8 @@ pub struct ToolOption {
     pub default: Option<serde_json::Value>,
     pub placeholder: Option<String>,
     pub options: Option<Vec<String>>,
+    /// パスの種類 ("file", "directory", "any") - Pathタイプの場合のみ使用
+    pub path_type: Option<String>,
 }
 
 /// オプションの型

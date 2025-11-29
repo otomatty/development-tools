@@ -37,6 +37,9 @@ pub struct ToolOption {
     pub placeholder: Option<String>,
     #[serde(default)]
     pub options: Option<Vec<String>>,
+    /// パスの種類 ("file", "directory", "any") - Pathタイプの場合のみ使用
+    #[serde(default)]
+    pub path_type: Option<String>,
 }
 
 /// オプションの型
