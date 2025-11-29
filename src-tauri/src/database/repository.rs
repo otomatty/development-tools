@@ -2,7 +2,7 @@
 //!
 //! This module provides CRUD operations for database models.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use sqlx::{FromRow, Row};
 
 use super::connection::{Database, DatabaseError, DbResult};
@@ -1141,6 +1141,13 @@ impl Database {
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
+        let start_date = DateTime::parse_from_rfc3339(row.get::<&str, _>("start_date"))
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| DatabaseError::Query(format!("Failed to parse start_date: {}", e)))?;
+        let end_date = DateTime::parse_from_rfc3339(row.get::<&str, _>("end_date"))
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| DatabaseError::Query(format!("Failed to parse end_date: {}", e)))?;
+
         Ok(Challenge {
             id: row.get("id"),
             user_id: row.get("user_id"),
@@ -1149,12 +1156,8 @@ impl Database {
             target_value: row.get("target_value"),
             current_value: row.get("current_value"),
             reward_xp: row.get("reward_xp"),
-            start_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("start_date"))
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            end_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("end_date"))
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
+            start_date,
+            end_date,
             status: row.get("status"),
             completed_at: row
                 .get::<Option<&str>, _>("completed_at")
@@ -1491,25 +1494,38 @@ impl Database {
             return Ok(0);
         }
 
-        // Calculate consecutive weeks
+        // Calculate consecutive weeks using ISO week numbers
         let mut consecutive = 0;
-        let mut last_week: Option<i64> = None;
+        let mut last_week: Option<(i32, u32)> = None; // (year, week_number)
 
         for row in &rows {
             if let Some(completed_at_str) = row.get::<Option<&str>, _>("completed_at") {
                 if let Ok(completed_at) = DateTime::parse_from_rfc3339(completed_at_str) {
-                    let week_number = completed_at.timestamp() / (7 * 24 * 60 * 60);
+                    let completed_at_utc = completed_at.with_timezone(&Utc);
+                    let iso_week = completed_at_utc.iso_week();
+                    let week_tuple = (iso_week.year(), iso_week.week());
                     
                     match last_week {
                         None => {
                             consecutive = 1;
-                            last_week = Some(week_number);
+                            last_week = Some(week_tuple);
                         }
-                        Some(last) => {
-                            if week_number == last - 1 {
+                        Some((last_year, last_wk)) => {
+                            // Check if this is the previous week
+                            let is_previous_week = if week_tuple.0 == last_year {
+                                // Same year: check if week number is exactly one less
+                                week_tuple.1 + 1 == last_wk
+                            } else if week_tuple.0 + 1 == last_year && last_wk == 1 {
+                                // Year boundary: last week of previous year to first week of next year
+                                week_tuple.1 >= 52 // Week 52 or 53
+                            } else {
+                                false
+                            };
+
+                            if is_previous_week {
                                 consecutive += 1;
-                                last_week = Some(week_number);
-                            } else if week_number != last {
+                                last_week = Some(week_tuple);
+                            } else if week_tuple != (last_year, last_wk) {
                                 // Gap in weeks, stop counting
                                 break;
                             }

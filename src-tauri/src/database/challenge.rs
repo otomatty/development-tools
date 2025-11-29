@@ -3,7 +3,7 @@
 //! This module handles automatic challenge generation based on user activity
 //! and progress updates during GitHub sync.
 
-use chrono::{DateTime, Datelike, Duration, Utc, Weekday};
+use chrono::{DateTime, Datelike, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Current GitHub stats used for challenge progress tracking
@@ -249,13 +249,11 @@ pub fn calculate_challenge_period(
             (now, end)
         }
         "weekly" => {
-            // Weekly challenge: from now to end of Sunday (midnight UTC)
+            // Weekly challenge: from now to end of Sunday (next Monday 00:00 UTC)
             let today = now.date_naive();
-            let days_until_sunday = (7 - today.weekday().num_days_from_monday()) % 7;
-            // If today is Sunday, set end to next Sunday
-            let days_to_add = if days_until_sunday == 0 { 7 } else { days_until_sunday };
-            let sunday = today + Duration::days(days_to_add as i64);
-            let next_monday = sunday + Duration::days(1);
+            let days_from_monday = today.weekday().num_days_from_monday();
+            // Calculate days until next Monday (end of week)
+            let next_monday = today + Duration::days(7 - days_from_monday as i64);
             let end = next_monday.and_hms_opt(0, 0, 0).unwrap().and_utc();
             (now, end)
         }
@@ -280,7 +278,6 @@ pub fn should_generate_weekly_challenges(
     now: DateTime<Utc>,
 ) -> bool {
     let today = now.date_naive();
-    let _is_monday = today.weekday() == Weekday::Mon;
 
     match last_weekly_challenge_date {
         Some(date) => {

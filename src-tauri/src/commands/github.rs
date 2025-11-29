@@ -620,11 +620,13 @@ pub async fn sync_github_stats(
     }
 
     // Update progress for active challenges
-    let active_challenges = state
-        .db
-        .get_active_challenges(user.id)
-        .await
-        .unwrap_or_default();
+    let active_challenges = match state.db.get_active_challenges(user.id).await {
+        Ok(challenges) => challenges,
+        Err(e) => {
+            eprintln!("Failed to fetch active challenges: {}", e);
+            vec![]
+        }
+    };
 
     for ch in active_challenges {
         // Get start stats for this challenge
@@ -635,9 +637,29 @@ pub async fn sync_github_stats(
                     .saturating_sub(start_stats.get_metric(&ch.target_metric));
 
                 // Update progress in database
-                if progress > 0 {
-                    if let Err(e) = state.db.update_challenge_progress(ch.id, progress).await {
-                        eprintln!("Failed to update challenge progress: {}", e);
+                if progress > ch.current_value {
+                    match state.db.update_challenge_progress(ch.id, progress).await {
+                        Ok(updated_challenge) => {
+                            // Check if challenge was just completed (active -> completed transition)
+                            if ch.status == "active" && updated_challenge.status == "completed" {
+                                // Award XP for completing the challenge
+                                if let Err(e) = state.db.record_xp_gain(
+                                    user.id,
+                                    "challenge_completed",
+                                    updated_challenge.reward_xp,
+                                    Some(&format!("Completed {} challenge", updated_challenge.challenge_type)),
+                                    None,
+                                ).await {
+                                    eprintln!("Failed to record XP gain for challenge: {}", e);
+                                }
+                                if let Err(e) = state.db.add_xp(user.id, updated_challenge.reward_xp).await {
+                                    eprintln!("Failed to add XP for challenge: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to update challenge progress: {}", e);
+                        }
                     }
                 }
             }

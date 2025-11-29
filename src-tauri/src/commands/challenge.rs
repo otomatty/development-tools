@@ -2,11 +2,12 @@
 //!
 //! These commands handle challenge-related operations: CRUD, progress tracking, etc.
 
-use chrono::{DateTime, Duration, Utc, Weekday, Datelike, NaiveDate};
+use chrono::Utc;
 use tauri::{command, State};
 
 use super::auth::AppState;
-use crate::database::models::{Challenge, ChallengeStatus, ChallengeType, TargetMetric};
+use crate::database::models::Challenge;
+use crate::database::challenge;
 
 /// Challenge info for frontend with additional computed fields
 #[derive(Debug, Clone, serde::Serialize)]
@@ -174,11 +175,11 @@ pub async fn create_challenge(
     }
 
     let now = Utc::now();
-    let (start_date, end_date) = calculate_challenge_period(&request.challenge_type, now);
+    let (start_date, end_date) = challenge::calculate_challenge_period(&request.challenge_type, now);
 
     // Calculate reward XP if not provided
     let reward_xp = request.reward_xp.unwrap_or_else(|| {
-        calculate_reward_xp(&request.target_metric, request.target_value)
+        challenge::calculate_reward_xp(&request.target_metric, request.target_value)
     });
 
     let challenge = state
@@ -243,14 +244,14 @@ pub async fn update_challenge_progress(
         .map_err(|e| e.to_string())?
         .ok_or("Not logged in")?;
 
-    // Verify the challenge belongs to the user
-    let challenge = state
+    // Verify the challenge belongs to the user and get original state
+    let original_challenge = state
         .db
         .get_challenge_by_id(challenge_id)
         .await
         .map_err(|e| e.to_string())?;
 
-    if challenge.user_id != user.id {
+    if original_challenge.user_id != user.id {
         return Err("Challenge not found".to_string());
     }
 
@@ -260,22 +261,16 @@ pub async fn update_challenge_progress(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Check if challenge is now complete
-    if updated.current_value >= updated.target_value && updated.status == "active" {
-        let completed = state
-            .db
-            .complete_challenge(challenge_id)
-            .await
-            .map_err(|e| e.to_string())?;
-
+    // Check if challenge was just completed (active -> completed transition)
+    if updated.status == "completed" && original_challenge.status == "active" {
         // Award XP for completing the challenge
         state
             .db
             .record_xp_gain(
                 user.id,
                 "challenge_completed",
-                completed.reward_xp,
-                Some(&format!("Completed {} challenge", completed.challenge_type)),
+                updated.reward_xp,
+                Some(&format!("Completed {} challenge", updated.challenge_type)),
                 None,
             )
             .await
@@ -283,11 +278,9 @@ pub async fn update_challenge_progress(
 
         state
             .db
-            .add_xp(user.id, completed.reward_xp)
+            .add_xp(user.id, updated.reward_xp)
             .await
             .map_err(|e| e.to_string())?;
-
-        return Ok(ChallengeInfo::from(completed));
     }
 
     Ok(ChallengeInfo::from(updated))
@@ -336,59 +329,24 @@ pub async fn get_challenge_stats(state: State<'_, AppState>) -> Result<Challenge
     })
 }
 
-// Helper functions
-
-/// Calculate challenge start and end dates based on type
-fn calculate_challenge_period(challenge_type: &str, now: DateTime<Utc>) -> (DateTime<Utc>, DateTime<Utc>) {
-    match challenge_type {
-        "daily" => {
-            // Daily challenge: from now to end of today (midnight)
-            let today = now.date_naive();
-            let tomorrow = today + Duration::days(1);
-            let end = tomorrow.and_hms_opt(0, 0, 0).unwrap().and_utc();
-            (now, end)
-        }
-        "weekly" => {
-            // Weekly challenge: from now to end of Sunday
-            let today = now.date_naive();
-            let days_until_sunday = (7 - today.weekday().num_days_from_monday()) % 7;
-            let sunday = today + Duration::days(days_until_sunday as i64);
-            let next_monday = sunday + Duration::days(1);
-            let end = next_monday.and_hms_opt(0, 0, 0).unwrap().and_utc();
-            (now, end)
-        }
-        _ => (now, now + Duration::days(7)), // Default to 7 days
-    }
-}
-
-/// Calculate reward XP based on target metric and value
-fn calculate_reward_xp(target_metric: &str, target_value: i32) -> i32 {
-    let base_xp = match target_metric {
-        "commits" => 10,
-        "prs" => 40,
-        "reviews" => 20,
-        "issues" => 25,
-        _ => 10,
-    };
-    base_xp * target_value
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
 
     #[test]
     fn test_calculate_reward_xp() {
-        assert_eq!(calculate_reward_xp("commits", 5), 50);
-        assert_eq!(calculate_reward_xp("prs", 2), 80);
-        assert_eq!(calculate_reward_xp("reviews", 3), 60);
-        assert_eq!(calculate_reward_xp("issues", 4), 100);
+        // Test through challenge module
+        assert_eq!(challenge::calculate_reward_xp("commits", 5), 50);
+        assert_eq!(challenge::calculate_reward_xp("prs", 2), 80);
+        assert_eq!(challenge::calculate_reward_xp("reviews", 3), 60);
+        assert_eq!(challenge::calculate_reward_xp("issues", 4), 100);
     }
 
     #[test]
     fn test_calculate_challenge_period_daily() {
         let now = Utc::now();
-        let (start, end) = calculate_challenge_period("daily", now);
+        let (start, end) = challenge::calculate_challenge_period("daily", now);
         
         assert_eq!(start, now);
         assert!(end > now);
@@ -398,7 +356,7 @@ mod tests {
     #[test]
     fn test_calculate_challenge_period_weekly() {
         let now = Utc::now();
-        let (start, end) = calculate_challenge_period("weekly", now);
+        let (start, end) = challenge::calculate_challenge_period("weekly", now);
         
         assert_eq!(start, now);
         assert!(end > now);
