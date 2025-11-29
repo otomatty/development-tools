@@ -56,27 +56,22 @@ fn main() -> Result<()> {
     }
 
     // Load configuration file if exists
-    let config = match load_config(&scan_path) {
-        Ok(cfg) => cfg.unwrap_or_default(),
+    let (config, has_config_file) = match load_config(&scan_path) {
+        Ok(Some(cfg)) => (cfg, true),
+        Ok(None) => (Config::default(), false),
         Err(e) => {
             if args.output == OutputFormat::Text {
                 eprintln!("{} Warning: {}", "⚠".yellow(), e);
             }
-            Config::default()
+            (Config::default(), false)
         }
     };
-    let has_config_file = config.exclude.len() > 0 
-        || config.min_lines.is_some() 
-        || !config.presets.manual.is_empty()
-        || !config.presets.auto_detect;
 
     // Determine min_lines (CLI > config > default)
-    let min_lines = if args.min_lines != 500 {
-        // CLI was explicitly set (non-default value)
-        args.min_lines
-    } else {
-        config.min_lines.unwrap_or(args.min_lines)
-    };
+    const DEFAULT_MIN_LINES: usize = 500;
+    let min_lines = args.min_lines
+        .or(config.min_lines)
+        .unwrap_or(DEFAULT_MIN_LINES);
 
     // Determine presets to use (CLI > config > auto-detect)
     let presets = determine_presets(&args, &config, &scan_path);

@@ -64,14 +64,18 @@ fn output_text(result: &ScanResult) {
             .max()
             .unwrap_or(1);
 
+        // Severity thresholds for color coding
+        const SEVERE_THRESHOLD: usize = 1000;
+        const WARN_THRESHOLD: usize = 750;
+
         for (i, file) in result.files.iter().enumerate() {
             let rank = format!("{:>3}.", i + 1);
             let lines = format!("{:>width$}", file.lines, width = max_lines_width);
             
             // Color code based on severity
-            let lines_colored = if file.lines >= 1000 {
+            let lines_colored = if file.lines >= SEVERE_THRESHOLD {
                 lines.red().bold()
-            } else if file.lines >= 750 {
+            } else if file.lines >= WARN_THRESHOLD {
                 lines.yellow()
             } else {
                 lines.white()

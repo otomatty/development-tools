@@ -23,9 +23,9 @@ pub enum OutputFormat {
 #[command(about = "Find files with more than a specified number of lines, sorted by line count")]
 #[command(long_about = "A CLI tool to detect files that exceed a specified line count threshold.\n\nFeatures:\n- Automatically respects .gitignore patterns\n- Sorts results by line count in descending order\n- Supports text and JSON output formats\n- Built-in presets for common languages (rust, node, python, go)")]
 pub struct Args {
-    /// Minimum number of lines to consider a file as \"large\"
-    #[arg(short = 'm', long = "min-lines", default_value = "500")]
-    pub min_lines: usize,
+    /// Minimum number of lines to consider a file as "large"
+    #[arg(short = 'm', long = "min-lines")]
+    pub min_lines: Option<usize>,
 
     /// Show only top N files
     #[arg(short = 't', long = "top")]
@@ -59,9 +59,15 @@ impl Args {
             Some(p) => {
                 // Expand ~ to home directory
                 if p.starts_with("~") {
-                    if let Some(home) = dirs::home_dir() {
-                        let rest = p.strip_prefix("~").unwrap();
-                        return home.join(rest.strip_prefix("/").unwrap_or(rest));
+                    match dirs::home_dir() {
+                        Some(home) => {
+                            let rest = p.strip_prefix("~").unwrap();
+                            return home.join(rest.strip_prefix("/").unwrap_or(rest));
+                        }
+                        None => {
+                            eprintln!("Warning: Could not determine home directory. Using path as-is.");
+                            return p.clone();
+                        }
                     }
                 }
                 p.clone()
@@ -86,13 +92,13 @@ mod tests {
     #[test]
     fn test_default_min_lines() {
         let args = Args::parse_from(["large-file-finder"]);
-        assert_eq!(args.min_lines, 500);
+        assert_eq!(args.min_lines, None);
     }
 
     #[test]
     fn test_custom_min_lines() {
         let args = Args::parse_from(["large-file-finder", "--min-lines", "1000"]);
-        assert_eq!(args.min_lines, 1000);
+        assert_eq!(args.min_lines, Some(1000));
     }
 
     #[test]

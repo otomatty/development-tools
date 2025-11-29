@@ -65,7 +65,7 @@ large-file-finder --no-auto-detect
 - `common`: 一般的な除外パターン（.git, node_modules, target 等）
 - `rust`: Rust プロジェクト用（target/, \*.rlib 等）
 - `node`: Node.js プロジェクト用（node_modules/, dist/ 等）
-- `python`: Python プロジェクト用（**pycache**/, .venv/ 等）
+- `python`: Python プロジェクト用（`__pycache__`/, .venv/ 等）
 - `go`: Go プロジェクト用（vendor/, \*.exe 等）
 
 ### 追加の除外パターン
