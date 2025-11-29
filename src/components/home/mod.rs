@@ -53,7 +53,7 @@ fn handle_sync_result_notifications(
         if should_show_app_notification {
             let event = XpGainedEvent {
                 xp_gained: sync_result.xp_gained,
-                total_xp: sync_result.user_stats.total_xp as u32,
+                total_xp: sync_result.user_stats.total_xp,
                 old_level: sync_result.old_level,
                 new_level: sync_result.new_level,
                 level_up: sync_result.level_up,

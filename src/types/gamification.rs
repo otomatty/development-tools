@@ -1,4 +1,9 @@
 //! Gamification-related types (XP, badges, stats, etc.)
+//!
+//! Note: XP、レベル、カウント系の値は意味的にはu32（符号なし整数）が適切ですが、
+//! SQLiteのINTEGER型が符号あり整数であり、sqlxがi32としてマッピングするため、
+//! バックエンドとの整合性を保つためにi32で統一しています。
+//! 実用上、これらの値が負になることはなく、21億を超えることもないため問題ありません。
 
 use serde::{Deserialize, Serialize};
 
@@ -24,11 +29,11 @@ pub struct UserStats {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LevelInfo {
-    pub current_level: u32,
-    pub total_xp: u32,
-    pub xp_for_current_level: u32,
-    pub xp_for_next_level: u32,
-    pub xp_to_next_level: u32,
+    pub current_level: i32,
+    pub total_xp: i32,
+    pub xp_for_current_level: i32,
+    pub xp_for_next_level: i32,
+    pub xp_to_next_level: i32,
     pub progress_percent: f32,
 }
 
@@ -168,9 +173,9 @@ pub struct StreakBonusInfo {
 #[serde(rename_all = "camelCase")]
 pub struct XpGainedEvent {
     pub xp_gained: i32,
-    pub total_xp: u32,
-    pub old_level: u32,
-    pub new_level: u32,
+    pub total_xp: i32,
+    pub old_level: i32,
+    pub new_level: i32,
     pub level_up: bool,
     pub xp_breakdown: XpBreakdown,
     pub streak_bonus: StreakBonusInfo,
@@ -191,8 +196,8 @@ pub struct StreakMilestoneEvent {
 pub struct SyncResult {
     pub user_stats: UserStats,
     pub xp_gained: i32,
-    pub old_level: u32,
-    pub new_level: u32,
+    pub old_level: i32,
+    pub new_level: i32,
     pub level_up: bool,
     pub xp_breakdown: XpBreakdown,
     pub streak_bonus: StreakBonusInfo,

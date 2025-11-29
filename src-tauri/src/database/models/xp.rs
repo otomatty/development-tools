@@ -1,4 +1,8 @@
 //! XP-related models
+//!
+//! Note: XPやカウント系の値は意味的にはu32（符号なし整数）が適切ですが、
+//! SQLiteのINTEGER型が符号あり整数であり、sqlxがi32としてマッピングするため、
+//! DB層との整合性を保つためにi32で統一しています。
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

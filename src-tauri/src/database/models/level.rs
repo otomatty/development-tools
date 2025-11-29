@@ -1,4 +1,11 @@
 //! Level calculation utilities
+//!
+//! レベル計算は指数関数的な成長曲線を使用しています。
+//! 各レベルに必要なXPは `BASE_XP * GROWTH_FACTOR^(level-2)` で計算され、
+//! レベルが上がるほど必要XPが緩やかに増加します。
+//!
+//! Note: レベルやXPは意味的にはu32が適切ですが、SQLiteのINTEGER型が符号あり整数であり、
+//! sqlxがi32としてマッピングするため、DB層との整合性を保つためにi32で統一しています。
 
 /// Base XP required for level 2
 const BASE_XP: i32 = 100;
