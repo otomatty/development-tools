@@ -1,0 +1,113 @@
+{
+  "name": "port-scanner",
+  "displayName": "Port Scanner",
+  "description": "ローカルで使用中のポートとプロセスを確認",
+  "version": "1.0.0",
+  "binary": "target/release/port-scanner",
+  "icon": "terminal",
+  "category": "utility",
+  "options": [
+    {
+      "name": "port",
+      "flag": "--port",
+      "shortFlag": "-p",
+      "type": "string",
+      "description": "特定ポートをチェック（カンマ区切りで複数指定可）",
+      "placeholder": "3000,8080,5173",
+      "required": false
+    },
+    {
+      "name": "range",
+      "flag": "--range",
+      "shortFlag": "-r",
+      "type": "string",
+      "description": "ポート範囲（例: 3000-4000）",
+      "placeholder": "3000-4000",
+      "required": false
+    },
+    {
+      "name": "protocol",
+      "flag": "--protocol",
+      "type": "select",
+      "description": "プロトコル",
+      "options": ["both", "tcp", "udp"],
+      "default": "both"
+    },
+    {
+      "name": "output",
+      "flag": "--output",
+      "shortFlag": "-o",
+      "type": "select",
+      "description": "出力形式",
+      "options": ["text", "json"],
+      "default": "json"
+    },
+    {
+      "name": "dev-ports",
+      "flag": "--dev-ports",
+      "type": "boolean",
+      "description": "開発用ポート（3000,5173,8080,8000,4200等）のみ表示",
+      "default": false
+    },
+    {
+      "name": "listening",
+      "flag": "--listening",
+      "type": "boolean",
+      "description": "LISTENINGポートのみ表示",
+      "default": false
+    }
+  ],
+  "resultParser": {
+    "outputFormat": "json",
+    "outputFlag": "--output json",
+    "summaryFields": [
+      {
+        "key": "summary.total_ports",
+        "label": "Total Ports",
+        "icon": "activity"
+      },
+      {
+        "key": "summary.tcp_ports",
+        "label": "TCP Ports",
+        "icon": "globe"
+      },
+      {
+        "key": "summary.udp_ports",
+        "label": "UDP Ports",
+        "icon": "radio"
+      },
+      {
+        "key": "summary.dev_ports_in_use",
+        "label": "Dev Ports In Use",
+        "icon": "code"
+      }
+    ],
+    "detailsField": "ports",
+    "tableColumns": [
+      {
+        "key": "port",
+        "label": "Port"
+      },
+      {
+        "key": "protocol",
+        "label": "Protocol"
+      },
+      {
+        "key": "state",
+        "label": "State"
+      },
+      {
+        "key": "process_name",
+        "label": "Process"
+      },
+      {
+        "key": "pid",
+        "label": "PID"
+      },
+      {
+        "key": "local_address",
+        "label": "Address"
+      }
+    ]
+  }
+}
