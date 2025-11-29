@@ -3,6 +3,7 @@
 //! This module contains all components for the gamification home page.
 
 pub mod badge_grid;
+pub mod challenge_card;
 pub mod contribution_graph;
 pub mod login_card;
 pub mod profile_card;
@@ -15,6 +16,7 @@ pub use profile_card::ProfileCard;
 pub use stats_display::StatsDisplay;
 pub use contribution_graph::ContributionGraph;
 pub use badge_grid::BadgeGrid;
+pub use challenge_card::ChallengeCard;
 pub use skeleton::HomeSkeleton;
 pub use xp_notification::{LevelUpModal, MultipleBadgesNotification, XpNotification};
 
@@ -556,7 +558,7 @@ pub fn HomePage(
                             on_settings=move |_| set_current_page.set(AppPage::Settings)
                         />
 
-                        // Stats Grid
+                        // Stats and Challenges Grid
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             // Stats Display
                             <StatsDisplay
@@ -564,9 +566,12 @@ pub fn HomePage(
                                 user_stats=user_stats
                             />
 
-                            // Badges
-                            <BadgeGrid />
+                            // Challenges
+                            <ChallengeCard />
                         </div>
+
+                        // Badges Section
+                        <BadgeGrid />
 
                         // Contribution Graph
                         <ContributionGraph

@@ -18,6 +18,9 @@ use commands::{
     get_near_completion_badges, get_user_stats, sync_github_stats,
     // Gamification commands
     add_xp, award_badge, get_badge_definitions, get_badges, get_level_info, get_xp_history,
+    // Challenge commands
+    create_challenge, delete_challenge, get_active_challenges, get_all_challenges,
+    get_challenge_stats, get_challenges_by_type, update_challenge_progress,
     // Settings commands
     clear_cache, export_data, get_app_info, get_database_info, get_settings, get_sync_intervals,
     open_external_url, reset_all_data, reset_settings, update_settings,
@@ -97,6 +100,14 @@ pub fn run() {
             award_badge,
             get_xp_history,
             get_badge_definitions,
+            // Challenge commands
+            get_active_challenges,
+            get_all_challenges,
+            get_challenges_by_type,
+            create_challenge,
+            delete_challenge,
+            update_challenge_progress,
+            get_challenge_stats,
             // Settings commands
             get_settings,
             update_settings,
