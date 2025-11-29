@@ -951,10 +951,10 @@ pub mod badge {
             },
             BadgeDefinition {
                 id: "level_10".to_string(),
-                name: "Skilled Dev".to_string(),
+                name: "Skilled Developer".to_string(),
                 description: "Reach level 10".to_string(),
                 badge_type: "level".to_string(),
-                rarity: "bronze".to_string(),
+                rarity: "silver".to_string(),
                 icon: "🌟".to_string(),
                 condition: BadgeCondition::Level { threshold: 10 },
             },
@@ -1010,7 +1010,7 @@ pub mod badge {
                 description: "Receive 50 stars".to_string(),
                 badge_type: "stars".to_string(),
                 rarity: "silver".to_string(),
-                icon: "🌟".to_string(),
+                icon: "⭐".to_string(),
                 condition: BadgeCondition::StarsReceived { threshold: 50 },
             },
             BadgeDefinition {
@@ -1019,7 +1019,7 @@ pub mod badge {
                 description: "Receive 100 stars".to_string(),
                 badge_type: "stars".to_string(),
                 rarity: "gold".to_string(),
-                icon: "💫".to_string(),
+                icon: "🎖️".to_string(),
                 condition: BadgeCondition::StarsReceived { threshold: 100 },
             },
             BadgeDefinition {
@@ -1132,10 +1132,10 @@ pub mod badge {
     }
 
     /// Calculate progress for a badge condition
-    pub fn calculate_progress(condition: &BadgeCondition, context: &BadgeEvalContext) -> BadgeProgress {
+    pub fn calculate_progress(badge_id: &str, condition: &BadgeCondition, context: &BadgeEvalContext) -> BadgeProgress {
         match condition {
             BadgeCondition::Commits { threshold } => BadgeProgress {
-                badge_id: String::new(), // Will be set by caller
+                badge_id: badge_id.to_string(),
                 current_value: context.total_commits,
                 target_value: *threshold,
                 progress_percent: calculate_percent(context.total_commits, *threshold),
@@ -1143,26 +1143,26 @@ pub mod badge {
             BadgeCondition::Streak { days } => {
                 let max_streak = context.current_streak.max(context.longest_streak);
                 BadgeProgress {
-                    badge_id: String::new(),
+                    badge_id: badge_id.to_string(),
                     current_value: max_streak,
                     target_value: *days,
                     progress_percent: calculate_percent(max_streak, *days),
                 }
             }
             BadgeCondition::Reviews { threshold } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.total_reviews,
                 target_value: *threshold,
                 progress_percent: calculate_percent(context.total_reviews, *threshold),
             },
             BadgeCondition::PrsMerged { threshold } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.total_prs_merged,
                 target_value: *threshold,
                 progress_percent: calculate_percent(context.total_prs_merged, *threshold),
             },
             BadgeCondition::IssuesClosed { threshold } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.total_issues_closed,
                 target_value: *threshold,
                 progress_percent: calculate_percent(context.total_issues_closed, *threshold),
@@ -1172,7 +1172,7 @@ pub mod badge {
                 // Otherwise, show progress towards target rate
                 if context.total_prs < *min_prs {
                     BadgeProgress {
-                        badge_id: String::new(),
+                        badge_id: badge_id.to_string(),
                         current_value: context.total_prs,
                         target_value: *min_prs,
                         progress_percent: calculate_percent(context.total_prs, *min_prs),
@@ -1186,7 +1186,7 @@ pub mod badge {
                     let rate_percent = (rate * 100.0).round() as i32;
                     let target_percent = (*min_rate * 100.0).round() as i32;
                     BadgeProgress {
-                        badge_id: String::new(),
+                        badge_id: badge_id.to_string(),
                         current_value: rate_percent,
                         target_value: target_percent,
                         progress_percent: (rate / *min_rate * 100.0).min(100.0),
@@ -1194,31 +1194,31 @@ pub mod badge {
                 }
             }
             BadgeCondition::Languages { count } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.languages_count,
                 target_value: *count,
                 progress_percent: calculate_percent(context.languages_count, *count),
             },
             BadgeCondition::Level { threshold } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.current_level,
                 target_value: *threshold,
                 progress_percent: calculate_percent(context.current_level, *threshold),
             },
             BadgeCondition::StarsReceived { threshold } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.total_stars_received,
                 target_value: *threshold,
                 progress_percent: calculate_percent(context.total_stars_received, *threshold),
             },
             BadgeCondition::WeeklyStreak { weeks } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.weekly_streak,
                 target_value: *weeks,
                 progress_percent: calculate_percent(context.weekly_streak, *weeks),
             },
             BadgeCondition::MonthlyStreak { months } => BadgeProgress {
-                badge_id: String::new(),
+                badge_id: badge_id.to_string(),
                 current_value: context.monthly_streak,
                 target_value: *months,
                 progress_percent: calculate_percent(context.monthly_streak, *months),
@@ -1248,9 +1248,7 @@ pub mod badge {
             let earned_at = earned_info.and_then(|(_, at)| at.clone());
 
             let progress = if !is_earned {
-                let mut prog = calculate_progress(&def.condition, context);
-                prog.badge_id = def.id.clone();
-                Some(prog)
+                Some(calculate_progress(&def.id, &def.condition, context))
             } else {
                 None
             };
@@ -1285,8 +1283,7 @@ pub mod badge {
                 continue;
             }
 
-            let mut progress = calculate_progress(&def.condition, context);
-            progress.badge_id = def.id.clone();
+            let progress = calculate_progress(&def.id, &def.condition, context);
 
             if progress.progress_percent >= threshold_percent && progress.progress_percent < 100.0 {
                 results.push(BadgeWithProgress {
@@ -1546,9 +1543,11 @@ pub mod badge {
                 ..Default::default()
             };
             let progress = calculate_progress(
+                "test_badge",
                 &BadgeCondition::Commits { threshold: 100 },
                 &context,
             );
+            assert_eq!(progress.badge_id, "test_badge");
             assert_eq!(progress.current_value, 50);
             assert_eq!(progress.target_value, 100);
             assert!((progress.progress_percent - 50.0).abs() < 0.01);
@@ -1561,6 +1560,7 @@ pub mod badge {
                 ..Default::default()
             };
             let progress = calculate_progress(
+                "test_badge",
                 &BadgeCondition::Commits { threshold: 100 },
                 &context,
             );
@@ -1574,6 +1574,7 @@ pub mod badge {
                 ..Default::default()
             };
             let progress = calculate_progress(
+                "level_25",
                 &BadgeCondition::Level { threshold: 25 },
                 &context,
             );
@@ -1590,6 +1591,7 @@ pub mod badge {
                 ..Default::default()
             };
             let progress = calculate_progress(
+                "streak_30",
                 &BadgeCondition::Streak { days: 30 },
                 &context,
             );
@@ -1702,6 +1704,7 @@ pub mod badge {
                 ..Default::default()
             };
             let progress = calculate_progress(
+                "weekly_12",
                 &BadgeCondition::WeeklyStreak { weeks: 12 },
                 &context,
             );
@@ -1717,6 +1720,7 @@ pub mod badge {
                 ..Default::default()
             };
             let progress = calculate_progress(
+                "monthly_6",
                 &BadgeCondition::MonthlyStreak { months: 6 },
                 &context,
             );

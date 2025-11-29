@@ -593,11 +593,13 @@ pub async fn get_contribution_calendar(
     serde_json::to_value(contributions.contribution_calendar).map_err(|e| e.to_string())
 }
 
-/// Get badges with progress information
-#[command]
-pub async fn get_badges_with_progress(
-    state: State<'_, AppState>,
-) -> Result<Vec<badge::BadgeWithProgress>, String> {
+/// Helper function to build badge evaluation context
+/// 
+/// Consolidates the common logic for building BadgeEvalContext used by
+/// both `get_badges_with_progress` and `get_near_completion_badges`.
+async fn build_badge_context(
+    state: &State<'_, AppState>,
+) -> Result<(badge::BadgeEvalContext, crate::database::models::User), String> {
     let user = state
         .token_manager
         .get_current_user()
@@ -645,6 +647,16 @@ pub async fn get_badges_with_progress(
         total_stars_received: github_stats.total_stars_received,
     };
 
+    Ok((badge_context, user))
+}
+
+/// Get badges with progress information
+#[command]
+pub async fn get_badges_with_progress(
+    state: State<'_, AppState>,
+) -> Result<Vec<badge::BadgeWithProgress>, String> {
+    let (badge_context, user) = build_badge_context(&state).await?;
+
     // Get earned badges
     let earned_badges = state
         .db
@@ -672,53 +684,7 @@ pub async fn get_near_completion_badges(
     threshold_percent: Option<f32>,
 ) -> Result<Vec<badge::BadgeWithProgress>, String> {
     let threshold = threshold_percent.unwrap_or(50.0);
-
-    let user = state
-        .token_manager
-        .get_current_user()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("Not logged in")?;
-
-    // Get user stats
-    let user_stats = state
-        .db
-        .get_user_stats(user.id)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("User stats not found")?;
-
-    // Get GitHub stats
-    let token = state
-        .token_manager
-        .get_access_token()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let client = GitHubClient::new(token);
-    let github_stats = client
-        .get_user_stats(&user.username)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Calculate level
-    let current_level = level::level_from_xp(user_stats.total_xp as u32);
-
-    // Build badge evaluation context
-    let badge_context = badge::BadgeEvalContext {
-        total_commits: github_stats.total_commits,
-        current_streak: user_stats.current_streak,
-        longest_streak: user_stats.longest_streak,
-        weekly_streak: github_stats.weekly_streak,
-        monthly_streak: github_stats.monthly_streak,
-        total_reviews: github_stats.total_reviews,
-        total_prs: github_stats.total_prs,
-        total_prs_merged: github_stats.total_prs_merged,
-        total_issues_closed: github_stats.total_issues_closed,
-        languages_count: github_stats.languages_count,
-        current_level: current_level as i32,
-        total_stars_received: github_stats.total_stars_received,
-    };
+    let (badge_context, user) = build_badge_context(&state).await?;
 
     // Get earned badge IDs
     let earned_badges = state
