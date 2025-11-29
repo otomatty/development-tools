@@ -45,13 +45,19 @@ pub struct Cli {
 
 impl Cli {
     /// ポート範囲をパース
+    /// start > end の場合は自動的にスワップする
     pub fn parse_range(&self) -> Option<(u16, u16)> {
         self.range.as_ref().and_then(|r| {
             let parts: Vec<&str> = r.split('-').collect();
             if parts.len() == 2 {
                 let start = parts[0].trim().parse::<u16>().ok()?;
                 let end = parts[1].trim().parse::<u16>().ok()?;
-                Some((start, end))
+                // start > end の場合はスワップ
+                if start > end {
+                    Some((end, start))
+                } else {
+                    Some((start, end))
+                }
             } else {
                 None
             }
@@ -121,5 +127,22 @@ mod tests {
 
         let range = cli.parse_range();
         assert_eq!(range, None);
+    }
+
+    // TC: parse_range - 逆順範囲（start > end）のスワップ
+    #[test]
+    fn test_parse_range_reversed() {
+        let cli = Cli {
+            port: None,
+            range: Some("5000-3000".to_string()),
+            protocol: "both".to_string(),
+            output: "text".to_string(),
+            dev_ports: false,
+            listening: false,
+        };
+
+        let range = cli.parse_range();
+        // start > end の場合は自動的にスワップされる
+        assert_eq!(range, Some((3000, 5000)));
     }
 }

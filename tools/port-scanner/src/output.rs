@@ -62,7 +62,7 @@ fn print_text(result: &ScanResult) {
 
     // 開発ポートステータス
     println!("\n{}", "🛠️  Dev Port Status".bold());
-    for &port in DEV_PORTS.iter().take(10) {
+    for &port in DEV_PORTS.iter() {
         let status = result.dev_port_status.get(&port.to_string())
             .unwrap_or(&DevPortStatus::Available);
         let status_str = match status {

@@ -16,21 +16,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-/// 開発でよく使われるポート一覧
+/// 開発でよく使われるポート一覧（ソート済み - binary_search用）
 pub const DEV_PORTS: &[u16] = &[
-    3000, // React, Express, Rails
-    4200, // Angular
-    5000, // Flask, ASP.NET
-    5173, // Vite
-    8000, // Django, PHP
-    8080, // Tomcat, 汎用
-    8888, // Jupyter
-    1420, // Tauri
-    4321, // Astro
-    3001, // Next.js (dev alt)
-    5432, // PostgreSQL
-    3306, // MySQL
-    6379, // Redis
+    1420,  // Tauri
+    3000,  // React, Express, Rails
+    3001,  // Next.js (dev alt)
+    3306,  // MySQL
+    4200,  // Angular
+    4321,  // Astro
+    5000,  // Flask, ASP.NET
+    5173,  // Vite
+    5432,  // PostgreSQL
+    6379,  // Redis
+    8000,  // Django, PHP
+    8080,  // Tomcat, 汎用
+    8888,  // Jupyter
     27017, // MongoDB
 ];
 
@@ -235,6 +235,7 @@ impl ScanResult {
     pub fn filter_dev_ports_only(mut self) -> Self {
         self.ports.retain(|p| p.is_dev_port);
         self.recalculate_summary();
+        self.recalculate_dev_port_status();
         self
     }
 
@@ -256,8 +257,9 @@ impl ScanResult {
 }
 
 /// 指定ポートが開発用ポートかどうか判定
+/// DEV_PORTSはソート済みなのでbinary_searchを使用
 pub fn is_dev_port(port: u16) -> bool {
-    DEV_PORTS.contains(&port)
+    DEV_PORTS.binary_search(&port).is_ok()
 }
 
 #[cfg(test)]

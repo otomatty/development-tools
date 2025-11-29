@@ -30,7 +30,7 @@ pub struct PortInfo {
 pub struct ScanResult {
     pub summary: ScanSummary,
     pub ports: Vec<PortInfo>,
-    pub dev_port_status: HashMap<u16, DevPortStatus>,
+    pub dev_port_status: HashMap<String, DevPortStatus>,
 }
 
 pub struct ScanSummary {
