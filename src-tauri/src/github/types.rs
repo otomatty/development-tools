@@ -211,3 +211,116 @@ pub struct GitHubStats {
     pub streak_info: Option<StreakInfo>,
 }
 
+// ============================================================================
+// Code Statistics Types (for Issue #74 - Code Lines Tracking)
+// ============================================================================
+
+/// Commit statistics with additions/deletions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitStats {
+    pub sha: String,
+    pub additions: i32,
+    pub deletions: i32,
+    pub committed_date: String,
+}
+
+/// Repository with commit history for code stats
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryWithCommits {
+    pub name_with_owner: String,
+    pub default_branch_ref: Option<DefaultBranchRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultBranchRef {
+    pub target: Option<CommitTarget>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitTarget {
+    pub history: Option<CommitHistory>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitHistory {
+    pub nodes: Vec<CommitNode>,
+    pub page_info: Option<PageInfo>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitNode {
+    pub additions: i32,
+    pub deletions: i32,
+    pub committed_date: String,
+    pub oid: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageInfo {
+    pub has_next_page: bool,
+    pub end_cursor: Option<String>,
+}
+
+/// GraphQL response for code stats batch query
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeStatsQueryResponse {
+    pub user: Option<CodeStatsUser>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeStatsUser {
+    pub repositories: RepositoriesConnection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoriesConnection {
+    pub nodes: Vec<RepositoryWithCommits>,
+    pub page_info: Option<PageInfo>,
+}
+
+/// Aggregated daily code statistics from all repositories
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyCodeStatsAggregated {
+    pub date: String,
+    pub additions: i32,
+    pub deletions: i32,
+    pub commits_count: i32,
+    pub repositories: Vec<String>,
+}
+
+/// Rate limit information with detailed breakdown
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitDetailed {
+    pub core: RateLimit,
+    pub search: RateLimit,
+    pub graphql: RateLimit,
+}
+
+/// GraphQL rate limit response
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphQLRateLimitResponse {
+    pub rate_limit: Option<GraphQLRateLimit>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphQLRateLimit {
+    pub limit: i32,
+    pub cost: i32,
+    pub remaining: i32,
+    pub reset_at: String,
+}
+

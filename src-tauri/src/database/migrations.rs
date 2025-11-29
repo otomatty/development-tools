@@ -200,6 +200,47 @@ CREATE INDEX IF NOT EXISTS idx_mock_server_mappings_virtual_path ON mock_server_
 CREATE INDEX IF NOT EXISTS idx_mock_server_mappings_enabled ON mock_server_mappings(enabled);
 "#,
     },
+    Migration {
+        version: 5,
+        name: "add_code_stats_tables",
+        sql: r#"
+-- Daily code statistics table: stores additions/deletions per day
+CREATE TABLE IF NOT EXISTS daily_code_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    date DATE NOT NULL,
+    additions INTEGER NOT NULL DEFAULT 0,
+    deletions INTEGER NOT NULL DEFAULT 0,
+    commits_count INTEGER NOT NULL DEFAULT 0,
+    repositories_json TEXT, -- JSON array: ["repo1", "repo2"]
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, date)
+);
+
+-- Sync metadata table: tracks incremental sync state
+CREATE TABLE IF NOT EXISTS sync_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    sync_type TEXT NOT NULL, -- 'code_stats', 'contributions', etc.
+    last_sync_at DATETIME,
+    last_sync_cursor TEXT, -- GraphQL cursor for pagination
+    etag TEXT, -- For conditional requests (ETag/If-Modified-Since)
+    rate_limit_remaining INTEGER,
+    rate_limit_reset_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, sync_type)
+);
+
+-- Create indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_daily_code_stats_user_date ON daily_code_stats(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_daily_code_stats_summary ON daily_code_stats(user_id, date, additions, deletions);
+CREATE INDEX IF NOT EXISTS idx_sync_metadata_user_type ON sync_metadata(user_id, sync_type);
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

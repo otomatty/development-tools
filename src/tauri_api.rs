@@ -279,6 +279,42 @@ pub async fn get_contribution_calendar() -> Result<serde_json::Value, String> {
 }
 
 // ============================================
+// コード統計関連API
+// ============================================
+
+/// コード統計を同期（GitHubから取得してDBに保存）
+pub async fn sync_code_stats() -> Result<crate::types::CodeStatsSyncResult, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("sync_code_stats", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to sync code stats: {:?}", e))
+}
+
+/// コード統計サマリーを取得
+pub async fn get_code_stats_summary(period: &str) -> Result<crate::types::CodeStatsResponse, String> {
+    #[derive(serde::Serialize)]
+    struct Args<'a> {
+        period: &'a str,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { period }).unwrap();
+    let result = invoke("get_code_stats_summary", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get code stats summary: {:?}", e))
+}
+
+/// レート制限情報を取得
+pub async fn get_rate_limit_info() -> Result<crate::types::RateLimitInfo, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_rate_limit_info", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get rate limit info: {:?}", e))
+}
+
+// ============================================
 // ゲーミフィケーション関連API
 // ============================================
 

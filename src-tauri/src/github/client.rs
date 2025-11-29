@@ -609,6 +609,187 @@ impl GitHubClient {
             streak_info: Some(streak_info),
         })
     }
+
+    // ========================================================================
+    // Code Statistics Methods (for Issue #74)
+    // ========================================================================
+
+    /// Get code statistics (additions/deletions) for user's repositories
+    /// 
+    /// Uses a GraphQL batch query to fetch commit history with additions/deletions
+    /// from the user's most recently pushed repositories.
+    /// 
+    /// # Arguments
+    /// * `username` - GitHub username
+    /// * `since` - ISO 8601 timestamp (e.g., "2025-01-01T00:00:00Z")
+    /// * `max_repos` - Maximum number of repositories to query (default: 100)
+    /// 
+    /// # Returns
+    /// HashMap of date -> DailyCodeStatsAggregated
+    pub async fn get_code_stats(
+        &self,
+        username: &str,
+        since: &str,
+        max_repos: i32,
+    ) -> GitHubResult<Vec<DailyCodeStatsAggregated>> {
+        let query = r#"
+            query($login: String!, $since: GitTimestamp!, $maxRepos: Int!) {
+                user(login: $login) {
+                    repositories(first: $maxRepos, orderBy: {field: PUSHED_AT, direction: DESC}) {
+                        nodes {
+                            nameWithOwner
+                            defaultBranchRef {
+                                target {
+                                    ... on Commit {
+                                        history(first: 100, since: $since) {
+                                            nodes {
+                                                additions
+                                                deletions
+                                                committedDate
+                                                oid
+                                            }
+                                            pageInfo {
+                                                hasNextPage
+                                                endCursor
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        pageInfo {
+                            hasNextPage
+                            endCursor
+                        }
+                    }
+                }
+                rateLimit {
+                    limit
+                    cost
+                    remaining
+                    resetAt
+                }
+            }
+        "#;
+
+        let variables = serde_json::json!({
+            "login": username,
+            "since": since,
+            "maxRepos": max_repos
+        });
+
+        let response: CodeStatsQueryResponse = self.graphql(query, Some(variables)).await?;
+
+        // Aggregate commits by date across all repositories
+        let mut daily_stats: std::collections::HashMap<String, DailyCodeStatsAggregated> = 
+            std::collections::HashMap::new();
+
+        if let Some(user) = response.user {
+            for repo in user.repositories.nodes {
+                let repo_name = repo.name_with_owner.clone();
+                
+                if let Some(branch_ref) = repo.default_branch_ref {
+                    if let Some(target) = branch_ref.target {
+                        if let Some(history) = target.history {
+                            for commit in history.nodes {
+                                // Parse the date (take YYYY-MM-DD part)
+                                let date = commit.committed_date
+                                    .split('T')
+                                    .next()
+                                    .unwrap_or(&commit.committed_date)
+                                    .to_string();
+                                
+                                let entry = daily_stats
+                                    .entry(date.clone())
+                                    .or_insert_with(|| DailyCodeStatsAggregated {
+                                        date: date.clone(),
+                                        additions: 0,
+                                        deletions: 0,
+                                        commits_count: 0,
+                                        repositories: vec![],
+                                    });
+                                
+                                entry.additions += commit.additions;
+                                entry.deletions += commit.deletions;
+                                entry.commits_count += 1;
+                                
+                                if !entry.repositories.contains(&repo_name) {
+                                    entry.repositories.push(repo_name.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert to sorted vector
+        let mut result: Vec<DailyCodeStatsAggregated> = daily_stats.into_values().collect();
+        result.sort_by(|a, b| b.date.cmp(&a.date)); // Sort by date descending
+        
+        Ok(result)
+    }
+
+    /// Get detailed rate limit information for all API types
+    pub async fn get_detailed_rate_limit(&self) -> GitHubResult<RateLimitDetailed> {
+        // Get REST API rate limits
+        let rest_limits = self.get_rate_limit().await?;
+
+        // Get GraphQL rate limit using a minimal query
+        let graphql_query = r#"
+            query {
+                rateLimit {
+                    limit
+                    cost
+                    remaining
+                    resetAt
+                }
+            }
+        "#;
+
+        let graphql_response: GraphQLRateLimitResponse = 
+            self.graphql(graphql_query, None).await?;
+
+        let graphql_limit = graphql_response.rate_limit.as_ref().map(|r| r.limit).unwrap_or(0);
+        let graphql_remaining = graphql_response.rate_limit.as_ref().map(|r| r.remaining).unwrap_or(0);
+        let graphql_reset = graphql_response.rate_limit
+            .as_ref()
+            .and_then(|r| chrono::DateTime::parse_from_rfc3339(&r.reset_at).ok())
+            .map(|dt| dt.timestamp())
+            .unwrap_or(0);
+
+        // Search API limits (we can't query this directly, using defaults)
+        // Authenticated users: 30 requests per minute
+        let search_limit = RateLimit {
+            limit: 30,
+            remaining: 30, // We don't track this precisely
+            reset: Utc::now().timestamp() + 60,
+            used: 0,
+        };
+
+        Ok(RateLimitDetailed {
+            core: rest_limits,
+            search: search_limit,
+            graphql: RateLimit {
+                limit: graphql_limit,
+                remaining: graphql_remaining,
+                reset: graphql_reset,
+                used: graphql_limit - graphql_remaining,
+            },
+        })
+    }
+
+    /// Check if rate limit is critical (below 20% remaining)
+    pub fn is_rate_limit_critical(rate_limit: &RateLimitDetailed) -> bool {
+        let core_critical = rate_limit.core.limit > 0 
+            && (rate_limit.core.remaining as f32 / rate_limit.core.limit as f32) < 0.2;
+        let graphql_critical = rate_limit.graphql.limit > 0 
+            && (rate_limit.graphql.remaining as f32 / rate_limit.graphql.limit as f32) < 0.2;
+        let search_critical = rate_limit.search.limit > 0 
+            && (rate_limit.search.remaining as f32 / rate_limit.search.limit as f32) < 0.2;
+        
+        core_critical || graphql_critical || search_critical
+    }
 }
 
 #[cfg(test)]
