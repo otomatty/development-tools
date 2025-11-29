@@ -2,7 +2,7 @@
 //!
 //! Provides methods to interact with the GitHub REST and GraphQL APIs.
 
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use thiserror::Error;
 
@@ -387,6 +387,136 @@ impl GitHubClient {
         (info.current_streak, info.longest_streak)
     }
 
+    /// Calculate weekly and monthly streaks from contribution calendar
+    /// 
+    /// Returns (weekly_streak, monthly_streak) where:
+    /// - weekly_streak: consecutive weeks with at least one contribution
+    /// - monthly_streak: consecutive months with at least one contribution
+    /// 
+    /// Grace period: If current week/month has no contributions, streak calculation
+    /// starts from the previous week/month (similar to daily streak behavior).
+    pub fn calculate_weekly_monthly_streak(calendar: &ContributionCalendar) -> (i32, i32) {
+        use std::collections::HashSet;
+        
+        // Collect all contribution days
+        let all_days: Vec<_> = calendar
+            .weeks
+            .iter()
+            .flat_map(|w| w.contribution_days.iter())
+            .collect();
+        
+        // Group contributions by week (year-week) and month (year-month)
+        let mut weeks_with_contributions: HashSet<String> = HashSet::new();
+        let mut months_with_contributions: HashSet<String> = HashSet::new();
+        
+        for day in &all_days {
+            if day.contribution_count > 0 {
+                // Parse date string YYYY-MM-DD
+                let parts: Vec<&str> = day.date.split('-').collect();
+                if parts.len() == 3 {
+                    // Use if let for explicit error handling
+                    if let (Ok(year), Ok(month), Ok(day_num)) = (
+                        parts[0].parse::<i32>(),
+                        parts[1].parse::<u32>(),
+                        parts[2].parse::<u32>(),
+                    ) {
+                        // Calculate ISO week number
+                        if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, day_num) {
+                            let iso_week = date.iso_week();
+                            let week_key = format!("{}-W{:02}", iso_week.year(), iso_week.week());
+                            weeks_with_contributions.insert(week_key);
+                            
+                            let month_key = format!("{}-{:02}", year, month);
+                            months_with_contributions.insert(month_key);
+                        }
+                    }
+                    // Silently skip malformed dates - this is expected for edge cases
+                }
+            }
+        }
+        
+        // Calculate current weekly streak with grace period
+        let now = Utc::now();
+        let current_iso = now.iso_week();
+        let mut weekly_streak = 0;
+        let mut check_year = current_iso.year();
+        let mut check_week = current_iso.week();
+        
+        // Check if current week has contributions
+        let current_week_key = format!("{}-W{:02}", check_year, check_week);
+        let has_current_week = weeks_with_contributions.contains(&current_week_key);
+        
+        // If no contributions this week, start checking from previous week (grace period)
+        if !has_current_week {
+            if check_week == 1 {
+                check_year -= 1;
+                check_week = chrono::NaiveDate::from_ymd_opt(check_year, 12, 28)
+                    .map(|d| d.iso_week().week())
+                    .unwrap_or(52);
+            } else {
+                check_week -= 1;
+            }
+        }
+        
+        loop {
+            let week_key = format!("{}-W{:02}", check_year, check_week);
+            if weeks_with_contributions.contains(&week_key) {
+                weekly_streak += 1;
+                
+                // Move to previous week
+                if check_week == 1 {
+                    check_year -= 1;
+                    // Get the last week of the previous year
+                    check_week = chrono::NaiveDate::from_ymd_opt(check_year, 12, 28)
+                        .map(|d| d.iso_week().week())
+                        .unwrap_or(52);
+                } else {
+                    check_week -= 1;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        // Calculate current monthly streak with grace period
+        let mut monthly_streak = 0;
+        let mut check_month = now.month();
+        let mut check_year_m = now.year();
+        
+        // Check if current month has contributions
+        let current_month_key = format!("{}-{:02}", check_year_m, check_month);
+        let has_current_month = months_with_contributions.contains(&current_month_key);
+        
+        // If no contributions this month, start checking from previous month (grace period)
+        if !has_current_month {
+            if check_month == 1 {
+                check_year_m -= 1;
+                check_month = 12;
+            } else {
+                check_month -= 1;
+            }
+        }
+        
+        loop {
+            let month_key = format!("{}-{:02}", check_year_m, check_month);
+            if months_with_contributions.contains(&month_key) {
+                monthly_streak += 1;
+                
+                // Move to previous month
+                if check_month == 1 {
+                    check_year_m -= 1;
+                    check_month = 12;
+                } else {
+                    check_month -= 1;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        (weekly_streak, monthly_streak)
+    }
+
     /// Get aggregated user stats
     /// 
     /// This method fetches stats from multiple API endpoints, including the
@@ -457,6 +587,10 @@ impl GitHubClient {
             }
         };
 
+        // Calculate weekly and monthly streaks
+        let (weekly_streak, monthly_streak) = 
+            Self::calculate_weekly_monthly_streak(&contributions.contribution_calendar);
+
         Ok(GitHubStats {
             total_commits: contributions.total_commit_contributions,
             total_prs,
@@ -469,6 +603,8 @@ impl GitHubClient {
             contribution_calendar: Some(contributions.contribution_calendar),
             current_streak: streak_info.current_streak,
             longest_streak: streak_info.longest_streak,
+            weekly_streak,
+            monthly_streak,
             languages_count: languages.len() as i32,
             streak_info: Some(streak_info),
         })
@@ -525,6 +661,193 @@ mod tests {
         let streak_info = GitHubClient::calculate_streak(&calendar);
         assert_eq!(streak_info.longest_streak, 2); // 2 consecutive days at the start
         assert_eq!(streak_info.last_activity_date, Some("2024-01-04".to_string()));
+    }
+
+    // ============================================================
+    // Tests for calculate_weekly_monthly_streak
+    // ============================================================
+
+    #[test]
+    fn test_weekly_monthly_streak_empty_calendar() {
+        let calendar = ContributionCalendar {
+            total_contributions: 0,
+            weeks: vec![],
+        };
+
+        let (weekly, monthly) = GitHubClient::calculate_weekly_monthly_streak(&calendar);
+        assert_eq!(weekly, 0);
+        assert_eq!(monthly, 0);
+    }
+
+    #[test]
+    fn test_weekly_monthly_streak_consecutive_weeks() {
+        // Create contributions for consecutive weeks
+        // Week 1 of current year and Week 52 of previous year
+        let now = chrono::Utc::now();
+        let current_week = now.iso_week().week();
+        let current_year = now.iso_week().year();
+        
+        // Build contribution days for current week and previous weeks
+        let mut weeks = Vec::new();
+        
+        // Add contributions for current week and 2 previous weeks (3 consecutive weeks)
+        for week_offset in 0..3 {
+            let mut check_year = current_year;
+            let mut check_week = current_week as i32 - week_offset;
+            
+            // Handle year boundary
+            if check_week <= 0 {
+                check_year -= 1;
+                check_week = 52 + check_week; // Approximate
+            }
+            
+            // Find a date in that week
+            if let Some(date) = chrono::NaiveDate::from_isoywd_opt(check_year, check_week as u32, chrono::Weekday::Mon) {
+                weeks.push(ContributionWeek {
+                    contribution_days: vec![ContributionDay {
+                        contribution_count: 1,
+                        date: date.format("%Y-%m-%d").to_string(),
+                        weekday: 1,
+                    }],
+                });
+            }
+        }
+        
+        let calendar = ContributionCalendar {
+            total_contributions: 3,
+            weeks,
+        };
+
+        let (weekly, _monthly) = GitHubClient::calculate_weekly_monthly_streak(&calendar);
+        assert!(weekly >= 3, "Expected at least 3 consecutive weeks, got {}", weekly);
+    }
+
+    #[test]
+    fn test_weekly_monthly_streak_non_consecutive_weeks() {
+        // Create contributions with a gap (week 1 and week 3, missing week 2)
+        let now = chrono::Utc::now();
+        let current_week = now.iso_week().week();
+        let current_year = now.iso_week().year();
+        
+        let mut weeks = Vec::new();
+        
+        // Current week
+        if let Some(date) = chrono::NaiveDate::from_isoywd_opt(current_year, current_week, chrono::Weekday::Mon) {
+            weeks.push(ContributionWeek {
+                contribution_days: vec![ContributionDay {
+                    contribution_count: 1,
+                    date: date.format("%Y-%m-%d").to_string(),
+                    weekday: 1,
+                }],
+            });
+        }
+        
+        // Skip one week (week_offset = 1), add week_offset = 2
+        let week_offset = 2i32;
+        let mut check_year = current_year;
+        let mut check_week = current_week as i32 - week_offset;
+        if check_week <= 0 {
+            check_year -= 1;
+            check_week = 52 + check_week;
+        }
+        
+        if let Some(date) = chrono::NaiveDate::from_isoywd_opt(check_year, check_week as u32, chrono::Weekday::Mon) {
+            weeks.push(ContributionWeek {
+                contribution_days: vec![ContributionDay {
+                    contribution_count: 1,
+                    date: date.format("%Y-%m-%d").to_string(),
+                    weekday: 1,
+                }],
+            });
+        }
+        
+        let calendar = ContributionCalendar {
+            total_contributions: 2,
+            weeks,
+        };
+
+        let (weekly, _monthly) = GitHubClient::calculate_weekly_monthly_streak(&calendar);
+        // Should be 1 because there's a gap (missing last week)
+        assert_eq!(weekly, 1, "Expected streak of 1 due to gap");
+    }
+
+    #[test]
+    fn test_weekly_monthly_streak_year_boundary() {
+        // Test handling of year boundary (December to January)
+        // This is a simplified test to check that year boundaries don't crash
+        let calendar = ContributionCalendar {
+            total_contributions: 2,
+            weeks: vec![
+                ContributionWeek {
+                    contribution_days: vec![ContributionDay {
+                        contribution_count: 1,
+                        date: "2024-12-30".to_string(), // Week 1 of 2025 (ISO week)
+                        weekday: 1,
+                    }],
+                },
+                ContributionWeek {
+                    contribution_days: vec![ContributionDay {
+                        contribution_count: 1,
+                        date: "2024-12-23".to_string(), // Week 52 of 2024
+                        weekday: 1,
+                    }],
+                },
+            ],
+        };
+
+        // Should not panic on year boundary
+        let (weekly, monthly) = GitHubClient::calculate_weekly_monthly_streak(&calendar);
+        // The actual values depend on current date, but it should not crash
+        assert!(weekly >= 0);
+        assert!(monthly >= 0);
+    }
+
+    #[test]
+    fn test_weekly_monthly_streak_grace_period() {
+        // Test grace period: if current week has no contributions,
+        // streak should still count from previous week
+        let now = chrono::Utc::now();
+        let current_week = now.iso_week().week();
+        let current_year = now.iso_week().year();
+        
+        // Only add contributions for previous week (not current week)
+        let mut check_year = current_year;
+        let mut check_week = current_week as i32 - 1;
+        if check_week <= 0 {
+            check_year -= 1;
+            check_week = 52;
+        }
+        
+        let mut weeks = Vec::new();
+        
+        // Add 2 consecutive weeks starting from previous week
+        for offset in 0..2 {
+            let mut y = check_year;
+            let mut w = check_week - offset;
+            if w <= 0 {
+                y -= 1;
+                w = 52 + w;
+            }
+            
+            if let Some(date) = chrono::NaiveDate::from_isoywd_opt(y, w as u32, chrono::Weekday::Mon) {
+                weeks.push(ContributionWeek {
+                    contribution_days: vec![ContributionDay {
+                        contribution_count: 1,
+                        date: date.format("%Y-%m-%d").to_string(),
+                        weekday: 1,
+                    }],
+                });
+            }
+        }
+        
+        let calendar = ContributionCalendar {
+            total_contributions: 2,
+            weeks,
+        };
+
+        let (weekly, _monthly) = GitHubClient::calculate_weekly_monthly_streak(&calendar);
+        // With grace period, should count the streak from previous weeks
+        assert!(weekly >= 2, "Expected streak of at least 2 with grace period, got {}", weekly);
     }
 }
 
