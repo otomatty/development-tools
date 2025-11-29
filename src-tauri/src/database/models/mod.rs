@@ -6,6 +6,7 @@
 pub mod badge;
 mod cache;
 pub mod challenge;
+pub mod code_stats;
 pub mod level;
 mod settings;
 pub mod streak;
@@ -16,6 +17,7 @@ pub mod xp;
 pub use badge::*;
 pub use cache::*;
 pub use challenge::*;
+pub use code_stats::*;
 pub use level::*;
 pub use settings::*;
 pub use streak::*;

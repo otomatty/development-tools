@@ -6,6 +6,7 @@
 mod badge;
 mod cache;
 mod challenge;
+mod code_stats;
 mod settings;
 mod user;
 mod user_stats;

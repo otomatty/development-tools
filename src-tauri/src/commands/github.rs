@@ -830,3 +830,216 @@ pub async fn get_near_completion_badges(
     Ok(badges)
 }
 
+// ============================================================================
+// Code Statistics Commands (Issue #74)
+// ============================================================================
+
+use crate::database::models::code_stats::{CodeStatsResponse, RateLimitInfo, StatsPeriod};
+use crate::github::types::RateLimitDetailed;
+
+/// Result of code statistics sync
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeStatsSyncResult {
+    /// Number of days synced
+    pub days_synced: i32,
+    /// Total additions in synced period
+    pub total_additions: i32,
+    /// Total deletions in synced period  
+    pub total_deletions: i32,
+    /// Whether sync was from cache (not fresh data)
+    pub from_cache: bool,
+    /// Rate limit info after sync
+    pub rate_limit: Option<RateLimitInfo>,
+}
+
+/// Sync code statistics from GitHub
+/// 
+/// Fetches additions/deletions data from GitHub API and stores in local database.
+/// Uses incremental sync to minimize API calls.
+#[command]
+pub async fn sync_code_stats(
+    state: State<'_, AppState>,
+    force_full_sync: Option<bool>,
+) -> Result<CodeStatsSyncResult, String> {
+    let token = state
+        .token_manager
+        .get_access_token()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    let client = GitHubClient::new(token);
+
+    // Check if sync is needed (cache for 6 hours)
+    let cache_duration_hours = 6;
+    let sync_needed = state
+        .db
+        .is_sync_needed(user.id, "code_stats", cache_duration_hours)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !sync_needed && !force_full_sync.unwrap_or(false) {
+        // Return cached summary
+        let response = state
+            .db
+            .get_code_stats_response(user.id, StatsPeriod::Month)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        return Ok(CodeStatsSyncResult {
+            days_synced: 0,
+            total_additions: response.weekly_total.additions,
+            total_deletions: response.weekly_total.deletions,
+            from_cache: true,
+            rate_limit: None,
+        });
+    }
+
+    // Determine sync start date
+    let default_days_back = if force_full_sync.unwrap_or(false) { 90 } else { 30 };
+    let sync_from = state
+        .db
+        .get_sync_start_date(user.id, default_days_back)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let since = format!("{}T00:00:00Z", sync_from);
+
+    // Fetch code stats from GitHub
+    let code_stats = client
+        .get_code_stats(&user.username, &since, 100)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Store each day's stats
+    let mut total_additions = 0;
+    let mut total_deletions = 0;
+    let mut days_synced = 0;
+
+    for daily in &code_stats {
+        // Parse date
+        let date = chrono::NaiveDate::parse_from_str(&daily.date, "%Y-%m-%d")
+            .map_err(|e| format!("Invalid date format: {}", e))?;
+
+        state
+            .db
+            .upsert_daily_code_stats(
+                user.id,
+                date,
+                daily.additions,
+                daily.deletions,
+                daily.commits_count,
+                Some(daily.repositories.clone()),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        total_additions += daily.additions;
+        total_deletions += daily.deletions;
+        days_synced += 1;
+    }
+
+    // Update sync metadata
+    state
+        .db
+        .get_or_create_sync_metadata(user.id, "code_stats")
+        .await
+        .map_err(|e| e.to_string())?;
+
+    state
+        .db
+        .update_sync_metadata(
+            user.id,
+            "code_stats",
+            Some(chrono::Utc::now().to_rfc3339()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Get rate limit info
+    let rate_limit = client
+        .get_detailed_rate_limit()
+        .await
+        .ok()
+        .map(|r| RateLimitInfo {
+            rest_remaining: r.core.remaining,
+            rest_limit: r.core.limit,
+            rest_reset_at: chrono::DateTime::from_timestamp(r.core.reset, 0)
+                .map(|dt| dt.to_rfc3339()),
+            graphql_remaining: r.graphql.remaining,
+            graphql_limit: r.graphql.limit,
+            graphql_reset_at: chrono::DateTime::from_timestamp(r.graphql.reset, 0)
+                .map(|dt| dt.to_rfc3339()),
+            search_remaining: r.search.remaining,
+            search_limit: r.search.limit,
+            search_reset_at: chrono::DateTime::from_timestamp(r.search.reset, 0)
+                .map(|dt| dt.to_rfc3339()),
+            is_critical: GitHubClient::is_rate_limit_critical(&r),
+        });
+
+    Ok(CodeStatsSyncResult {
+        days_synced,
+        total_additions,
+        total_deletions,
+        from_cache: false,
+        rate_limit,
+    })
+}
+
+/// Get code statistics summary for display
+#[command]
+pub async fn get_code_stats_summary(
+    state: State<'_, AppState>,
+    period: Option<String>,
+) -> Result<CodeStatsResponse, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    let stats_period = match period.as_deref() {
+        Some("week") => StatsPeriod::Week,
+        Some("month") => StatsPeriod::Month,
+        Some("quarter") => StatsPeriod::Quarter,
+        Some("year") => StatsPeriod::Year,
+        _ => StatsPeriod::Month, // Default to month
+    };
+
+    state
+        .db
+        .get_code_stats_response(user.id, stats_period)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get detailed rate limit information
+#[command]
+pub async fn get_rate_limit_info(
+    state: State<'_, AppState>,
+) -> Result<RateLimitDetailed, String> {
+    let token = state
+        .token_manager
+        .get_access_token()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let client = GitHubClient::new(token);
+    client
+        .get_detailed_rate_limit()
+        .await
+        .map_err(|e| e.to_string())
+}
+
