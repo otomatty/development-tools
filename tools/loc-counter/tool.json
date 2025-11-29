@@ -1,0 +1,105 @@
+{
+  "name": "loc-counter",
+  "displayName": "LOC Counter",
+  "description": "言語別コード行数をカウント・統計表示",
+  "version": "1.0.0",
+  "binary": "target/release/loc-counter",
+  "icon": "bar-chart-2",
+  "category": "analytics",
+  "options": [
+    {
+      "name": "scan-dir",
+      "flag": "--scan-dir",
+      "shortFlag": "-s",
+      "type": "path",
+      "description": "スキャン対象ディレクトリ（デフォルト: カレントディレクトリ）",
+      "placeholder": "~/projects/myapp",
+      "required": false
+    },
+    {
+      "name": "exclude",
+      "flag": "--exclude",
+      "shortFlag": "-e",
+      "type": "string",
+      "description": "除外パターン（カンマ区切り、glob形式）",
+      "default": "node_modules,target,.git,vendor,dist,build,__pycache__,.venv",
+      "placeholder": "node_modules,target,.git"
+    },
+    {
+      "name": "output",
+      "flag": "--output",
+      "shortFlag": "-o",
+      "type": "select",
+      "description": "出力形式",
+      "options": ["text", "json"],
+      "default": "json"
+    },
+    {
+      "name": "sort",
+      "flag": "--sort",
+      "type": "select",
+      "description": "ソート順",
+      "options": ["lines", "files", "name", "code"],
+      "default": "lines"
+    },
+    {
+      "name": "by-file",
+      "flag": "--by-file",
+      "type": "boolean",
+      "description": "ファイル単位で詳細表示",
+      "default": false
+    }
+  ],
+  "resultParser": {
+    "type": "json",
+    "outputFlag": "--output json",
+    "schema": {
+      "summary": [
+        {
+          "key": "total_files",
+          "label": "Total Files",
+          "path": "$.summary.total_files",
+          "countType": "value",
+          "color": "blue",
+          "icon": "file"
+        },
+        {
+          "key": "code_lines",
+          "label": "Code Lines",
+          "path": "$.summary.code_lines",
+          "countType": "value",
+          "color": "green",
+          "icon": "code"
+        },
+        {
+          "key": "comment_lines",
+          "label": "Comments",
+          "path": "$.summary.comment_lines",
+          "countType": "value",
+          "color": "yellow",
+          "icon": "message-square"
+        },
+        {
+          "key": "blank_lines",
+          "label": "Blank Lines",
+          "path": "$.summary.blank_lines",
+          "countType": "value",
+          "color": "slate",
+          "icon": "minus"
+        }
+      ],
+      "details": {
+        "items": "$.by_language",
+        "columns": [
+          { "key": "language", "label": "Language", "width": "120px" },
+          { "key": "files", "label": "Files", "width": "80px" },
+          { "key": "code", "label": "Code", "width": "100px" },
+          { "key": "comments", "label": "Comments", "width": "100px" },
+          { "key": "blanks", "label": "Blanks", "width": "80px" },
+          { "key": "lines", "label": "Total", "width": "100px" },
+          { "key": "percentage", "label": "%", "width": "60px" }
+        ]
+      }
+    }
+  }
+}
