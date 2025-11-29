@@ -20,3 +20,10 @@ pub use challenge::{
 pub use connection::{Database, DatabaseError, DbResult};
 pub use models::*;
 
+// Re-export nested modules for backward compatibility (used as database::level::*, database::badge::*, etc.)
+// These re-export the inner modules that contain the actual functions
+pub use models::badge::badge;
+pub use models::level::level;
+pub use models::streak::streak;
+pub use models::xp::xp;
+
