@@ -1,0 +1,118 @@
+{
+  "name": "large-file-finder",
+  "displayName": "Large File Finder",
+  "description": "閾値以上の行数を持つファイルを検出し、行数降順で表示",
+  "version": "1.0.0",
+  "binary": "target/release/large-file-finder",
+  "icon": "file-search",
+  "category": "analytics",
+  "options": [
+    {
+      "name": "scan-dir",
+      "flag": "",
+      "type": "path",
+      "description": "スキャン対象ディレクトリ（デフォルト: カレントディレクトリ）",
+      "placeholder": "~/projects/myapp",
+      "required": false
+    },
+    {
+      "name": "min-lines",
+      "flag": "--min-lines",
+      "shortFlag": "-m",
+      "type": "number",
+      "description": "大きいファイルとみなす最小行数",
+      "default": 500,
+      "placeholder": "500"
+    },
+    {
+      "name": "top",
+      "flag": "--top",
+      "shortFlag": "-t",
+      "type": "number",
+      "description": "上位N件のみ表示（指定しない場合は全件）",
+      "placeholder": "10",
+      "required": false
+    },
+    {
+      "name": "preset",
+      "flag": "--preset",
+      "shortFlag": "-p",
+      "type": "string",
+      "description": "使用するプリセット（カンマ区切り: common, rust, node, python, go）",
+      "placeholder": "rust,node",
+      "required": false
+    },
+    {
+      "name": "no-auto-detect",
+      "flag": "--no-auto-detect",
+      "type": "boolean",
+      "description": "プリセットの自動検出を無効化",
+      "default": false
+    },
+    {
+      "name": "output",
+      "flag": "--output",
+      "shortFlag": "-o",
+      "type": "select",
+      "description": "出力形式",
+      "options": ["text", "json"],
+      "default": "json"
+    },
+    {
+      "name": "exclude",
+      "flag": "--exclude",
+      "shortFlag": "-e",
+      "type": "string",
+      "description": "追加の除外パターン（カンマ区切り、glob形式）",
+      "placeholder": "generated/**,*.min.js",
+      "required": false
+    }
+  ],
+  "resultParser": {
+    "type": "json",
+    "outputFlag": "--output json",
+    "schema": {
+      "summary": [
+        {
+          "key": "files_found",
+          "label": "Large Files",
+          "path": "$.files.length",
+          "countType": "value",
+          "color": "yellow",
+          "icon": "alert-triangle"
+        },
+        {
+          "key": "total_lines",
+          "label": "Total Lines",
+          "path": "$.total_lines",
+          "countType": "value",
+          "color": "red",
+          "icon": "file-text"
+        },
+        {
+          "key": "scanned",
+          "label": "Files Scanned",
+          "path": "$.total_files_scanned",
+          "countType": "value",
+          "color": "blue",
+          "icon": "search"
+        },
+        {
+          "key": "threshold",
+          "label": "Min Lines",
+          "path": "$.min_lines",
+          "countType": "value",
+          "color": "slate",
+          "icon": "hash"
+        }
+      ],
+      "details": {
+        "items": "$.files",
+        "columns": [
+          { "key": "path", "label": "File Path", "width": "auto" },
+          { "key": "lines", "label": "Lines", "width": "100px" }
+        ]
+      }
+    }
+  }
+}
