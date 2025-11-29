@@ -117,17 +117,6 @@ impl Summary {
     }
 }
 
-/// Directory statistics (for by-directory grouping)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DirectoryStats {
-    /// Directory path
-    pub path: String,
-    /// Number of files
-    pub files: usize,
-    /// Total number of lines
-    pub lines: usize,
-}
-
 /// Complete LOC result
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LocResult {
@@ -135,9 +124,6 @@ pub struct LocResult {
     pub summary: Summary,
     /// Statistics by language
     pub by_language: Vec<LanguageStats>,
-    /// Statistics by directory (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub by_directory: Option<Vec<DirectoryStats>>,
     /// Individual file statistics (when --by-file is used)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<FileStats>>,
@@ -174,7 +160,6 @@ impl LocResult {
         Self {
             summary,
             by_language,
-            by_directory: None,
             files: if include_files {
                 Some(file_stats)
             } else {

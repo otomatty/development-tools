@@ -2,6 +2,8 @@
 //!
 //! This module contains language detection and comment syntax definitions.
 
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Comment syntax for a language
@@ -34,7 +36,7 @@ pub struct Language {
 }
 
 /// Get all supported languages
-pub fn get_languages() -> Vec<Language> {
+fn get_languages() -> Vec<Language> {
     vec![
         Language {
             name: "Rust",
@@ -233,45 +235,46 @@ pub fn get_languages() -> Vec<Language> {
     ]
 }
 
+// Static cached languages list
+static LANGUAGES: Lazy<Vec<Language>> = Lazy::new(get_languages);
+
+// Extension to language name mapping for O(1) lookup
+static EXT_TO_LANG: Lazy<HashMap<String, &'static str>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+    for lang in &*LANGUAGES {
+        for ext in &lang.extensions {
+            map.insert(ext.to_string(), lang.name);
+        }
+    }
+    map
+});
+
+// Language name to comment syntax mapping for O(1) lookup
+static LANG_TO_SYNTAX: Lazy<HashMap<&'static str, CommentSyntax>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+    for lang in &*LANGUAGES {
+        map.insert(lang.name, lang.comments.clone());
+    }
+    map
+});
+
 /// Detect language from file path
 pub fn detect_language(path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?.to_lowercase();
-    let languages = get_languages();
-
-    for lang in &languages {
-        if lang.extensions.iter().any(|ext| *ext == extension) {
-            return Some(lang.name);
-        }
-    }
-
-    // Check shebang for files without extension
-    None
+    EXT_TO_LANG.get(&extension).copied()
 }
 
 /// Get comment syntax for a language
 pub fn get_comment_syntax(language_name: &str) -> CommentSyntax {
-    let languages = get_languages();
-
-    for lang in languages {
-        if lang.name == language_name {
-            return lang.comments;
-        }
-    }
-
-    CommentSyntax::default()
+    LANG_TO_SYNTAX
+        .get(language_name)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// Check if a file extension is supported
 pub fn is_supported_extension(extension: &str) -> bool {
-    let ext_lower = extension.to_lowercase();
-    let languages = get_languages();
-
-    for lang in &languages {
-        if lang.extensions.iter().any(|e| *e == ext_lower) {
-            return true;
-        }
-    }
-    false
+    EXT_TO_LANG.contains_key(&extension.to_lowercase())
 }
 
 #[cfg(test)]
@@ -392,15 +395,14 @@ mod tests {
     }
 
     #[test]
-    fn test_get_languages_count() {
-        let languages = get_languages();
-        assert!(languages.len() >= 20); // At least 20 languages should be defined
+    fn test_languages_count() {
+        // At least 20 languages should be defined
+        assert!(LANGUAGES.len() >= 20);
     }
 
     #[test]
     fn test_all_languages_have_names() {
-        let languages = get_languages();
-        for lang in languages {
+        for lang in &*LANGUAGES {
             assert!(!lang.name.is_empty());
             assert!(!lang.extensions.is_empty());
         }

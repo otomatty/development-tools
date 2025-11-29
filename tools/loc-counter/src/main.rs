@@ -93,9 +93,9 @@ fn main() -> Result<()> {
 fn determine_scan_directory(args: &Args) -> PathBuf {
     match &args.scan_dir {
         Some(dir) => {
-            // Expand ~ to home directory
+            // Expand ~ to home directory using dirs crate for cross-platform support
             if dir.starts_with("~") {
-                if let Some(home) = dirs_home() {
+                if let Some(home) = dirs::home_dir() {
                     let rest = dir.strip_prefix("~").unwrap();
                     return home.join(rest.strip_prefix("/").unwrap_or(rest));
                 }
@@ -104,11 +104,6 @@ fn determine_scan_directory(args: &Args) -> PathBuf {
         }
         None => env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     }
-}
-
-/// Get home directory
-fn dirs_home() -> Option<PathBuf> {
-    env::var_os("HOME").map(PathBuf::from)
 }
 
 /// Print banner

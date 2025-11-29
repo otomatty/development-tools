@@ -28,3 +28,4 @@ futures = "0.3"
 
 [workspace]
 members = ["src-tauri"]
+exclude = ["tools/loc-counter", "tools/shai-hulud-scanner", "tools/todo-collector"]

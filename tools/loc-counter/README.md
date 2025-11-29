@@ -18,23 +18,23 @@
 ## 対応言語
 
 - Rust (.rs)
-- TypeScript/JavaScript (.ts, .tsx, .js, .jsx)
-- Python (.py)
+- TypeScript/JavaScript (.ts, .tsx, .js, .jsx, .mjs, .cjs)
+- Python (.py, .pyw, .pyi)
 - Go (.go)
 - Java (.java)
-- C/C++ (.c, .h, .cpp, .hpp)
+- C/C++ (.c, .h, .cpp, .hpp, .cc, .cxx, .hxx)
 - C# (.cs)
-- HTML/CSS (.html, .css, .scss)
+- HTML/CSS (.html, .css, .scss, .sass)
 - JSON/YAML/TOML (.json, .yaml, .yml, .toml)
-- Markdown (.md)
+- Markdown (.md, .markdown)
 - Shell (.sh, .bash, .zsh)
 - Ruby (.rb)
 - PHP (.php)
 - Swift (.swift)
-- Kotlin (.kt)
+- Kotlin (.kt, .kts)
 - SQL (.sql)
 - Vue/Svelte (.vue, .svelte)
-- XML (.xml)
+- XML/XSL (.xml, .xsl, .xsd)
 
 ## 使い方
 

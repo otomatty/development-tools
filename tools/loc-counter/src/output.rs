@@ -145,8 +145,10 @@ fn print_file_details(files: &[crate::types::FileStats]) {
 
     for file in files {
         let path_str = file.path.to_string_lossy();
-        let display_path = if path_str.len() > 48 {
-            format!("...{}", &path_str[path_str.len() - 45..])
+        // Use char-based indexing for UTF-8 safety
+        let display_path = if path_str.chars().count() > 48 {
+            let suffix: String = path_str.chars().rev().take(45).collect::<String>().chars().rev().collect();
+            format!("...{}", suffix)
         } else {
             path_str.to_string()
         };
