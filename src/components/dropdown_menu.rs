@@ -20,9 +20,14 @@
 use leptos::ev;
 use leptos::prelude::*;
 use leptos::html;
-use wasm_bindgen::JsCast;
 
 use super::animation_context::use_animation_context_or_default;
+
+/// Context type for sharing dropdown menu state with child components
+#[derive(Clone, Copy)]
+pub struct DropdownMenuContext {
+    pub is_open: RwSignal<bool>,
+}
 
 /// Dropdown menu component
 ///
@@ -46,6 +51,9 @@ where
     let animation_ctx = use_animation_context_or_default();
     let container_ref = NodeRef::<html::Div>::new();
 
+    // Provide context for child components (DropdownMenuItem)
+    provide_context(DropdownMenuContext { is_open });
+
     // Toggle menu open/close
     let toggle_menu = move |_: ev::MouseEvent| {
         is_open.update(|open| *open = !*open);
@@ -56,44 +64,10 @@ where
         is_open.set(false);
     };
 
-    // Handle click outside
-    Effect::new(move |_| {
-        let is_open_val = is_open.get();
-        if is_open_val {
-            let _close = close_menu.clone();
-            let container = container_ref.get();
-            
-            if let Some(_container_el) = container {
-                let handler = wasm_bindgen::closure::Closure::wrap(Box::new(move |_e: web_sys::MouseEvent| {
-                    // Click outside detection is handled through overlay approach
-                }) as Box<dyn FnMut(_)>);
-                
-                // Clean up is handled by Effect drop
-                handler.forget();
-            }
-        }
-    });
-
-    // Handle ESC key
-    Effect::new(move |_| {
-        let is_open_val = is_open.get();
-        if is_open_val {
-            let close = close_menu.clone();
-            let handler = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::KeyboardEvent| {
-                if e.key() == "Escape" {
-                    close();
-                }
-            }) as Box<dyn FnMut(_)>);
-            
-            if let Some(window) = web_sys::window() {
-                let _ = window.add_event_listener_with_callback(
-                    "keydown",
-                    handler.as_ref().unchecked_ref(),
-                );
-            }
-            
-            // Note: In production, we should properly clean up this listener
-            handler.forget();
+    // Handle ESC key - uses Leptos's window_event_listener for proper lifecycle management
+    let _ = window_event_listener(ev::keydown, move |ev| {
+        if is_open.get() && ev.key() == "Escape" {
+            is_open.set(false);
         }
     });
 
@@ -116,17 +90,11 @@ where
         let animated = animation_ctx.is_enabled();
         
         if is_open_val {
-            if animated {
-                "opacity: 1; transform: translateY(0);"
-            } else {
-                "opacity: 1; transform: translateY(0);"
-            }
+            "opacity: 1; transform: translateY(0);"
+        } else if animated {
+            "opacity: 0; transform: translateY(-8px); pointer-events: none;"
         } else {
-            if animated {
-                "opacity: 0; transform: translateY(-8px); pointer-events: none;"
-            } else {
-                "display: none;"
-            }
+            "display: none;"
         }
     };
 
@@ -186,6 +154,9 @@ pub fn DropdownMenuItem<F>(
 where
     F: Fn(ev::MouseEvent) + 'static + Clone,
 {
+    // Get the dropdown menu context to close menu after click
+    let menu_ctx = use_context::<DropdownMenuContext>();
+
     let base_classes = "flex items-center gap-3 px-4 py-2 text-sm transition-colors cursor-pointer w-full text-left";
     
     let item_classes = if danger {
@@ -201,6 +172,10 @@ where
             role="menuitem"
             on:click=move |e| {
                 on_click.clone()(e);
+                // Close menu after item click (TC-006)
+                if let Some(ctx) = menu_ctx {
+                    ctx.is_open.set(false);
+                }
             }
         >
             {children()}
