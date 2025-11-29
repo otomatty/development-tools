@@ -5,7 +5,7 @@
 use tauri::{command, Emitter, State};
 
 use super::auth::AppState;
-use crate::database::{badge, level, streak, xp, UserStats, XpActionType};
+use crate::database::{badge, challenge, level, streak, xp, UserStats, XpActionType};
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
 use crate::utils::notifications::send_notification;
 
@@ -552,6 +552,101 @@ pub async fn sync_github_stats(
 
             new_badges.push(badge_info);
         }
+    }
+
+    // Challenge auto-generation and progress update
+    // Build challenge stats from current GitHub stats
+    let challenge_stats = challenge::ChallengeStats::new(
+        github_stats.total_commits,
+        github_stats.total_prs,
+        github_stats.total_reviews,
+        github_stats.total_issues,
+    );
+    let challenge_stats_json = serde_json::to_string(&challenge_stats).unwrap_or_default();
+
+    // Check if we need to generate new daily challenges
+    let last_daily = state.db.get_last_daily_challenge_date(user.id).await.ok().flatten();
+    let now = chrono::Utc::now();
+    
+    if challenge::should_generate_daily_challenges(last_daily, now) {
+        // Generate daily challenges
+        let config = challenge::ChallengeGeneratorConfig::default();
+        let historical = challenge::HistoricalStats::default(); // TODO: Calculate from GitHub data
+        let targets = challenge::calculate_recommended_targets(&historical, &config);
+        let daily_templates = challenge::generate_daily_challenges(&targets);
+        
+        for template in daily_templates {
+            let (start, end) = challenge::calculate_challenge_period(&template.challenge_type, now);
+            if let Err(e) = state.db.create_challenge_with_stats(
+                user.id,
+                &template.challenge_type,
+                &template.target_metric,
+                template.target_value,
+                template.reward_xp,
+                start,
+                end,
+                &challenge_stats_json,
+            ).await {
+                eprintln!("Failed to create daily challenge: {}", e);
+            }
+        }
+    }
+
+    // Check if we need to generate new weekly challenges
+    let last_weekly = state.db.get_last_weekly_challenge_date(user.id).await.ok().flatten();
+    
+    if challenge::should_generate_weekly_challenges(last_weekly, now) {
+        // Generate weekly challenges
+        let config = challenge::ChallengeGeneratorConfig::default();
+        let historical = challenge::HistoricalStats::default(); // TODO: Calculate from GitHub data
+        let targets = challenge::calculate_recommended_targets(&historical, &config);
+        let weekly_templates = challenge::generate_weekly_challenges(&targets);
+        
+        for template in weekly_templates {
+            let (start, end) = challenge::calculate_challenge_period(&template.challenge_type, now);
+            if let Err(e) = state.db.create_challenge_with_stats(
+                user.id,
+                &template.challenge_type,
+                &template.target_metric,
+                template.target_value,
+                template.reward_xp,
+                start,
+                end,
+                &challenge_stats_json,
+            ).await {
+                eprintln!("Failed to create weekly challenge: {}", e);
+            }
+        }
+    }
+
+    // Update progress for active challenges
+    let active_challenges = state
+        .db
+        .get_active_challenges(user.id)
+        .await
+        .unwrap_or_default();
+
+    for ch in active_challenges {
+        // Get start stats for this challenge
+        if let Ok(Some(start_stats_json)) = state.db.get_challenge_start_stats(ch.id).await {
+            if let Ok(start_stats) = serde_json::from_str::<challenge::ChallengeStats>(&start_stats_json) {
+                // Calculate progress based on metric
+                let progress = challenge_stats.get_metric(&ch.target_metric)
+                    .saturating_sub(start_stats.get_metric(&ch.target_metric));
+
+                // Update progress in database
+                if progress > 0 {
+                    if let Err(e) = state.db.update_challenge_progress(ch.id, progress).await {
+                        eprintln!("Failed to update challenge progress: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    // Check and fail expired challenges
+    if let Err(e) = state.db.fail_expired_challenges(user.id).await {
+        eprintln!("Failed to check expired challenges: {}", e);
     }
 
     Ok(SyncResult {

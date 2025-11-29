@@ -154,6 +154,15 @@ CREATE TABLE IF NOT EXISTS user_settings (
 CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
 "#,
     },
+    Migration {
+        version: 3,
+        name: "add_challenge_start_stats",
+        sql: r#"
+-- Add start_stats column to challenges table for tracking progress
+-- This stores the GitHub stats at the time the challenge was created
+ALTER TABLE challenges ADD COLUMN start_stats_json TEXT;
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

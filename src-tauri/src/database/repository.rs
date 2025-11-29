@@ -1040,6 +1040,92 @@ impl Database {
         self.get_challenge_by_id(id).await
     }
 
+    /// Create a new challenge with start stats for progress tracking
+    pub async fn create_challenge_with_stats(
+        &self,
+        user_id: i64,
+        challenge_type: &str,
+        target_metric: &str,
+        target_value: i32,
+        reward_xp: i32,
+        start_date: DateTime<Utc>,
+        end_date: DateTime<Utc>,
+        start_stats_json: &str,
+    ) -> DbResult<Challenge> {
+        let id = sqlx::query(
+            r#"
+            INSERT INTO challenges (user_id, challenge_type, target_metric, target_value, 
+                                   current_value, reward_xp, start_date, end_date, status, start_stats_json)
+            VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'active', ?)
+            "#,
+        )
+        .bind(user_id)
+        .bind(challenge_type)
+        .bind(target_metric)
+        .bind(target_value)
+        .bind(reward_xp)
+        .bind(start_date.to_rfc3339())
+        .bind(end_date.to_rfc3339())
+        .bind(start_stats_json)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?
+        .last_insert_rowid();
+
+        self.get_challenge_by_id(id).await
+    }
+
+    /// Get start stats JSON for a challenge
+    pub async fn get_challenge_start_stats(&self, challenge_id: i64) -> DbResult<Option<String>> {
+        let result: Option<String> = sqlx::query_scalar(
+            "SELECT start_stats_json FROM challenges WHERE id = ?"
+        )
+        .bind(challenge_id)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Get the most recent daily challenge date for a user
+    pub async fn get_last_daily_challenge_date(&self, user_id: i64) -> DbResult<Option<chrono::NaiveDate>> {
+        let result: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT DATE(start_date) FROM challenges 
+            WHERE user_id = ? AND challenge_type = 'daily'
+            ORDER BY start_date DESC
+            LIMIT 1
+            "#
+        )
+        .bind(user_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?
+        .flatten();
+
+        Ok(result.and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()))
+    }
+
+    /// Get the most recent weekly challenge date for a user
+    pub async fn get_last_weekly_challenge_date(&self, user_id: i64) -> DbResult<Option<chrono::NaiveDate>> {
+        let result: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT DATE(start_date) FROM challenges 
+            WHERE user_id = ? AND challenge_type = 'weekly'
+            ORDER BY start_date DESC
+            LIMIT 1
+            "#
+        )
+        .bind(user_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?
+        .flatten();
+
+        Ok(result.and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()))
+    }
+
     /// Get challenge by ID
     pub async fn get_challenge_by_id(&self, id: i64) -> DbResult<Challenge> {
         let row = sqlx::query(
