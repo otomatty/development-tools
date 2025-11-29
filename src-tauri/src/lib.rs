@@ -2,6 +2,7 @@ mod auth;
 mod commands;
 mod database;
 mod github;
+mod mock_server;
 mod types;
 mod utils;
 
@@ -24,6 +25,11 @@ use commands::{
     // Settings commands
     clear_cache, export_data, get_app_info, get_database_info, get_settings, get_sync_intervals,
     open_external_url, reset_all_data, reset_settings, update_settings,
+    // Mock Server commands
+    create_mock_server_mapping, delete_mock_server_mapping, get_mock_server_config,
+    get_mock_server_mappings, get_mock_server_state, list_mock_server_directory,
+    select_mock_server_directory, start_mock_server, stop_mock_server,
+    update_mock_server_config, update_mock_server_mapping, MockServerManager,
     // State
     AppState,
 };
@@ -68,6 +74,9 @@ pub fn run() {
             });
 
             app.manage(app_state);
+            
+            // Initialize Mock Server manager
+            app.manage(MockServerManager::new());
 
             Ok(())
         })
@@ -119,6 +128,18 @@ pub fn run() {
             get_sync_intervals,
             get_app_info,
             open_external_url,
+            // Mock Server commands
+            get_mock_server_state,
+            start_mock_server,
+            stop_mock_server,
+            get_mock_server_config,
+            update_mock_server_config,
+            get_mock_server_mappings,
+            create_mock_server_mapping,
+            update_mock_server_mapping,
+            delete_mock_server_mapping,
+            list_mock_server_directory,
+            select_mock_server_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -589,3 +589,125 @@ pub async fn get_challenge_stats() -> Result<ChallengeStats, String> {
         .map_err(|e| format!("Failed to get challenge stats: {:?}", e))
 }
 
+// ============================================
+// Mock Server API
+// ============================================
+
+use crate::types::{
+    MockServerState, MockServerConfig, DirectoryMapping, 
+    CreateMappingRequest, UpdateMappingRequest, UpdateConfigRequest, FileInfo, AccessLogEntry,
+};
+
+/// Get Mock Server state
+pub async fn get_mock_server_state() -> Result<MockServerState, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_mock_server_state", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get mock server state: {:?}", e))
+}
+
+/// Start Mock Server
+pub async fn start_mock_server() -> Result<MockServerState, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("start_mock_server", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to start mock server: {:?}", e))
+}
+
+/// Stop Mock Server
+pub async fn stop_mock_server() -> Result<MockServerState, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("stop_mock_server", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to stop mock server: {:?}", e))
+}
+
+/// Get Mock Server configuration
+pub async fn get_mock_server_config() -> Result<MockServerConfig, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_mock_server_config", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get mock server config: {:?}", e))
+}
+
+/// Update Mock Server configuration
+pub async fn update_mock_server_config(request: UpdateConfigRequest) -> Result<MockServerConfig, String> {
+    let args = serde_wasm_bindgen::to_value(&request).unwrap();
+    let result = invoke("update_mock_server_config", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to update mock server config: {:?}", e))
+}
+
+/// Get all directory mappings
+pub async fn get_mock_server_mappings() -> Result<Vec<DirectoryMapping>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_mock_server_mappings", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get mock server mappings: {:?}", e))
+}
+
+/// Create a new directory mapping
+pub async fn create_mock_server_mapping(request: CreateMappingRequest) -> Result<DirectoryMapping, String> {
+    let args = serde_wasm_bindgen::to_value(&request).unwrap();
+    let result = invoke("create_mock_server_mapping", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to create mock server mapping: {:?}", e))
+}
+
+/// Update a directory mapping
+pub async fn update_mock_server_mapping(request: UpdateMappingRequest) -> Result<DirectoryMapping, String> {
+    let args = serde_wasm_bindgen::to_value(&request).unwrap();
+    let result = invoke("update_mock_server_mapping", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to update mock server mapping: {:?}", e))
+}
+
+/// Delete a directory mapping
+pub async fn delete_mock_server_mapping(id: i64) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    struct Args {
+        id: i64,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { id }).unwrap();
+    let result = invoke("delete_mock_server_mapping", args).await;
+    
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// List files in a directory
+pub async fn list_mock_server_directory(path: &str) -> Result<Vec<FileInfo>, String> {
+    #[derive(serde::Serialize)]
+    struct Args<'a> {
+        path: &'a str,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { path }).unwrap();
+    let result = invoke("list_mock_server_directory", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to list directory: {:?}", e))
+}
+
+/// Select a directory using native dialog
+pub async fn select_mock_server_directory() -> Result<Option<String>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("select_mock_server_directory", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to select directory: {:?}", e))
+}

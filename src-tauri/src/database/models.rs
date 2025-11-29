@@ -1110,6 +1110,7 @@ pub mod badge {
 
     /// Badge progress information
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct BadgeProgress {
         pub badge_id: String,
         pub current_value: i32,
@@ -1119,6 +1120,7 @@ pub mod badge {
 
     /// Badge definition with progress information
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct BadgeWithProgress {
         pub id: String,
         pub name: String,

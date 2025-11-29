@@ -64,6 +64,28 @@ pub fn Sidebar(
                     <Icon name="wrench".to_string() class="w-5 h-5".to_string() />
                     <span class="font-medium">"Tools"</span>
                 </button>
+
+                // Separator
+                <div class="my-2 border-t border-slate-700/50"/>
+
+                // Mock Server
+                <button
+                    class=move || format!(
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200 {}",
+                        if current_page.get() == AppPage::MockServer {
+                            "bg-gradient-to-r from-gm-accent-cyan/20 to-gm-accent-purple/20 text-gm-accent-cyan border-l-2 border-gm-accent-cyan"
+                        } else {
+                            "text-slate-400 hover:bg-slate-800 hover:text-dt-text"
+                        }
+                    )
+                    on:click=move |_| {
+                        set_current_page.set(AppPage::MockServer);
+                        set_selected_tool.set(None);
+                    }
+                >
+                    <Icon name="radio".to_string() class="w-5 h-5".to_string() />
+                    <span class="font-medium">"Mock Server"</span>
+                </button>
             </div>
 
             // ツール一覧 (Toolsページのとき表示)

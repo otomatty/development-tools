@@ -163,6 +163,43 @@ CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
 ALTER TABLE challenges ADD COLUMN start_stats_json TEXT;
 "#,
     },
+    Migration {
+        version: 4,
+        name: "add_mock_server_tables",
+        sql: r#"
+-- Mock Server configuration
+CREATE TABLE IF NOT EXISTS mock_server_config (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    port INTEGER NOT NULL DEFAULT 9876,
+    cors_mode TEXT NOT NULL DEFAULT 'simple', -- 'simple' | 'advanced'
+    cors_origins TEXT, -- JSON array for advanced mode
+    cors_methods TEXT, -- JSON array for advanced mode
+    cors_headers TEXT, -- JSON array for advanced mode
+    cors_max_age INTEGER DEFAULT 86400,
+    show_directory_listing INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Initialize default config
+INSERT OR IGNORE INTO mock_server_config (id, port, cors_mode, cors_max_age) 
+VALUES (1, 9876, 'simple', 86400);
+
+-- Directory mappings for Mock Server
+CREATE TABLE IF NOT EXISTS mock_server_mappings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    virtual_path TEXT NOT NULL UNIQUE,
+    local_path TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_mock_server_mappings_virtual_path ON mock_server_mappings(virtual_path);
+CREATE INDEX IF NOT EXISTS idx_mock_server_mappings_enabled ON mock_server_mappings(enabled);
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

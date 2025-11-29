@@ -19,6 +19,9 @@ pub enum DatabaseError {
 
     #[error("Query error: {0}")]
     Query(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
 }
 
 pub type DbResult<T> = Result<T, DatabaseError>;
