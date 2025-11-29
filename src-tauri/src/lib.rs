@@ -10,7 +10,7 @@ use tauri::Manager;
 
 use commands::{
     // Tool commands
-    get_tool_config, list_tools, run_tool,
+    get_tool_config, list_tools, run_tool, select_path,
     // Auth commands (Device Flow)
     cancel_device_flow, get_auth_state, get_current_user, logout, open_url, poll_device_token,
     start_device_flow, validate_token,
@@ -73,6 +73,9 @@ pub fn run() {
                 state
             });
 
+            // Register Database as managed state (needed by mock_server commands)
+            app.manage(app_state.db.clone());
+            
             app.manage(app_state);
             
             // Initialize Mock Server manager
@@ -85,6 +88,7 @@ pub fn run() {
             list_tools,
             get_tool_config,
             run_tool,
+            select_path,
             // Auth commands (Device Flow)
             get_auth_state,
             logout,

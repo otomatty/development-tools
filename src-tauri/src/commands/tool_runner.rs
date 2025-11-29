@@ -48,7 +48,10 @@ pub async fn run_tool(
                 OptionType::String | OptionType::Path => {
                     if let Some(s) = value.as_str() {
                         if !s.is_empty() {
-                            args.push(opt_config.flag.clone());
+                            // フラグが空でない場合のみフラグを追加（位置引数対応）
+                            if !opt_config.flag.is_empty() {
+                                args.push(opt_config.flag.clone());
+                            }
                             // パスの場合、~をホームディレクトリに展開
                             let expanded = if opt_config.option_type == OptionType::Path {
                                 expand_tilde(s)
@@ -70,7 +73,10 @@ pub async fn run_tool(
                 }
                 OptionType::Number => {
                     if let Some(n) = value.as_f64() {
-                        args.push(opt_config.flag.clone());
+                        // フラグが空でない場合のみフラグを追加（位置引数対応）
+                        if !opt_config.flag.is_empty() {
+                            args.push(opt_config.flag.clone());
+                        }
                         args.push(n.to_string());
                     }
                 }

@@ -117,6 +117,59 @@ pub fn get_tool_binary_path(tool_name: &str) -> Result<PathBuf, String> {
     Ok(binary_path)
 }
 
+/// ファイルまたはディレクトリを選択するダイアログを表示
+/// 
+/// # Arguments
+/// * `app` - Tauri AppHandle
+/// * `path_type` - 選択するパスの種類 ("file", "directory", "any")
+/// * `title` - ダイアログのタイトル (オプション)
+/// * `default_path` - デフォルトのパス (オプション)
+#[tauri::command]
+pub async fn select_path(
+    app: tauri::AppHandle,
+    path_type: String,
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    use tokio::sync::oneshot;
+
+    let (tx, rx) = oneshot::channel();
+    
+    let mut dialog = app.dialog().file();
+    
+    // タイトルを設定
+    if let Some(t) = title {
+        dialog = dialog.set_title(t);
+    }
+    
+    // デフォルトパスを設定
+    if let Some(path) = default_path {
+        dialog = dialog.set_directory(path);
+    }
+
+    match path_type.as_str() {
+        "directory" => {
+            dialog.pick_folder(move |result| {
+                let _ = tx.send(result.map(|p| p.to_string()));
+            });
+        }
+        "file" => {
+            dialog.pick_file(move |result| {
+                let _ = tx.send(result.map(|p| p.to_string()));
+            });
+        }
+        _ => {
+            // "any" の場合は両方対応（ファイル優先）
+            dialog.pick_file(move |result| {
+                let _ = tx.send(result.map(|p| p.to_string()));
+            });
+        }
+    };
+
+    rx.await.map_err(|_| "Dialog was cancelled".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

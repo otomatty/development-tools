@@ -1,6 +1,8 @@
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 use crate::components::icons::Icon;
+use crate::tauri_api;
 use crate::types::{OptionType, OptionValues, ToolOption};
 
 /// オプションフォームコンポーネント
@@ -78,6 +80,8 @@ fn OptionField(
                 OptionType::Path => {
                     let name = opt_name.clone();
                     let placeholder = opt_placeholder.unwrap_or_default();
+                    let description = opt_description.clone();
+                    let path_type = option.path_type.clone();
                     
                     view! {
                         <PathField 
@@ -85,6 +89,8 @@ fn OptionField(
                             values=values 
                             set_values=set_values
                             placeholder=placeholder
+                            description=description
+                            path_type=path_type
                         />
                     }.into_any()
                 }
@@ -240,15 +246,54 @@ fn PathField(
     values: ReadSignal<OptionValues>,
     set_values: WriteSignal<OptionValues>,
     placeholder: String,
+    description: String,
+    path_type: Option<String>,
 ) -> impl IntoView {
     let name_for_value = name.clone();
     let name_for_input = name.clone();
+    let name_for_click = name.clone();
+    let placeholder_for_click = placeholder.clone();
+    let description_for_click = description.clone();
+    let path_type_for_click = path_type.clone();
     
     let current_value = move || {
         values.get()
             .get(&name_for_value)
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_default()
+    };
+
+    // ブラウズボタンのクリックハンドラー
+    let on_browse_click = move |_| {
+        let name = name_for_click.clone();
+        let placeholder = placeholder_for_click.clone();
+        let description = description_for_click.clone();
+        let path_type_opt = path_type_for_click.clone();
+        
+        // path_typeが指定されていればそれを使用、なければプレースホルダーから推測（デフォルトはdirectory）
+        let path_type = path_type_opt.unwrap_or_else(|| {
+            if placeholder.to_lowercase().contains("file") {
+                "file".to_string()
+            } else {
+                "directory".to_string()
+            }
+        });
+        
+        spawn_local(async move {
+            match tauri_api::select_path(&path_type, Some(&description), None).await {
+                Ok(Some(selected_path)) => {
+                    set_values.update(|v| {
+                        v.insert(name.clone(), serde_json::Value::String(selected_path));
+                    });
+                }
+                Ok(None) => {
+                    // ユーザーがキャンセルした場合は何もしない
+                }
+                Err(e) => {
+                    leptos::logging::error!("Failed to select path: {}", e);
+                }
+            }
+        });
     };
 
     view! {
@@ -272,6 +317,7 @@ fn PathField(
                 type="button"
                 class="btn-secondary px-3"
                 title="Browse"
+                on:click=on_browse_click
             >
                 <Icon name="folder".to_string() class="w-5 h-5".to_string() />
             </button>
