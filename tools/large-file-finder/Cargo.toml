@@ -1,0 +1,24 @@
+[package]
+name = "large-file-finder"
+version = "1.0.0"
+edition = "2021"
+description = "Find files with more than a specified number of lines"
+authors = ["otomatty"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+ignore = "0.4"
+glob = "0.3"
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+colored = "2"
+anyhow = "1"
+dirs = "6"
+
+[[bin]]
+name = "large-file-finder"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3"
