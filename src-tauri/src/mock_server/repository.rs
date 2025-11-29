@@ -36,16 +36,33 @@ pub async fn get_config(pool: &Pool<Sqlite>) -> DbResult<MockServerConfig> {
             let cors_methods: Option<String> = row.get("cors_methods");
             let cors_headers: Option<String> = row.get("cors_headers");
 
+            // パース失敗時にはログを出力してNoneを返す
+            let parsed_origins = cors_origins.and_then(|s| {
+                serde_json::from_str(&s).map_err(|e| {
+                    tracing::warn!("Failed to parse cors_origins: {}", e);
+                    e
+                }).ok()
+            });
+            let parsed_methods = cors_methods.and_then(|s| {
+                serde_json::from_str(&s).map_err(|e| {
+                    tracing::warn!("Failed to parse cors_methods: {}", e);
+                    e
+                }).ok()
+            });
+            let parsed_headers = cors_headers.and_then(|s| {
+                serde_json::from_str(&s).map_err(|e| {
+                    tracing::warn!("Failed to parse cors_headers: {}", e);
+                    e
+                }).ok()
+            });
+
             Ok(MockServerConfig {
                 id: row.get("id"),
                 port: row.get::<i64, _>("port") as u16,
                 cors_mode: CorsMode::from(row.get::<String, _>("cors_mode")),
-                cors_origins: cors_origins
-                    .and_then(|s| serde_json::from_str(&s).ok()),
-                cors_methods: cors_methods
-                    .and_then(|s| serde_json::from_str(&s).ok()),
-                cors_headers: cors_headers
-                    .and_then(|s| serde_json::from_str(&s).ok()),
+                cors_origins: parsed_origins,
+                cors_methods: parsed_methods,
+                cors_headers: parsed_headers,
                 cors_max_age: row.get("cors_max_age"),
                 show_directory_listing: row.get::<i64, _>("show_directory_listing") != 0,
             })
@@ -89,15 +106,16 @@ pub async fn update_config(
         .show_directory_listing
         .unwrap_or(current.show_directory_listing);
 
+    // Vec<String> のシリアライズは通常失敗しないため、expect() を使用
     let cors_origins_json = cors_origins
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_default());
+        .map(|v| serde_json::to_string(v).expect("Failed to serialize cors_origins"));
     let cors_methods_json = cors_methods
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_default());
+        .map(|v| serde_json::to_string(v).expect("Failed to serialize cors_methods"));
     let cors_headers_json = cors_headers
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_default());
+        .map(|v| serde_json::to_string(v).expect("Failed to serialize cors_headers"));
 
     sqlx::query(
         r#"

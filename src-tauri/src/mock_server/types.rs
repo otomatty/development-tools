@@ -106,10 +106,11 @@ pub struct UpdateConfigRequest {
 }
 
 /// Mock Server status
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ServerStatus {
     Running,
+    #[default]
     Stopped,
 }
 

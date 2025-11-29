@@ -131,10 +131,13 @@ impl MockServer {
     }
 
     /// Update mappings on a running server
+    /// 
+    /// Note: Currently, updating mappings at runtime is not supported.
+    /// The server must be restarted to apply new mappings.
     pub async fn update_mappings(&self, _mappings: Vec<DirectoryMapping>) -> Result<(), String> {
-        // For simplicity, we'll require restart to update mappings
-        // In a more advanced implementation, we could update the state dynamically
-        Ok(())
+        // 実行時のマッピング更新は現在サポートされていません
+        // 新しいマッピングを適用するにはサーバーの再起動が必要です
+        Err("Updating mappings at runtime is not supported. Please restart the server to apply new mappings.".to_string())
     }
 }
 
@@ -300,7 +303,7 @@ async fn serve_file(
         new_request = new_request.header(key, value);
     }
 
-    let new_request = new_request.body(body).unwrap();
+    let new_request = new_request.body(body).expect("Failed to build request");
 
     // Serve the file
     use tower::ServiceExt;
@@ -378,7 +381,14 @@ pub fn list_directory(path: &str) -> Result<Vec<super::types::FileInfo>, String>
     let mut files = Vec::new();
     let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
 
-    for entry in entries.flatten() {
+    for entry_result in entries {
+        let entry = match entry_result {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("Failed to read directory entry: {}", e);
+                continue;
+            }
+        };
         let file_path = entry.path();
         let metadata = entry.metadata().ok();
 
