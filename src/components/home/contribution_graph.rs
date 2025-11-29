@@ -577,7 +577,10 @@ fn format_date(date: &str) -> String {
     // Parse YYYY-MM-DD
     let parts: Vec<&str> = date.split('-').collect();
     if parts.len() == 3 {
-        format!("{}年{}月{}日", parts[0], parts[1].trim_start_matches('0'), parts[2].trim_start_matches('0'))
+        let year = parts[0];
+        let month = parts[1].parse::<u32>().unwrap_or(0);
+        let day = parts[2].parse::<u32>().unwrap_or(0);
+        format!("{}年{}月{}日", year, month, day)
     } else {
         date.to_string()
     }

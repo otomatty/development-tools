@@ -51,9 +51,11 @@ impl Database {
         .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
 
         // Fetch the upserted record
-        self.get_daily_code_stats(user_id, date).await.map(|opt| {
-            opt.expect("Record should exist after upsert")
-        })
+        self.get_daily_code_stats(user_id, date)
+            .await?
+            .ok_or_else(|| crate::database::connection::DatabaseError::Query(
+                "Record not found after upsert".to_string()
+            ))
     }
 
     /// Get daily code statistics for a specific date
@@ -196,8 +198,10 @@ impl Database {
         .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
 
         self.get_sync_metadata(user_id, sync_type)
-            .await
-            .map(|opt| opt.expect("Record should exist after insert"))
+            .await?
+            .ok_or_else(|| crate::database::connection::DatabaseError::Query(
+                "Record not found after insert".to_string()
+            ))
     }
 
     /// Get sync metadata

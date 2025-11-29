@@ -903,7 +903,7 @@ pub async fn sync_code_stats(
     }
 
     // Determine sync start date
-    let default_days_back = if force_full_sync.unwrap_or(false) { 90 } else { 30 };
+    let default_days_back = if force_full_sync.unwrap_or(false) { StatsPeriod::Quarter.days() } else { StatsPeriod::Month.days() };
     let sync_from = state
         .db
         .get_sync_start_date(user.id, default_days_back)

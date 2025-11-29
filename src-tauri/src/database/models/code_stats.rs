@@ -127,9 +127,10 @@ pub struct CodeStatsResponse {
 }
 
 /// Statistics period for queries
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum StatsPeriod {
+    #[default]
     Week,
     Month,
     Quarter,
@@ -172,15 +173,37 @@ pub struct RateLimitInfo {
 }
 
 impl RateLimitInfo {
-    /// Check if any rate limit is below the critical threshold (20%)
+    /// Calculate REST API usage percentage
+    pub fn rest_usage_percent(&self) -> f32 {
+        if self.rest_limit > 0 {
+            (1.0 - self.rest_remaining as f32 / self.rest_limit as f32) * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Calculate GraphQL API usage percentage
+    pub fn graphql_usage_percent(&self) -> f32 {
+        if self.graphql_limit > 0 {
+            (1.0 - self.graphql_remaining as f32 / self.graphql_limit as f32) * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Check if any rate limit is critical (below 20%) and update is_critical flag
+    /// Used internally for tests
+    #[cfg(test)]
     pub fn check_critical(&mut self) {
-        let rest_critical = self.rest_limit > 0 
-            && (self.rest_remaining as f32 / self.rest_limit as f32) < 0.2;
-        let graphql_critical = self.graphql_limit > 0 
-            && (self.graphql_remaining as f32 / self.graphql_limit as f32) < 0.2;
-        let search_critical = self.search_limit > 0 
-            && (self.search_remaining as f32 / self.search_limit as f32) < 0.2;
-        
+        const CRITICAL_THRESHOLD: f32 = 0.20;
+
+        let rest_critical = self.rest_limit > 0
+            && (self.rest_remaining as f32 / self.rest_limit as f32) < CRITICAL_THRESHOLD;
+        let graphql_critical = self.graphql_limit > 0
+            && (self.graphql_remaining as f32 / self.graphql_limit as f32) < CRITICAL_THRESHOLD;
+        let search_critical = self.search_limit > 0
+            && (self.search_remaining as f32 / self.search_limit as f32) < CRITICAL_THRESHOLD;
+
         self.is_critical = rest_critical || graphql_critical || search_critical;
     }
 }
