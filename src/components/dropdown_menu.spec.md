@@ -28,11 +28,11 @@
 
 #### DropdownMenu
 
-| Prop       | Type                 | Default   | Description                      |
-| ---------- | -------------------- | --------- | -------------------------------- |
-| `trigger`  | `Fn() -> TriggerView`| required  | トリガーボタンの内容             |
-| `children` | `Children`           | required  | メニューアイテム                 |
-| `align`    | `&'static str`       | `"right"` | メニューの配置位置（right/left） |
+| Prop       | Type                  | Default   | Description                      |
+| ---------- | --------------------- | --------- | -------------------------------- |
+| `trigger`  | `Fn() -> TriggerView` | required  | トリガーボタンの内容             |
+| `children` | `Children`            | required  | メニューアイテム                 |
+| `align`    | `&'static str`        | `"right"` | メニューの配置位置（right/left） |
 
 #### DropdownMenuItem
 
