@@ -1,4 +1,4 @@
-# Phase 1 実装時のSQLx chronoエラー解決記録
+# Phase 1 実装時の SQLx chrono エラー解決記録
 
 **日付**: 2025-11-30  
 **Issue**: #74 (コントリビューショングラフ強化 & コード行数視覚化機能)  
@@ -10,7 +10,7 @@
 
 ### 概要
 
-Phase 1の実装中、`chrono::DateTime<Utc>`および`chrono::NaiveDate`型をSQLxのクエリで使用しようとした際に、約30件のコンパイルエラーが発生しました。
+Phase 1 の実装中、`chrono::DateTime<Utc>`および`chrono::NaiveDate`型を SQLx のクエリで使用しようとした際に、約 30 件のコンパイルエラーが発生しました。
 
 ### エラーメッセージ
 
@@ -48,14 +48,14 @@ pub async fn get_daily_code_stats_range(
 
 ## 原因
 
-SQLxの`chrono`サポートはオプション機能として提供されており、`Cargo.toml`で明示的に有効にする必要があります。
+SQLx の`chrono`サポートはオプション機能として提供されており、`Cargo.toml`で明示的に有効にする必要があります。
 
 ```toml
 # この設定がない場合、DateTime/NaiveDate型は使用できない
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 ```
 
-このプロジェクトでは`chrono` featureが有効になっておらず、既存のコードベースではDateTime/NaiveDateをString型として保存し、必要に応じてパースするパターンが採用されていました。
+このプロジェクトでは`chrono` feature が有効になっておらず、既存のコードベースでは DateTime/NaiveDate を String 型として保存し、必要に応じてパースするパターンが採用されていました。
 
 ---
 
@@ -63,7 +63,7 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 
 ### 1. モデル層での変更
 
-DateTime/NaiveDate型の代わりにString型を使用し、ヘルパーメソッドで変換を行う：
+DateTime/NaiveDate 型の代わりに String 型を使用し、ヘルパーメソッドで変換を行う：
 
 ```rust
 // models/code_stats.rs
@@ -91,9 +91,9 @@ impl SyncMetadata {
 }
 ```
 
-### 2. Repository層での変更
+### 2. Repository 層での変更
 
-日付をバインドする前にString形式に変換：
+日付をバインドする前に String 形式に変換：
 
 ```rust
 // repository/code_stats.rs
@@ -106,7 +106,7 @@ pub async fn get_daily_code_stats_range(
     // NaiveDateをStringに変換してからバインド
     let start_str = start_date.format("%Y-%m-%d").to_string();
     let end_str = end_date.format("%Y-%m-%d").to_string();
-    
+
     sqlx::query(...)
         .bind(&start_str)  // ✅ String型なのでバインド可能
         .bind(&end_str)    // ✅ String型なのでバインド可能
@@ -114,16 +114,16 @@ pub async fn get_daily_code_stats_range(
 }
 ```
 
-### 3. Commands層での変更
+### 3. Commands 層での変更
 
-DateTimeをRFC3339文字列に変換して保存：
+DateTime を RFC3339 文字列に変換して保存：
 
 ```rust
 // commands/github.rs
 pub async fn sync_code_stats(...) -> Result<CodeStatsResponse, String> {
     // ...
     let now = Utc::now().to_rfc3339();  // DateTimeをStringに変換
-    
+
     db.update_sync_metadata(
         user_id,
         "code_stats",
@@ -141,11 +141,13 @@ pub async fn sync_code_stats(...) -> Result<CodeStatsResponse, String> {
 このプロジェクトでは、以下の箇所で同様のパターンが使用されています：
 
 1. **`UserRow`** (`repository/user.rs`)
+
    - `token_expires_at: Option<String>`
    - `created_at: String`
    - `updated_at: String`
 
 2. **`UserStatsRow`** (`repository/user_stats.rs`)
+
    - `last_activity_date: Option<String>`
    - `updated_at: String`
 
@@ -157,13 +159,14 @@ pub async fn sync_code_stats(...) -> Result<CodeStatsResponse, String> {
 
 ## 代替案（採用しなかった理由）
 
-### chronoフィーチャーを有効にする
+### chrono フィーチャーを有効にする
 
 ```toml
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 ```
 
 **採用しなかった理由**:
+
 - 既存コードベースとの整合性を保つため
 - 既存のテストやロジックへの影響を最小化するため
 - プロジェクト全体のアーキテクチャ方針に従うため
@@ -174,9 +177,9 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 
 1. **既存コードのパターンを最初に確認する**: 新機能実装前に、同様の処理が既存コードでどのように実装されているか確認することで、多くのエラーを事前に回避できる
 
-2. **SQLxのフィーチャーフラグを確認する**: SQLxは多くのオプション機能を持っており、特定の型サポートにはフィーチャーフラグの有効化が必要
+2. **SQLx のフィーチャーフラグを確認する**: SQLx は多くのオプション機能を持っており、特定の型サポートにはフィーチャーフラグの有効化が必要
 
-3. **String型での日付保存は有効なパターン**: SQLiteはネイティブな日付型を持たないため、String形式での保存は合理的な選択
+3. **String 型での日付保存は有効なパターン**: SQLite はネイティブな日付型を持たないため、String 形式での保存は合理的な選択
 
 ---
 
@@ -184,5 +187,5 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 
 - `src-tauri/src/database/models/code_stats.rs` - データモデル
 - `src-tauri/src/database/repository/code_stats.rs` - リポジトリ操作
-- `src-tauri/src/commands/github.rs` - Tauriコマンド
-- `src-tauri/Cargo.toml` - SQLx依存関係設定
+- `src-tauri/src/commands/github.rs` - Tauri コマンド
+- `src-tauri/Cargo.toml` - SQLx 依存関係設定

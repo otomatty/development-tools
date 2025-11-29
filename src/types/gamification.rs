@@ -227,3 +227,138 @@ pub struct BadgeEarnedEvent {
     pub rarity: String,
     pub icon: String,
 }
+
+// ============================================
+// コード統計関連の型
+// ============================================
+
+/// 日別コード統計
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyCodeStats {
+    pub id: i64,
+    pub user_id: i64,
+    /// 日付 (YYYY-MM-DD形式)
+    pub date: String,
+    /// 追加行数
+    pub additions: i32,
+    /// 削除行数
+    pub deletions: i32,
+    /// コミット数
+    pub commits_count: i32,
+    /// リポジトリ一覧 (JSON配列)
+    pub repositories_json: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl DailyCodeStats {
+    /// 純増減行数を取得
+    pub fn net_change(&self) -> i32 {
+        self.additions - self.deletions
+    }
+
+    /// リポジトリ一覧をパース
+    pub fn repositories(&self) -> Vec<String> {
+        self.repositories_json
+            .as_ref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default()
+    }
+}
+
+/// コード統計サマリー
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeStatsSummary {
+    pub additions: i32,
+    pub deletions: i32,
+    pub net_change: i32,
+    pub commits_count: i32,
+    pub active_days: i32,
+}
+
+/// 統計期間
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum StatsPeriod {
+    #[default]
+    Week,
+    Month,
+    Quarter,
+    Year,
+}
+
+impl StatsPeriod {
+    /// 期間の日数を取得
+    pub fn days(&self) -> i64 {
+        match self {
+            StatsPeriod::Week => 7,
+            StatsPeriod::Month => 30,
+            StatsPeriod::Quarter => 90,
+            StatsPeriod::Year => 365,
+        }
+    }
+
+    /// 表示用ラベル
+    pub fn label(&self) -> &'static str {
+        match self {
+            StatsPeriod::Week => "週間",
+            StatsPeriod::Month => "月間",
+            StatsPeriod::Quarter => "四半期",
+            StatsPeriod::Year => "年間",
+        }
+    }
+}
+
+/// コード統計レスポンス
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeStatsResponse {
+    /// 日別統計
+    pub daily: Vec<DailyCodeStats>,
+    /// 週間サマリー
+    pub weekly_total: CodeStatsSummary,
+    /// 月間サマリー
+    pub monthly_total: CodeStatsSummary,
+    /// リクエストした期間
+    pub period: StatsPeriod,
+}
+
+/// レート制限情報
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitInfo {
+    /// REST API残量
+    pub rest_remaining: i32,
+    pub rest_limit: i32,
+    pub rest_reset_at: Option<String>,
+    /// GraphQL API残量
+    pub graphql_remaining: i32,
+    pub graphql_limit: i32,
+    pub graphql_reset_at: Option<String>,
+    /// Search API残量
+    pub search_remaining: i32,
+    pub search_limit: i32,
+    pub search_reset_at: Option<String>,
+    /// 制限が危機的か（20%以下）
+    pub is_critical: bool,
+}
+
+impl RateLimitInfo {
+    /// REST APIの使用率（%）
+    pub fn rest_usage_percent(&self) -> f32 {
+        if self.rest_limit == 0 {
+            return 0.0;
+        }
+        ((self.rest_limit - self.rest_remaining) as f32 / self.rest_limit as f32) * 100.0
+    }
+
+    /// GraphQL APIの使用率（%）
+    pub fn graphql_usage_percent(&self) -> f32 {
+        if self.graphql_limit == 0 {
+            return 0.0;
+        }
+        ((self.graphql_limit - self.graphql_remaining) as f32 / self.graphql_limit as f32) * 100.0
+    }
+}
