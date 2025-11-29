@@ -1005,6 +1005,424 @@ impl Database {
     }
 }
 
+/// Challenge repository operations
+impl Database {
+    /// Create a new challenge
+    pub async fn create_challenge(
+        &self,
+        user_id: i64,
+        challenge_type: &str,
+        target_metric: &str,
+        target_value: i32,
+        reward_xp: i32,
+        start_date: DateTime<Utc>,
+        end_date: DateTime<Utc>,
+    ) -> DbResult<Challenge> {
+        let id = sqlx::query(
+            r#"
+            INSERT INTO challenges (user_id, challenge_type, target_metric, target_value, 
+                                   current_value, reward_xp, start_date, end_date, status)
+            VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'active')
+            "#,
+        )
+        .bind(user_id)
+        .bind(challenge_type)
+        .bind(target_metric)
+        .bind(target_value)
+        .bind(reward_xp)
+        .bind(start_date.to_rfc3339())
+        .bind(end_date.to_rfc3339())
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?
+        .last_insert_rowid();
+
+        self.get_challenge_by_id(id).await
+    }
+
+    /// Get challenge by ID
+    pub async fn get_challenge_by_id(&self, id: i64) -> DbResult<Challenge> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, user_id, challenge_type, target_metric, target_value, 
+                   current_value, reward_xp, start_date, end_date, status, completed_at
+            FROM challenges
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(Challenge {
+            id: row.get("id"),
+            user_id: row.get("user_id"),
+            challenge_type: row.get("challenge_type"),
+            target_metric: row.get("target_metric"),
+            target_value: row.get("target_value"),
+            current_value: row.get("current_value"),
+            reward_xp: row.get("reward_xp"),
+            start_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("start_date"))
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            end_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("end_date"))
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            status: row.get("status"),
+            completed_at: row
+                .get::<Option<&str>, _>("completed_at")
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc)),
+        })
+    }
+
+    /// Get all active challenges for a user
+    pub async fn get_active_challenges(&self, user_id: i64) -> DbResult<Vec<Challenge>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_id, challenge_type, target_metric, target_value, 
+                   current_value, reward_xp, start_date, end_date, status, completed_at
+            FROM challenges
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY end_date ASC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let challenges: Vec<Challenge> = rows
+            .iter()
+            .map(|row| Challenge {
+                id: row.get("id"),
+                user_id: row.get("user_id"),
+                challenge_type: row.get("challenge_type"),
+                target_metric: row.get("target_metric"),
+                target_value: row.get("target_value"),
+                current_value: row.get("current_value"),
+                reward_xp: row.get("reward_xp"),
+                start_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("start_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                end_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("end_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                status: row.get("status"),
+                completed_at: row
+                    .get::<Option<&str>, _>("completed_at")
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc)),
+            })
+            .collect();
+
+        Ok(challenges)
+    }
+
+    /// Get challenges by type (daily/weekly) for a user
+    pub async fn get_challenges_by_type(
+        &self,
+        user_id: i64,
+        challenge_type: &str,
+    ) -> DbResult<Vec<Challenge>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_id, challenge_type, target_metric, target_value, 
+                   current_value, reward_xp, start_date, end_date, status, completed_at
+            FROM challenges
+            WHERE user_id = ? AND challenge_type = ?
+            ORDER BY start_date DESC
+            "#,
+        )
+        .bind(user_id)
+        .bind(challenge_type)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let challenges: Vec<Challenge> = rows
+            .iter()
+            .map(|row| Challenge {
+                id: row.get("id"),
+                user_id: row.get("user_id"),
+                challenge_type: row.get("challenge_type"),
+                target_metric: row.get("target_metric"),
+                target_value: row.get("target_value"),
+                current_value: row.get("current_value"),
+                reward_xp: row.get("reward_xp"),
+                start_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("start_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                end_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("end_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                status: row.get("status"),
+                completed_at: row
+                    .get::<Option<&str>, _>("completed_at")
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc)),
+            })
+            .collect();
+
+        Ok(challenges)
+    }
+
+    /// Get all challenges for a user (including completed and failed)
+    pub async fn get_all_challenges(&self, user_id: i64) -> DbResult<Vec<Challenge>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_id, challenge_type, target_metric, target_value, 
+                   current_value, reward_xp, start_date, end_date, status, completed_at
+            FROM challenges
+            WHERE user_id = ?
+            ORDER BY start_date DESC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let challenges: Vec<Challenge> = rows
+            .iter()
+            .map(|row| Challenge {
+                id: row.get("id"),
+                user_id: row.get("user_id"),
+                challenge_type: row.get("challenge_type"),
+                target_metric: row.get("target_metric"),
+                target_value: row.get("target_value"),
+                current_value: row.get("current_value"),
+                reward_xp: row.get("reward_xp"),
+                start_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("start_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                end_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("end_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                status: row.get("status"),
+                completed_at: row
+                    .get::<Option<&str>, _>("completed_at")
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc)),
+            })
+            .collect();
+
+        Ok(challenges)
+    }
+
+    /// Update challenge progress
+    pub async fn update_challenge_progress(
+        &self,
+        challenge_id: i64,
+        current_value: i32,
+    ) -> DbResult<Challenge> {
+        sqlx::query(
+            r#"
+            UPDATE challenges SET current_value = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(current_value)
+        .bind(challenge_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        self.get_challenge_by_id(challenge_id).await
+    }
+
+    /// Complete a challenge (mark as completed and set completed_at)
+    pub async fn complete_challenge(&self, challenge_id: i64) -> DbResult<Challenge> {
+        let now = Utc::now().to_rfc3339();
+
+        sqlx::query(
+            r#"
+            UPDATE challenges SET status = 'completed', completed_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&now)
+        .bind(challenge_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        self.get_challenge_by_id(challenge_id).await
+    }
+
+    /// Fail a challenge (mark as failed)
+    pub async fn fail_challenge(&self, challenge_id: i64) -> DbResult<Challenge> {
+        sqlx::query(
+            r#"
+            UPDATE challenges SET status = 'failed'
+            WHERE id = ?
+            "#,
+        )
+        .bind(challenge_id)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        self.get_challenge_by_id(challenge_id).await
+    }
+
+    /// Delete a challenge
+    pub async fn delete_challenge(&self, challenge_id: i64) -> DbResult<()> {
+        sqlx::query("DELETE FROM challenges WHERE id = ?")
+            .bind(challenge_id)
+            .execute(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Check and fail expired challenges
+    pub async fn fail_expired_challenges(&self, user_id: i64) -> DbResult<Vec<Challenge>> {
+        let now = Utc::now().to_rfc3339();
+
+        // Get expired challenges first
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_id, challenge_type, target_metric, target_value, 
+                   current_value, reward_xp, start_date, end_date, status, completed_at
+            FROM challenges
+            WHERE user_id = ? AND status = 'active' AND end_date < ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(&now)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let expired_challenges: Vec<Challenge> = rows
+            .iter()
+            .map(|row| Challenge {
+                id: row.get("id"),
+                user_id: row.get("user_id"),
+                challenge_type: row.get("challenge_type"),
+                target_metric: row.get("target_metric"),
+                target_value: row.get("target_value"),
+                current_value: row.get("current_value"),
+                reward_xp: row.get("reward_xp"),
+                start_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("start_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                end_date: DateTime::parse_from_rfc3339(row.get::<&str, _>("end_date"))
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                status: "failed".to_string(), // Will be updated
+                completed_at: None,
+            })
+            .collect();
+
+        // Mark as failed
+        sqlx::query(
+            r#"
+            UPDATE challenges SET status = 'failed'
+            WHERE user_id = ? AND status = 'active' AND end_date < ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(&now)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(expired_challenges)
+    }
+
+    /// Check if there's an active challenge of a specific type and metric
+    pub async fn has_active_challenge(
+        &self,
+        user_id: i64,
+        challenge_type: &str,
+        target_metric: &str,
+    ) -> DbResult<bool> {
+        let count: i32 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM challenges 
+            WHERE user_id = ? AND challenge_type = ? AND target_metric = ? AND status = 'active'
+            "#,
+        )
+        .bind(user_id)
+        .bind(challenge_type)
+        .bind(target_metric)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(count > 0)
+    }
+
+    /// Get challenge completion count for badge tracking
+    pub async fn get_challenge_completion_count(&self, user_id: i64) -> DbResult<i32> {
+        let count: i32 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM challenges WHERE user_id = ? AND status = 'completed'"
+        )
+        .bind(user_id)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(count)
+    }
+
+    /// Get consecutive weeks with completed weekly challenges (for 'consistent' badge)
+    pub async fn get_consecutive_weekly_completions(&self, user_id: i64) -> DbResult<i32> {
+        // Get all completed weekly challenges ordered by completion date
+        let rows = sqlx::query(
+            r#"
+            SELECT completed_at
+            FROM challenges
+            WHERE user_id = ? AND challenge_type = 'weekly' AND status = 'completed'
+            ORDER BY completed_at DESC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        // Calculate consecutive weeks
+        let mut consecutive = 0;
+        let mut last_week: Option<i64> = None;
+
+        for row in &rows {
+            if let Some(completed_at_str) = row.get::<Option<&str>, _>("completed_at") {
+                if let Ok(completed_at) = DateTime::parse_from_rfc3339(completed_at_str) {
+                    let week_number = completed_at.timestamp() / (7 * 24 * 60 * 60);
+                    
+                    match last_week {
+                        None => {
+                            consecutive = 1;
+                            last_week = Some(week_number);
+                        }
+                        Some(last) => {
+                            if week_number == last - 1 {
+                                consecutive += 1;
+                                last_week = Some(week_number);
+                            } else if week_number != last {
+                                // Gap in weeks, stop counting
+                                break;
+                            }
+                            // If same week, skip (multiple challenges in same week)
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(consecutive)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1138,6 +1556,245 @@ mod tests {
             .expect("Cache should exist");
 
         assert_eq!(cached, r#"{"test": true}"#);
+    }
+
+    #[tokio::test]
+    async fn test_create_challenge() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        let challenge = db
+            .create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge");
+
+        assert_eq!(challenge.user_id, user.id);
+        assert_eq!(challenge.challenge_type, "weekly");
+        assert_eq!(challenge.target_metric, "commits");
+        assert_eq!(challenge.target_value, 10);
+        assert_eq!(challenge.current_value, 0);
+        assert_eq!(challenge.reward_xp, 100);
+        assert_eq!(challenge.status, "active");
+    }
+
+    #[tokio::test]
+    async fn test_get_active_challenges() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        db.create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge 1");
+
+        db.create_challenge(user.id, "daily", "prs", 2, 50, start, start + chrono::Duration::days(1))
+            .await
+            .expect("Should create challenge 2");
+
+        let challenges = db
+            .get_active_challenges(user.id)
+            .await
+            .expect("Should get active challenges");
+
+        assert_eq!(challenges.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_update_challenge_progress() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        let challenge = db
+            .create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge");
+
+        let updated = db
+            .update_challenge_progress(challenge.id, 5)
+            .await
+            .expect("Should update progress");
+
+        assert_eq!(updated.current_value, 5);
+        assert_eq!(updated.status, "active");
+    }
+
+    #[tokio::test]
+    async fn test_complete_challenge() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        let challenge = db
+            .create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge");
+
+        let completed = db
+            .complete_challenge(challenge.id)
+            .await
+            .expect("Should complete challenge");
+
+        assert_eq!(completed.status, "completed");
+        assert!(completed.completed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_fail_challenge() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        let challenge = db
+            .create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge");
+
+        let failed = db
+            .fail_challenge(challenge.id)
+            .await
+            .expect("Should fail challenge");
+
+        assert_eq!(failed.status, "failed");
+    }
+
+    #[tokio::test]
+    async fn test_has_active_challenge() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        // No challenge yet
+        let has = db
+            .has_active_challenge(user.id, "weekly", "commits")
+            .await
+            .expect("Should check");
+        assert!(!has);
+
+        // Create challenge
+        db.create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge");
+
+        // Now should have one
+        let has = db
+            .has_active_challenge(user.id, "weekly", "commits")
+            .await
+            .expect("Should check");
+        assert!(has);
+    }
+
+    #[tokio::test]
+    async fn test_delete_challenge() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        let challenge = db
+            .create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge");
+
+        db.delete_challenge(challenge.id)
+            .await
+            .expect("Should delete challenge");
+
+        let challenges = db
+            .get_active_challenges(user.id)
+            .await
+            .expect("Should get challenges");
+
+        assert_eq!(challenges.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_challenge_completion_count() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        let challenge1 = db
+            .create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge 1");
+
+        let challenge2 = db
+            .create_challenge(user.id, "daily", "prs", 2, 50, start, start + chrono::Duration::days(1))
+            .await
+            .expect("Should create challenge 2");
+
+        // Complete one challenge
+        db.complete_challenge(challenge1.id)
+            .await
+            .expect("Should complete challenge 1");
+
+        let count = db
+            .get_challenge_completion_count(user.id)
+            .await
+            .expect("Should get count");
+
+        assert_eq!(count, 1);
+
+        // Complete second challenge
+        db.complete_challenge(challenge2.id)
+            .await
+            .expect("Should complete challenge 2");
+
+        let count = db
+            .get_challenge_completion_count(user.id)
+            .await
+            .expect("Should get count");
+
+        assert_eq!(count, 2);
     }
 }
 

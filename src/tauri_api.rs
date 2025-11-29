@@ -490,3 +490,102 @@ pub async fn open_external_url(url: &str) -> Result<(), String> {
         Err("Unexpected return value from Tauri command".to_string())
     }
 }
+
+// ============================================
+// チャレンジ関連のAPI
+// ============================================
+
+use crate::types::{ChallengeInfo, ChallengeStats, CreateChallengeRequest};
+
+/// アクティブなチャレンジを取得
+pub async fn get_active_challenges() -> Result<Vec<ChallengeInfo>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_active_challenges", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get active challenges: {:?}", e))
+}
+
+/// 全チャレンジを取得（完了・失敗を含む）
+pub async fn get_all_challenges() -> Result<Vec<ChallengeInfo>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_all_challenges", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get all challenges: {:?}", e))
+}
+
+/// タイプ別チャレンジを取得
+pub async fn get_challenges_by_type(challenge_type: &str) -> Result<Vec<ChallengeInfo>, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        challenge_type: &'a str,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { challenge_type }).unwrap();
+    let result = invoke("get_challenges_by_type", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get challenges by type: {:?}", e))
+}
+
+/// チャレンジを作成
+pub async fn create_challenge(request: &CreateChallengeRequest) -> Result<ChallengeInfo, String> {
+    #[derive(serde::Serialize)]
+    struct Args<'a> {
+        request: &'a CreateChallengeRequest,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { request }).unwrap();
+    let result = invoke("create_challenge", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to create challenge: {:?}", e))
+}
+
+/// チャレンジを削除
+pub async fn delete_challenge(challenge_id: i64) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        challenge_id: i64,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { challenge_id }).unwrap();
+    let result = invoke("delete_challenge", args).await;
+    
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// チャレンジの進捗を更新
+pub async fn update_challenge_progress(challenge_id: i64, current_value: i32) -> Result<ChallengeInfo, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        challenge_id: i64,
+        current_value: i32,
+    }
+    
+    let args = serde_wasm_bindgen::to_value(&Args { challenge_id, current_value }).unwrap();
+    let result = invoke("update_challenge_progress", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to update challenge progress: {:?}", e))
+}
+
+/// チャレンジ統計を取得
+pub async fn get_challenge_stats() -> Result<ChallengeStats, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_challenge_stats", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get challenge stats: {:?}", e))
+}
+
