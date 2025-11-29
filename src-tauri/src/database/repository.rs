@@ -1298,22 +1298,37 @@ impl Database {
     }
 
     /// Update challenge progress
+    /// 
+    /// Caps progress at target_value and automatically completes the challenge
+    /// when the target is reached.
     pub async fn update_challenge_progress(
         &self,
         challenge_id: i64,
         current_value: i32,
     ) -> DbResult<Challenge> {
+        // Get current challenge to check target
+        let challenge = self.get_challenge_by_id(challenge_id).await?;
+        
+        // Cap at target value
+        let capped_value = current_value.min(challenge.target_value);
+        
+        // Update progress
         sqlx::query(
             r#"
             UPDATE challenges SET current_value = ?
             WHERE id = ?
             "#,
         )
-        .bind(current_value)
+        .bind(capped_value)
         .bind(challenge_id)
         .execute(self.pool())
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        // Auto-complete if target reached
+        if capped_value >= challenge.target_value && challenge.status == "active" {
+            return self.complete_challenge(challenge_id).await;
+        }
 
         self.get_challenge_by_id(challenge_id).await
     }
@@ -1882,5 +1897,136 @@ mod tests {
 
         assert_eq!(count, 2);
     }
-}
 
+    #[tokio::test]
+    async fn test_create_challenge_with_stats() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+        let start_stats = r#"{"commits":100,"prs":10,"reviews":5,"issues":3}"#;
+
+        let challenge = db
+            .create_challenge_with_stats(
+                user.id,
+                "weekly",
+                "commits",
+                10,
+                100,
+                start,
+                end,
+                start_stats,
+            )
+            .await
+            .expect("Should create challenge with stats");
+
+        assert_eq!(challenge.target_metric, "commits");
+        assert_eq!(challenge.target_value, 10);
+
+        // Verify start stats can be retrieved
+        let retrieved_stats = db
+            .get_challenge_start_stats(challenge.id)
+            .await
+            .expect("Should get start stats");
+
+        assert!(retrieved_stats.is_some());
+        assert_eq!(retrieved_stats.unwrap(), start_stats);
+    }
+
+    #[tokio::test]
+    async fn test_get_last_daily_challenge_date() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        // Initially no challenges
+        let last_date = db
+            .get_last_daily_challenge_date(user.id)
+            .await
+            .expect("Should check last date");
+        assert!(last_date.is_none());
+
+        // Create a daily challenge
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(1);
+
+        db.create_challenge(user.id, "daily", "commits", 5, 50, start, end)
+            .await
+            .expect("Should create daily challenge");
+
+        // Now should have a date
+        let last_date = db
+            .get_last_daily_challenge_date(user.id)
+            .await
+            .expect("Should check last date");
+        assert!(last_date.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_last_weekly_challenge_date() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        // Initially no challenges
+        let last_date = db
+            .get_last_weekly_challenge_date(user.id)
+            .await
+            .expect("Should check last date");
+        assert!(last_date.is_none());
+
+        // Create a weekly challenge
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        db.create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create weekly challenge");
+
+        // Now should have a date
+        let last_date = db
+            .get_last_weekly_challenge_date(user.id)
+            .await
+            .expect("Should check last date");
+        assert!(last_date.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_progress_capped_at_target() {
+        let db = setup_test_db().await;
+
+        let user = db
+            .create_user(12345, "testuser", None, "token", None, None)
+            .await
+            .expect("Should create user");
+
+        let start = Utc::now();
+        let end = start + chrono::Duration::days(7);
+
+        let challenge = db
+            .create_challenge(user.id, "weekly", "commits", 10, 100, start, end)
+            .await
+            .expect("Should create challenge");
+
+        // Update progress to more than target
+        let updated = db
+            .update_challenge_progress(challenge.id, 15)
+            .await
+            .expect("Should update progress");
+
+        // Progress should be capped at target
+        assert_eq!(updated.current_value, 10);
+        assert_eq!(updated.status, "completed");
+    }
+}

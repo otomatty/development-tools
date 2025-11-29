@@ -6,8 +6,6 @@
 use chrono::{DateTime, Datelike, Duration, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 
-use super::models::{Challenge, UserStats};
-
 /// Current GitHub stats used for challenge progress tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChallengeStats {
@@ -156,6 +154,7 @@ pub fn calculate_recommended_targets(
 }
 
 /// Generate default weekly challenges for a new user or when no historical data
+#[allow(dead_code)]
 pub fn generate_default_weekly_challenges() -> Vec<ChallengeTemplate> {
     vec![
         ChallengeTemplate {
@@ -180,6 +179,7 @@ pub fn generate_default_weekly_challenges() -> Vec<ChallengeTemplate> {
 }
 
 /// Generate default daily challenges
+#[allow(dead_code)]
 pub fn generate_default_daily_challenges() -> Vec<ChallengeTemplate> {
     vec![ChallengeTemplate {
         challenge_type: "daily".to_string(),
@@ -280,7 +280,7 @@ pub fn should_generate_weekly_challenges(
     now: DateTime<Utc>,
 ) -> bool {
     let today = now.date_naive();
-    let is_monday = today.weekday() == Weekday::Mon;
+    let _is_monday = today.weekday() == Weekday::Mon;
 
     match last_weekly_challenge_date {
         Some(date) => {
@@ -295,6 +295,7 @@ pub fn should_generate_weekly_challenges(
 
 /// Context for updating challenge progress
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ChallengeProgressContext {
     pub total_commits: i32,
     pub total_prs: i32,
@@ -303,6 +304,7 @@ pub struct ChallengeProgressContext {
 }
 
 /// Calculate the current value for a challenge based on GitHub stats diff
+#[allow(dead_code)]
 pub fn calculate_progress_for_metric(
     metric: &str,
     prev_stats: &ChallengeProgressContext,
@@ -324,6 +326,7 @@ pub fn calculate_progress_for_metric(
 
 /// Result of challenge progress update
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ChallengeUpdateResult {
     pub challenge_id: i64,
     pub old_value: i32,
@@ -431,5 +434,82 @@ mod tests {
 
         // Last challenge was yesterday - should generate
         assert!(should_generate_daily_challenges(Some(yesterday), now));
+    }
+
+    #[test]
+    fn test_should_generate_weekly_challenges() {
+        let now = Utc::now();
+        let today = now.date_naive();
+        
+        // No previous challenge - should generate
+        assert!(should_generate_weekly_challenges(None, now));
+
+        // Last challenge was today - should not generate
+        assert!(!should_generate_weekly_challenges(Some(today), now));
+
+        // Last challenge was 8 days ago - should generate (new week)
+        let eight_days_ago = today - Duration::days(8);
+        assert!(should_generate_weekly_challenges(Some(eight_days_ago), now));
+    }
+
+    #[test]
+    fn test_challenge_stats_get_metric() {
+        let stats = ChallengeStats::new(100, 20, 15, 5);
+
+        assert_eq!(stats.get_metric("commits"), 100);
+        assert_eq!(stats.get_metric("prs"), 20);
+        assert_eq!(stats.get_metric("reviews"), 15);
+        assert_eq!(stats.get_metric("issues"), 5);
+        assert_eq!(stats.get_metric("unknown"), 0);
+    }
+
+    #[test]
+    fn test_generate_daily_challenges() {
+        let targets = RecommendedTargets {
+            daily_commits: 3,
+            weekly_commits: 20,
+            daily_prs: 1,
+            weekly_prs: 5,
+            daily_reviews: 2,
+            weekly_reviews: 10,
+            daily_issues: 1,
+            weekly_issues: 3,
+        };
+
+        let challenges = generate_daily_challenges(&targets);
+        
+        assert!(!challenges.is_empty());
+        assert!(challenges.iter().all(|c| c.challenge_type == "daily"));
+    }
+
+    #[test]
+    fn test_generate_weekly_challenges() {
+        let targets = RecommendedTargets {
+            daily_commits: 3,
+            weekly_commits: 20,
+            daily_prs: 1,
+            weekly_prs: 5,
+            daily_reviews: 2,
+            weekly_reviews: 10,
+            daily_issues: 1,
+            weekly_issues: 3,
+        };
+
+        let challenges = generate_weekly_challenges(&targets);
+        
+        assert!(!challenges.is_empty());
+        assert!(challenges.iter().all(|c| c.challenge_type == "weekly"));
+    }
+
+    #[test]
+    fn test_challenge_stats_serialization() {
+        let stats = ChallengeStats::new(100, 20, 15, 5);
+        let json = serde_json::to_string(&stats).expect("Should serialize");
+        
+        let deserialized: ChallengeStats = serde_json::from_str(&json).expect("Should deserialize");
+        assert_eq!(deserialized.commits, 100);
+        assert_eq!(deserialized.prs, 20);
+        assert_eq!(deserialized.reviews, 15);
+        assert_eq!(deserialized.issues, 5);
     }
 }
