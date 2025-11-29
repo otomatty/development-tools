@@ -33,6 +33,26 @@ use types::{FileInfo, ScanResult};
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Validate input values
+    if let Some(min) = args.min_lines {
+        if min == 0 {
+            eprintln!(
+                "{} --min-lines must be greater than 0",
+                "Error:".red().bold()
+            );
+            std::process::exit(1);
+        }
+    }
+    if let Some(top) = args.top {
+        if top == 0 {
+            eprintln!(
+                "{} --top must be greater than 0",
+                "Error:".red().bold()
+            );
+            std::process::exit(1);
+        }
+    }
+
     // Determine scan directory
     let scan_path = args.get_scan_path();
 
