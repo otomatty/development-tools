@@ -7,6 +7,7 @@ pub mod option_form;
 pub mod result_view;
 pub mod settings;
 pub mod sidebar;
+pub mod skeleton;
 pub mod tool_detail;
 
 pub use animation_context::{AnimationContext, use_animation_context, use_animation_context_or_default};
