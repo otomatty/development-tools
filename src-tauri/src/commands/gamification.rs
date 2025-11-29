@@ -11,11 +11,11 @@ use crate::database::{badge, level, Badge, UserStats, XpHistoryEntry};
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LevelInfo {
-    pub current_level: u32,
-    pub total_xp: u32,
-    pub xp_for_current_level: u32,
-    pub xp_for_next_level: u32,
-    pub xp_to_next_level: u32,
+    pub current_level: i32,
+    pub total_xp: i32,
+    pub xp_for_current_level: i32,
+    pub xp_for_next_level: i32,
+    pub xp_to_next_level: i32,
     pub progress_percent: f32,
 }
 
@@ -36,7 +36,7 @@ pub async fn get_level_info(state: State<'_, AppState>) -> Result<Option<LevelIn
             .map_err(|e| e.to_string())?;
 
         if let Some(s) = stats {
-            let total_xp = s.total_xp as u32;
+            let total_xp = s.total_xp;
             let current_level = level::level_from_xp(total_xp);
 
             Ok(Some(LevelInfo {

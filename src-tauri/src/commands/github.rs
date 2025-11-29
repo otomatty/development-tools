@@ -67,8 +67,8 @@ pub async fn get_user_stats(state: State<'_, AppState>) -> Result<Option<UserSta
 pub struct SyncResult {
     pub user_stats: UserStats,
     pub xp_gained: i32,
-    pub old_level: u32,
-    pub new_level: u32,
+    pub old_level: i32,
+    pub new_level: i32,
     pub level_up: bool,
     pub xp_breakdown: XpBreakdownResult,
     pub streak_bonus: StreakBonusInfo,
@@ -120,9 +120,9 @@ pub struct StreakBonusInfo {
 #[serde(rename_all = "camelCase")]
 pub struct XpGainedEvent {
     pub xp_gained: i32,
-    pub total_xp: u32,
-    pub old_level: u32,
-    pub new_level: u32,
+    pub total_xp: i32,
+    pub old_level: i32,
+    pub new_level: i32,
     pub level_up: bool,
     pub xp_breakdown: XpBreakdownResult,
     pub streak_bonus: StreakBonusInfo,
@@ -181,6 +181,15 @@ pub async fn sync_github_stats(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Get current streak for XP bonus calculation
+    let current_streak = state
+        .db
+        .get_user_stats(user.id)
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|s| s.current_streak)
+        .unwrap_or(0);
+
     // Calculate diff and XP
     let (xp_breakdown, xp_gained) = if let Some(prev_json) = previous_stats_json {
         if let Ok(prev_stats) = serde_json::from_str::<GitHubStats>(&prev_json) {
@@ -192,6 +201,7 @@ pub async fn sync_github_stats(
                 github_stats.total_issues_closed - prev_stats.total_issues_closed,
                 github_stats.total_reviews - prev_stats.total_reviews,
                 github_stats.total_stars_received - prev_stats.total_stars_received,
+                current_streak,
             );
             let total = breakdown.total_xp;
             (breakdown, total)
@@ -205,12 +215,13 @@ pub async fn sync_github_stats(
                 github_stats.total_issues_closed,
                 github_stats.total_reviews,
                 github_stats.total_stars_received,
+                current_streak,
             );
             let total = breakdown.total_xp;
             (breakdown, total)
         }
     } else {
-        // First sync - calculate full XP
+        // First sync - calculate full XP (streak is 0 for initial sync)
         let breakdown = xp::XpBreakdown::calculate(
             github_stats.total_commits,
             github_stats.total_prs,
@@ -219,6 +230,7 @@ pub async fn sync_github_stats(
             github_stats.total_issues_closed,
             github_stats.total_reviews,
             github_stats.total_stars_received,
+            0, // Initial sync has no streak bonus
         );
         let total = breakdown.total_xp;
         (breakdown, total)
@@ -232,7 +244,7 @@ pub async fn sync_github_stats(
         .map_err(|e| e.to_string())?
         .ok_or("User stats not found")?;
 
-    let old_level = level::level_from_xp(current_stats.total_xp as u32);
+    let old_level = level::level_from_xp(current_stats.total_xp);
     let old_streak = current_stats.current_streak;
 
     // Update streak from GitHub contribution calendar data
@@ -350,7 +362,7 @@ pub async fn sync_github_stats(
             .ok_or("User stats not found")?
     };
 
-    let new_level = level::level_from_xp(updated_stats.total_xp as u32);
+    let new_level = level::level_from_xp(updated_stats.total_xp);
     let level_up = new_level > old_level;
 
     // Save current GitHub stats as previous for next diff
@@ -390,7 +402,7 @@ pub async fn sync_github_stats(
     if total_xp_gained > 0 {
         let event = XpGainedEvent {
             xp_gained: total_xp_gained,
-            total_xp: updated_stats.total_xp as u32,
+            total_xp: updated_stats.total_xp,
             old_level,
             new_level,
             level_up,
@@ -746,7 +758,7 @@ async fn build_badge_context(
         .map_err(|e| e.to_string())?;
 
     // Calculate level
-    let current_level = level::level_from_xp(user_stats.total_xp as u32);
+    let current_level = level::level_from_xp(user_stats.total_xp);
 
     // Build badge evaluation context
     let badge_context = badge::BadgeEvalContext {
