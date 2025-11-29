@@ -7,6 +7,9 @@ use crate::components::skeleton::{
     Skeleton, SkeletonAvatar, SkeletonCard, SkeletonStat, SkeletonBadge, SkeletonGraph
 };
 
+/// Number of badge placeholders to show in skeleton
+const SKELETON_BADGE_COUNT: usize = 12;
+
 /// Full home page skeleton - shows while initial data is loading
 #[component]
 pub fn HomeSkeleton() -> impl IntoView {
@@ -272,7 +275,7 @@ pub fn BadgeGridSkeleton() -> impl IntoView {
             
             // Badge grid
             <div class="grid grid-cols-4 gap-3">
-                {(0..12).map(|_| {
+                {(0..SKELETON_BADGE_COUNT).map(|_| {
                     view! {
                         <SkeletonBadge />
                     }
@@ -313,7 +316,7 @@ pub fn ContributionGraphSkeleton() -> impl IntoView {
             
             // Graph
             <div class="overflow-x-auto">
-                <SkeletonGraph weeks=40 days=7 />
+                <SkeletonGraph weeks=52 days=7 />
             </div>
             
             // Legend

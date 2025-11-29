@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use super::Skeleton;
 
-/// Skeleton for avatar/circular elements
+/// Skeleton for avatar/rounded elements
 #[component]
 pub fn SkeletonAvatar(
     /// Size of the avatar (CSS value)
@@ -141,8 +141,8 @@ pub fn SkeletonBadge() -> impl IntoView {
 /// Skeleton for contribution graph
 #[component]
 pub fn SkeletonGraph(
-    /// Number of weeks to show
-    #[prop(default = 20)]
+    /// Number of weeks to show (default: 52 for full year)
+    #[prop(default = 52)]
     weeks: usize,
     /// Number of days per week
     #[prop(default = 7)]

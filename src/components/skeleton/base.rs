@@ -1,11 +1,11 @@
 //! Base skeleton component
 //!
-//! Provides the fundamental skeleton building block with shimmer animation.
+//! Provides the fundamental skeleton building block with pulse animation.
 
 use leptos::prelude::*;
 use crate::components::use_animation_context_or_default;
 
-/// Base skeleton component with shimmer effect
+/// Base skeleton component with pulse effect
 /// 
 /// # Props
 /// - `width`: CSS width value (e.g., "100%", "200px", "20rem")

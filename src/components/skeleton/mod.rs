@@ -16,5 +16,5 @@ pub use variants::{
 };
 
 // Re-export SkeletonText for future use
-#[allow(unused_imports)]
+#[allow(unused)]
 pub use variants::SkeletonText;
