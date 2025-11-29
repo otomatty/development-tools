@@ -283,7 +283,7 @@ pub async fn get_contribution_calendar() -> Result<serde_json::Value, String> {
 // ============================================
 
 /// コード統計を同期（GitHubから取得してDBに保存）
-pub async fn sync_code_stats() -> Result<crate::types::CodeStatsResponse, String> {
+pub async fn sync_code_stats() -> Result<crate::types::CodeStatsSyncResult, String> {
     let args = serde_wasm_bindgen::to_value(&()).unwrap();
     let result = invoke("sync_code_stats", args).await;
     

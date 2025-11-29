@@ -362,3 +362,19 @@ impl RateLimitInfo {
         ((self.graphql_limit - self.graphql_remaining) as f32 / self.graphql_limit as f32) * 100.0
     }
 }
+
+/// コード統計同期結果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeStatsSyncResult {
+    /// 同期した日数
+    pub days_synced: i32,
+    /// 同期期間の追加行数合計
+    pub total_additions: i32,
+    /// 同期期間の削除行数合計
+    pub total_deletions: i32,
+    /// キャッシュからの取得かどうか
+    pub from_cache: bool,
+    /// 同期後のレート制限情報
+    pub rate_limit: Option<RateLimitInfo>,
+}
