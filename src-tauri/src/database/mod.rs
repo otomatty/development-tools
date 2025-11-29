@@ -17,6 +17,6 @@ pub use challenge::{
     should_generate_weekly_challenges, ChallengeGeneratorConfig, ChallengeStats,
     ChallengeTemplate, HistoricalStats, RecommendedTargets,
 };
-pub use connection::{Database, DatabaseError};
+pub use connection::{Database, DatabaseError, DbResult};
 pub use models::*;
 

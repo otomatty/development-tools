@@ -266,6 +266,10 @@ pub fn App() -> impl IntoView {
                         </Show>
                     }.into_any(),
                     
+                    AppPage::MockServer => view! {
+                        <crate::components::MockServerPage />
+                    }.into_any(),
+                    
                     AppPage::Settings => view! {
                         <SettingsPage
                             auth_state=auth_state
