@@ -2,11 +2,12 @@
 //!
 //! This module contains all components for the gamification home page.
 
+pub mod badge_grid;
+pub mod contribution_graph;
 pub mod login_card;
 pub mod profile_card;
+pub mod skeleton;
 pub mod stats_display;
-pub mod contribution_graph;
-pub mod badge_grid;
 pub mod xp_notification;
 
 pub use login_card::{LoginCard, LoginState};
@@ -14,6 +15,7 @@ pub use profile_card::ProfileCard;
 pub use stats_display::StatsDisplay;
 pub use contribution_graph::ContributionGraph;
 pub use badge_grid::BadgeGrid;
+pub use skeleton::HomeSkeleton;
 pub use xp_notification::{LevelUpModal, MultipleBadgesNotification, XpNotification};
 
 use leptos::prelude::*;
@@ -527,11 +529,9 @@ pub fn HomePage(
                     </div>
                 </Show>
 
-                // Loading state
+                // Loading state - show skeleton UI
                 <Show when=move || loading.get()>
-                    <div class="flex items-center justify-center py-20">
-                        <div class="animate-spin w-12 h-12 border-4 border-gm-accent-cyan border-t-transparent rounded-full"/>
-                    </div>
+                    <HomeSkeleton />
                 </Show>
 
                 // Content
