@@ -1,64 +1,152 @@
 //! Badge grid component
 //!
-//! Displays earned and available badges.
+//! Displays earned badges and near-completion badges with progress.
 
 use leptos::prelude::*;
 
 use crate::components::use_animation_context_or_default;
-use crate::types::{Badge, BadgeDefinition};
+use crate::tauri_api;
+use crate::types::BadgeWithProgress;
 
-/// Badge grid component
+/// Badge grid component with progress information
 #[component]
-pub fn BadgeGrid(
-    badges: ReadSignal<Vec<Badge>>,
-    definitions: ReadSignal<Vec<BadgeDefinition>>,
-) -> impl IntoView {
+pub fn BadgeGrid() -> impl IntoView {
+    // Fetch badges with progress
+    let badges_resource = LocalResource::new(
+        move || async move { tauri_api::get_badges_with_progress().await },
+    );
+
     // Selected badge for modal
-    let (selected_badge, set_selected_badge) = signal(Option::<(BadgeDefinition, bool)>::None);
-    
+    let (selected_badge, set_selected_badge) = signal(Option::<BadgeWithProgress>::None);
+
     view! {
         <div class="p-6 bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-badge-gold/20">
-            <h3 class="text-xl font-gaming font-bold text-badge-gold mb-4">
-                "🏅 Badges"
-            </h3>
-
-            // Badge count
-            <div class="mb-4 text-sm text-dt-text-sub">
+            <Suspense fallback=move || {
+                view! {
+                    <div class="animate-pulse space-y-4">
+                        <div class="h-6 w-32 bg-slate-700 rounded"></div>
+                        <div class="grid grid-cols-4 gap-3">
+                            {(0..8).map(|_| view! {
+                                <div class="h-16 bg-slate-700 rounded-xl"></div>
+                            }).collect_view()}
+                        </div>
+                    </div>
+                }
+            }>
                 {move || {
-                    let earned_count = badges.get().len();
-                    let total_count = definitions.get().len();
-                    format!("{} / {} unlocked", earned_count, total_count)
-                }}
-            </div>
-
-            <div class="grid grid-cols-4 gap-3">
-                {move || {
-                    let earned_badges = badges.get();
-                    let all_definitions = definitions.get();
-                    
-                    all_definitions.into_iter().map(|def| {
-                        let is_earned = earned_badges.iter().any(|b| b.badge_id == def.id);
-                        let def_clone = def.clone();
-                        
-                        view! {
-                            <BadgeItem
-                                definition=def
-                                earned=is_earned
-                                on_click=move |_| {
-                                    set_selected_badge.set(Some((def_clone.clone(), is_earned)));
-                                }
-                            />
+                    badges_resource.get().map(|wrapped_result| {
+                        match wrapped_result.take() {
+                            Ok(badges) => {
+                                let earned: Vec<BadgeWithProgress> = badges.iter()
+                                    .filter(|b| b.earned)
+                                    .cloned()
+                                    .collect();
+                                let near_completion: Vec<BadgeWithProgress> = badges.iter()
+                                    .filter(|b| !b.earned && b.progress.as_ref().map(|p| p.progress_percent >= 50.0).unwrap_or(false))
+                                    .cloned()
+                                    .collect();
+                                let total_count = badges.len();
+                                let earned_count = earned.len();
+                                
+                                // Pre-render sections
+                                let earned_section = if !earned.is_empty() {
+                                    let earned_len = earned.len();
+                                    Some(view! {
+                                        <div class="mb-6">
+                                            <h4 class="text-sm font-bold text-gm-success mb-3 flex items-center gap-2">
+                                                <span>"✓"</span>
+                                                <span>"Unlocked"</span>
+                                                <span class="text-dt-text-sub font-normal">
+                                                    {format!("({})", earned_len)}
+                                                </span>
+                                            </h4>
+                                            <div class="grid grid-cols-5 gap-3">
+                                                {earned.into_iter().map(|badge| {
+                                                    let badge_for_click = badge.clone();
+                                                    view! {
+                                                        <BadgeItem
+                                                            badge=badge
+                                                            on_click=move |_| {
+                                                                set_selected_badge.set(Some(badge_for_click.clone()));
+                                                            }
+                                                        />
+                                                    }
+                                                }).collect_view()}
+                                            </div>
+                                        </div>
+                                    })
+                                } else {
+                                    None
+                                };
+                                
+                                let near_completion_section = if !near_completion.is_empty() {
+                                    let near_completion_len = near_completion.len();
+                                    Some(view! {
+                                        <div>
+                                            <h4 class="text-sm font-bold text-gm-accent-cyan mb-3 flex items-center gap-2">
+                                                <span>"🎯"</span>
+                                                <span>"Almost There"</span>
+                                                <span class="text-dt-text-sub font-normal">
+                                                    {format!("({})", near_completion_len)}
+                                                </span>
+                                            </h4>
+                                            <div class="space-y-2">
+                                                {near_completion.into_iter().map(|badge| {
+                                                    let badge_for_click = badge.clone();
+                                                    view! {
+                                                        <NearCompletionBadgeItem
+                                                            badge=badge
+                                                            on_click=move |_| {
+                                                                set_selected_badge.set(Some(badge_for_click.clone()));
+                                                            }
+                                                        />
+                                                    }
+                                                }).collect_view()}
+                                            </div>
+                                        </div>
+                                    })
+                                } else {
+                                    None
+                                };
+                                
+                                let empty_section = if earned_section.is_none() && near_completion_section.is_none() {
+                                    Some(view! {
+                                        <div class="text-center py-8 text-dt-text-sub">
+                                            <span class="text-4xl mb-2 block">"🏅"</span>
+                                            <p>"No badges yet. Keep coding to earn your first badge!"</p>
+                                        </div>
+                                    })
+                                } else {
+                                    None
+                                };
+                                
+                                view! {
+                                    // Header
+                                    <div class="flex items-center justify-between mb-4">
+                                        <h3 class="text-xl font-gaming font-bold text-badge-gold">
+                                            "🏅 Badges"
+                                        </h3>
+                                        <span class="text-sm text-dt-text-sub">
+                                            {format!("{} / {} unlocked", earned_count, total_count)}
+                                        </span>
+                                    </div>
+                                    
+                                    {earned_section}
+                                    {near_completion_section}
+                                    {empty_section}
+                                }.into_any()
+                            },
+                            Err(e) => {
+                                view! {
+                                    <div class="text-center py-4 text-gm-error">
+                                        {format!("Failed to load badges: {}", e)}
+                                    </div>
+                                }.into_any()
+                            }
                         }
-                    }).collect_view()
+                    })
                 }}
-            </div>
-
-            // Empty state
-            <Show when=move || definitions.get().is_empty()>
-                <div class="text-center py-4 text-dt-text-sub">
-                    "No badges defined yet"
-                </div>
-            </Show>
+            </Suspense>
         </div>
         
         // Badge detail modal
@@ -69,17 +157,13 @@ pub fn BadgeGrid(
     }
 }
 
-/// Individual badge item
+/// Individual earned badge item (compact)
 #[component]
-fn BadgeItem<F>(
-    definition: BadgeDefinition,
-    earned: bool,
-    on_click: F,
-) -> impl IntoView 
+fn BadgeItem<F>(badge: BadgeWithProgress, on_click: F) -> impl IntoView
 where
     F: Fn(leptos::ev::MouseEvent) + 'static + Clone,
 {
-    let rarity_class = match definition.rarity.as_str() {
+    let rarity_class = match badge.rarity.as_str() {
         "bronze" => "border-badge-bronze text-badge-bronze",
         "silver" => "border-badge-silver text-badge-silver",
         "gold" => "border-badge-gold text-badge-gold shadow-neon-cyan",
@@ -87,53 +171,101 @@ where
         _ => "border-slate-600 text-slate-400",
     };
 
-    let opacity_class = if earned { "" } else { "opacity-30 grayscale" };
-    
-    // Clone values before using in view
-    let title = format!("{}: {}", definition.name, definition.description);
-    let name = definition.name.clone();
-    let rarity = definition.rarity.clone();
-    let icon = definition.icon.clone();
+    let title = format!("{}: {}", badge.name, badge.description);
 
     view! {
         <div
             class=format!(
-                "relative p-3 rounded-xl border-2 {} {} transition-all duration-200 hover:scale-105 cursor-pointer group",
-                rarity_class,
-                opacity_class
+                "relative p-3 rounded-xl border-2 {} transition-all duration-200 hover:scale-105 cursor-pointer group",
+                rarity_class
             )
             title=title
             on:click=on_click
         >
             // Badge icon
             <div class="text-center">
-                <span class="text-3xl">{icon}</span>
+                <span class="text-2xl">{badge.icon.clone()}</span>
             </div>
 
             // Badge name (on hover)
             <div class="absolute inset-0 flex items-center justify-center bg-gm-bg-card/90 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity p-2">
                 <div class="text-center">
-                    <div class="text-xs font-bold text-white truncate">{name}</div>
-                    <div class="text-[10px] text-dt-text-sub truncate">{rarity}</div>
+                    <div class="text-xs font-bold text-white truncate">{badge.name.clone()}</div>
                 </div>
             </div>
+        </div>
+    }
+}
 
-            // Earned indicator
-            <Show when=move || earned>
-                <div class="absolute -top-1 -right-1 w-4 h-4 bg-gm-success rounded-full flex items-center justify-center">
-                    <span class="text-[10px]">"✓"</span>
+/// Near completion badge item with progress bar
+#[component]
+fn NearCompletionBadgeItem<F>(badge: BadgeWithProgress, on_click: F) -> impl IntoView
+where
+    F: Fn(leptos::ev::MouseEvent) + 'static + Clone,
+{
+    let rarity_class = match badge.rarity.as_str() {
+        "bronze" => "border-badge-bronze/50",
+        "silver" => "border-badge-silver/50",
+        "gold" => "border-badge-gold/50",
+        "platinum" => "border-badge-platinum/50",
+        _ => "border-slate-600/50",
+    };
+
+    let progress_bar_class = match badge.rarity.as_str() {
+        "bronze" => "bg-badge-bronze",
+        "silver" => "bg-badge-silver",
+        "gold" => "bg-badge-gold",
+        "platinum" => "bg-badge-platinum",
+        _ => "bg-slate-600",
+    };
+
+    let progress = badge.progress.as_ref();
+    let progress_percent = progress.map(|p| p.progress_percent).unwrap_or(0.0);
+    let current_value = progress.map(|p| p.current_value).unwrap_or(0);
+    let target_value = progress.map(|p| p.target_value).unwrap_or(0);
+
+    view! {
+        <div
+            class=format!(
+                "flex items-center gap-3 p-3 rounded-xl border {} bg-slate-800/30 hover:bg-slate-800/50 transition-colors cursor-pointer",
+                rarity_class
+            )
+            on:click=on_click
+        >
+            // Badge icon
+            <div class="flex-shrink-0 opacity-60">
+                <span class="text-2xl">{badge.icon.clone()}</span>
+            </div>
+            
+            // Badge info and progress
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-sm font-medium text-white truncate">{badge.name.clone()}</span>
+                    <span class="text-xs text-dt-text-sub ml-2">
+                        {format!("{}/{}", current_value, target_value)}
+                    </span>
                 </div>
-            </Show>
+                
+                // Progress bar
+                <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                        class=format!("h-full {} transition-all duration-300", progress_bar_class)
+                        style=format!("width: {}%", progress_percent.min(100.0))
+                    ></div>
+                </div>
+            </div>
+            
+            // Progress percentage
+            <div class="flex-shrink-0 text-sm font-bold text-gm-accent-cyan">
+                {format!("{}%", progress_percent.round() as i32)}
+            </div>
         </div>
     }
 }
 
 /// Badge detail modal
 #[component]
-fn BadgeDetailModal<F>(
-    badge_info: ReadSignal<Option<(BadgeDefinition, bool)>>,
-    on_close: F,
-) -> impl IntoView 
+fn BadgeDetailModal<F>(badge_info: ReadSignal<Option<BadgeWithProgress>>, on_close: F) -> impl IntoView
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
@@ -145,35 +277,53 @@ where
             {
                 let on_close = on_close.clone();
                 move || {
-                    let (def, earned) = badge_info.get().unwrap();
+                    let badge = badge_info.get().unwrap();
                     let on_close_overlay = on_close.clone();
                     let on_close_button = on_close.clone();
-                    
-                    let (border_class, text_class) = match def.rarity.as_str() {
+
+                    let (border_class, text_class) = match badge.rarity.as_str() {
                         "bronze" => ("border-badge-bronze", "text-badge-bronze"),
                         "silver" => ("border-badge-silver", "text-badge-silver"),
                         "gold" => ("border-badge-gold", "text-badge-gold"),
                         "platinum" => ("border-badge-platinum", "text-badge-platinum"),
                         _ => ("border-slate-600", "text-slate-400"),
                     };
-                    
-                    let category_label = match def.badge_type.as_str() {
+
+                    let progress_bar_class = match badge.rarity.as_str() {
+                        "bronze" => "bg-badge-bronze",
+                        "silver" => "bg-badge-silver",
+                        "gold" => "bg-badge-gold",
+                        "platinum" => "bg-badge-platinum",
+                        _ => "bg-slate-600",
+                    };
+
+                    let category_label = match badge.badge_type.as_str() {
                         "milestone" => "🏁 Milestone",
                         "streak" => "🔥 Streak",
+                        "consistency" => "📅 Consistency",
                         "collaboration" => "🤝 Collaboration",
                         "quality" => "✨ Quality",
                         "challenge" => "🎯 Challenge",
+                        "level" => "⭐ Level",
+                        "stars" => "🌟 Stars",
+                        "language" => "🌍 Language",
                         _ => "📌 Other",
                     };
-                    
+
+                    let progress = badge.progress.clone();
+                    let earned = badge.earned;
+
                     view! {
                         // Overlay
-                        <div 
-                            class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
+                        <div
+                            class=move || format!(
+                                "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}",
+                                animation_ctx.get_animation_class("animate-fade-in")
+                            )
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
-                            <div 
+                            <div
                                 class=move || format!(
                                     "relative p-6 bg-gm-bg-card rounded-2xl border-2 {} max-w-sm w-full mx-4 {}",
                                     border_class, animation_ctx.get_animation_class("animate-scale-in")
@@ -187,41 +337,64 @@ where
                                 >
                                     "✕"
                                 </button>
-                                
+
                                 // Content
                                 <div class="text-center space-y-4">
                                     // Badge icon
                                     <div class=if earned { "" } else { "opacity-50 grayscale" }>
-                                        <span class="text-7xl">{def.icon.clone()}</span>
+                                        <span class="text-7xl">{badge.icon.clone()}</span>
                                     </div>
-                                    
+
                                     // Badge name
                                     <h3 class=format!("text-2xl font-gaming font-bold {}", text_class)>
-                                        {def.name.clone()}
+                                        {badge.name.clone()}
                                     </h3>
-                                    
+
                                     // Description
                                     <p class="text-dt-text-sub">
-                                        {def.description.clone()}
+                                        {badge.description.clone()}
                                     </p>
-                                    
+
                                     // Category and rarity
                                     <div class="flex justify-center gap-4 text-sm">
                                         <span class="px-3 py-1 rounded-full bg-slate-800/50 text-dt-text-sub">
                                             {category_label}
                                         </span>
-                                        <span class=format!("px-3 py-1 rounded-full bg-slate-800/50 uppercase font-bold {}", text_class)>
-                                            {def.rarity.clone()}
+                                        <span class=format!(
+                                            "px-3 py-1 rounded-full bg-slate-800/50 uppercase font-bold {}",
+                                            text_class
+                                        )>
+                                            {badge.rarity.clone()}
                                         </span>
                                     </div>
-                                    
-                                    // Status
+
+                                    // Status and progress
                                     <div class="pt-2">
                                         {if earned {
                                             view! {
                                                 <div class="flex items-center justify-center gap-2 text-gm-success">
                                                     <span>"✓"</span>
                                                     <span class="font-bold">"Unlocked!"</span>
+                                                </div>
+                                            }.into_any()
+                                        } else if let Some(prog) = progress {
+                                            view! {
+                                                <div class="space-y-2">
+                                                    <div class="flex justify-between text-sm">
+                                                        <span class="text-dt-text-sub">"Progress"</span>
+                                                        <span class="text-white font-medium">
+                                                            {format!("{}/{}", prog.current_value, prog.target_value)}
+                                                        </span>
+                                                    </div>
+                                                    <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                                                        <div
+                                                            class=format!("h-full {} transition-all duration-500", progress_bar_class)
+                                                            style=format!("width: {}%", prog.progress_percent.min(100.0))
+                                                        ></div>
+                                                    </div>
+                                                    <div class="text-sm text-gm-accent-cyan font-bold">
+                                                        {format!("{}% complete", prog.progress_percent.round() as i32)}
+                                                    </div>
                                                 </div>
                                             }.into_any()
                                         } else {

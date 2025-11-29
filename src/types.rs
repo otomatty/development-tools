@@ -261,6 +261,8 @@ pub struct GitHubStats {
     pub contribution_calendar: Option<ContributionCalendar>,
     pub current_streak: i32,
     pub longest_streak: i32,
+    pub weekly_streak: i32,
+    pub monthly_streak: i32,
     pub languages_count: i32,
 }
 
@@ -322,6 +324,31 @@ pub struct BadgeDefinition {
     pub badge_type: String,
     pub rarity: String,
     pub icon: String,
+}
+
+/// バッジ進捗情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeProgress {
+    pub badge_id: String,
+    pub current_value: i32,
+    pub target_value: i32,
+    pub progress_percent: f32,
+}
+
+/// 進捗情報付きバッジ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeWithProgress {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub badge_type: String,
+    pub rarity: String,
+    pub icon: String,
+    pub earned: bool,
+    pub earned_at: Option<String>,
+    pub progress: Option<BadgeProgress>,
 }
 
 /// XP履歴エントリ

@@ -565,10 +565,7 @@ pub fn HomePage(
                             />
 
                             // Badges
-                            <BadgeGrid
-                                badges=badges
-                                definitions=badge_definitions
-                            />
+                            <BadgeGrid />
                         </div>
 
                         // Contribution Graph

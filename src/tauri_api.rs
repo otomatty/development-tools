@@ -2,10 +2,10 @@ use wasm_bindgen::prelude::*;
 use std::collections::HashMap;
 
 use crate::types::{
-    AppInfo, AuthState, Badge, BadgeDefinition, ClearCacheResult, DatabaseInfo, DeviceCodeResponse,
-    DeviceTokenStatus, GitHubStats, GitHubUser, LevelInfo, SyncIntervalOption, SyncResult,
-    ToolConfig, ToolInfo, UpdateSettingsRequest, UserSettings, UserStats, XpGainedEvent,
-    XpHistoryEntry,
+    AppInfo, AuthState, Badge, BadgeDefinition, BadgeWithProgress, ClearCacheResult, DatabaseInfo,
+    DeviceCodeResponse, DeviceTokenStatus, GitHubStats, GitHubUser, LevelInfo, SyncIntervalOption,
+    SyncResult, ToolConfig, ToolInfo, UpdateSettingsRequest, UserSettings, UserStats,
+    XpGainedEvent, XpHistoryEntry,
 };
 
 #[wasm_bindgen]
@@ -285,6 +285,30 @@ pub async fn get_badge_definitions() -> Result<Vec<BadgeDefinition>, String> {
     
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to get badge definitions: {:?}", e))
+}
+
+/// 進捗情報付きバッジ一覧を取得
+pub async fn get_badges_with_progress() -> Result<Vec<BadgeWithProgress>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_badges_with_progress", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get badges with progress: {:?}", e))
+}
+
+/// 取得間近のバッジを取得
+pub async fn get_near_completion_badges(threshold_percent: Option<f32>) -> Result<Vec<BadgeWithProgress>, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        threshold_percent: Option<f32>,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { threshold_percent }).unwrap();
+    let result = invoke("get_near_completion_badges", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get near completion badges: {:?}", e))
 }
 
 /// XP履歴を取得

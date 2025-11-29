@@ -204,6 +204,8 @@ pub struct GitHubStats {
     pub contribution_calendar: Option<ContributionCalendar>,
     pub current_streak: i32,
     pub longest_streak: i32,
+    pub weekly_streak: i32,
+    pub monthly_streak: i32,
     pub languages_count: i32,
     /// Detailed streak information from contribution calendar
     pub streak_info: Option<StreakInfo>,

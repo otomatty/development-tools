@@ -2,7 +2,7 @@
 //!
 //! Provides methods to interact with the GitHub REST and GraphQL APIs.
 
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use thiserror::Error;
 
@@ -387,6 +387,99 @@ impl GitHubClient {
         (info.current_streak, info.longest_streak)
     }
 
+    /// Calculate weekly and monthly streaks from contribution calendar
+    /// 
+    /// Returns (weekly_streak, monthly_streak) where:
+    /// - weekly_streak: consecutive weeks with at least one contribution
+    /// - monthly_streak: consecutive months with at least one contribution
+    pub fn calculate_weekly_monthly_streak(calendar: &ContributionCalendar) -> (i32, i32) {
+        use std::collections::HashMap;
+        
+        // Collect all contribution days
+        let all_days: Vec<_> = calendar
+            .weeks
+            .iter()
+            .flat_map(|w| w.contribution_days.iter())
+            .collect();
+        
+        // Group contributions by week (year-week) and month (year-month)
+        let mut weeks_with_contributions: HashMap<String, bool> = HashMap::new();
+        let mut months_with_contributions: HashMap<String, bool> = HashMap::new();
+        
+        for day in &all_days {
+            if day.contribution_count > 0 {
+                // Parse date string YYYY-MM-DD
+                let parts: Vec<&str> = day.date.split('-').collect();
+                if parts.len() == 3 {
+                    let year: i32 = parts[0].parse().unwrap_or(0);
+                    let month: u32 = parts[1].parse().unwrap_or(0);
+                    let day_num: u32 = parts[2].parse().unwrap_or(0);
+                    
+                    // Calculate ISO week number
+                    if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, day_num) {
+                        let iso_week = date.iso_week();
+                        let week_key = format!("{}-W{:02}", iso_week.year(), iso_week.week());
+                        weeks_with_contributions.insert(week_key, true);
+                        
+                        let month_key = format!("{}-{:02}", year, month);
+                        months_with_contributions.insert(month_key, true);
+                    }
+                }
+            }
+        }
+        
+        // Calculate current weekly streak
+        let now = Utc::now();
+        let current_iso = now.iso_week();
+        let mut weekly_streak = 0;
+        let mut check_year = current_iso.year();
+        let mut check_week = current_iso.week();
+        
+        loop {
+            let week_key = format!("{}-W{:02}", check_year, check_week);
+            if weeks_with_contributions.contains_key(&week_key) {
+                weekly_streak += 1;
+                
+                // Move to previous week
+                if check_week == 1 {
+                    check_year -= 1;
+                    // Get the last week of the previous year
+                    check_week = chrono::NaiveDate::from_ymd_opt(check_year, 12, 28)
+                        .map(|d| d.iso_week().week())
+                        .unwrap_or(52);
+                } else {
+                    check_week -= 1;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        // Calculate current monthly streak
+        let mut monthly_streak = 0;
+        let mut check_month = now.month();
+        let mut check_year_m = now.year();
+        
+        loop {
+            let month_key = format!("{}-{:02}", check_year_m, check_month);
+            if months_with_contributions.contains_key(&month_key) {
+                monthly_streak += 1;
+                
+                // Move to previous month
+                if check_month == 1 {
+                    check_year_m -= 1;
+                    check_month = 12;
+                } else {
+                    check_month -= 1;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        (weekly_streak, monthly_streak)
+    }
+
     /// Get aggregated user stats
     /// 
     /// This method fetches stats from multiple API endpoints, including the
@@ -457,6 +550,10 @@ impl GitHubClient {
             }
         };
 
+        // Calculate weekly and monthly streaks
+        let (weekly_streak, monthly_streak) = 
+            Self::calculate_weekly_monthly_streak(&contributions.contribution_calendar);
+
         Ok(GitHubStats {
             total_commits: contributions.total_commit_contributions,
             total_prs,
@@ -469,6 +566,8 @@ impl GitHubClient {
             contribution_calendar: Some(contributions.contribution_calendar),
             current_streak: streak_info.current_streak,
             longest_streak: streak_info.longest_streak,
+            weekly_streak,
+            monthly_streak,
             languages_count: languages.len() as i32,
             streak_info: Some(streak_info),
         })

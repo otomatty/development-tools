@@ -14,7 +14,8 @@ use commands::{
     cancel_device_flow, get_auth_state, get_current_user, logout, open_url, poll_device_token,
     start_device_flow, validate_token,
     // GitHub commands
-    get_contribution_calendar, get_github_stats, get_github_user, get_user_stats, sync_github_stats,
+    get_badges_with_progress, get_contribution_calendar, get_github_stats, get_github_user,
+    get_near_completion_badges, get_user_stats, sync_github_stats,
     // Gamification commands
     add_xp, award_badge, get_badge_definitions, get_badges, get_level_info, get_xp_history,
     // Settings commands
@@ -87,6 +88,8 @@ pub fn run() {
             get_user_stats,
             sync_github_stats,
             get_contribution_calendar,
+            get_badges_with_progress,
+            get_near_completion_badges,
             // Gamification commands
             get_level_info,
             add_xp,
