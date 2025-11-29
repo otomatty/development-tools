@@ -28,18 +28,22 @@ pub fn ContributionGraph(
     // 表示モード（コントリビューション or コード行数）
     let (show_code_lines, set_show_code_lines) = signal(false);
     
+    // 自動同期中フラグ
+    let (is_auto_syncing, set_is_auto_syncing) = signal(false);
+    
     // 初回読み込み時にコード統計を取得
     Effect::new(move |_| {
         if github_stats.get().is_some() && code_stats.get().is_none() && !is_loading_stats.get() {
             set_is_loading_stats.set(true);
             spawn_local(async move {
+                // まずキャッシュから取得を試みる
                 match tauri_api::get_code_stats_summary("year").await {
                     Ok(stats) => {
                         set_code_stats.set(Some(stats));
                     }
                     Err(_e) => {
-                        // エラーがあってもコントリビューショングラフは表示する
-                        // コード統計はオプションなので警告のみ
+                        // キャッシュがない場合は自動同期をトリガー
+                        set_is_auto_syncing.set(true);
                     }
                 }
                 // レート制限情報も取得
@@ -51,20 +55,72 @@ pub fn ContributionGraph(
         }
     });
     
+    // 自動同期（キャッシュがない場合またはキャッシュが古い場合）
+    Effect::new(move |_| {
+        // キャッシュがなく、自動同期が必要な場合
+        if is_auto_syncing.get() && !is_syncing.get() {
+            // レート制限チェック
+            let can_sync = rate_limit.get().map(|r| !r.is_critical).unwrap_or(true);
+            if can_sync {
+                set_is_syncing.set(true);
+                spawn_local(async move {
+                    match tauri_api::sync_code_stats().await {
+                        Ok(stats) => {
+                            set_code_stats.set(Some(stats));
+                        }
+                        Err(e) => {
+                            // 自動同期失敗時は警告のみ（エラー表示しない）
+                            web_sys::console::warn_1(&format!("Auto-sync failed: {}", e).into());
+                        }
+                    }
+                    // レート制限情報を更新
+                    if let Ok(info) = tauri_api::get_rate_limit_info().await {
+                        set_rate_limit.set(Some(info));
+                    }
+                    set_is_syncing.set(false);
+                    set_is_auto_syncing.set(false);
+                });
+            } else {
+                set_is_auto_syncing.set(false);
+            }
+        }
+    });
+    
     // コード統計を同期
     let on_sync_stats = move |_: leptos::ev::MouseEvent| {
         if is_syncing.get() {
             return;
         }
+        
+        // レート制限チェック - クリティカルな場合は警告を表示
+        if let Some(info) = rate_limit.get() {
+            if info.is_critical {
+                set_sync_error.set(Some("⚠️ APIレート制限が残りわずかです。時間をおいてから再度お試しください。".to_string()));
+                return;
+            }
+        }
+        
         set_is_syncing.set(true);
         set_sync_error.set(None);
         spawn_local(async move {
             match tauri_api::sync_code_stats().await {
                 Ok(stats) => {
                     set_code_stats.set(Some(stats));
+                    // 成功時はエラーをクリア
+                    set_sync_error.set(None);
                 }
                 Err(e) => {
-                    set_sync_error.set(Some(format!("同期に失敗しました: {}", e)));
+                    // エラーメッセージを解析してユーザーフレンドリーに変換
+                    let error_msg = if e.contains("rate limit") || e.contains("API rate") {
+                        "⚠️ GitHub APIのレート制限に達しました。1時間後にお試しください。".to_string()
+                    } else if e.contains("Not logged in") || e.contains("token") {
+                        "🔑 GitHubにログインしてください。".to_string()
+                    } else if e.contains("network") || e.contains("connection") {
+                        "🌐 ネットワーク接続を確認してください。".to_string()
+                    } else {
+                        format!("同期に失敗しました: {}", e)
+                    };
+                    set_sync_error.set(Some(error_msg));
                 }
             }
             // レート制限情報を更新
@@ -130,16 +186,30 @@ pub fn ContributionGraph(
                     
                     // 同期ボタン
                     <button
-                        class=move || format!(
-                            "px-3 py-1 text-xs rounded-lg transition-all flex items-center gap-1 {}",
-                            if is_syncing.get() || is_loading_stats.get() {
-                                "bg-gm-bg-tertiary text-dt-text-sub cursor-not-allowed"
-                            } else {
-                                "bg-gm-accent-purple text-white hover:bg-gm-accent-purple/80"
-                            }
-                        )
+                        class=move || {
+                            let is_rate_limited = rate_limit.get().map(|r| r.is_critical).unwrap_or(false);
+                            format!(
+                                "px-3 py-1 text-xs rounded-lg transition-all flex items-center gap-1 {}",
+                                if is_syncing.get() || is_loading_stats.get() || is_rate_limited {
+                                    "bg-gm-bg-tertiary text-dt-text-sub cursor-not-allowed"
+                                } else {
+                                    "bg-gm-accent-purple text-white hover:bg-gm-accent-purple/80"
+                                }
+                            )
+                        }
                         on:click=on_sync_stats
-                        disabled=move || is_syncing.get() || is_loading_stats.get()
+                        disabled=move || {
+                            is_syncing.get() 
+                                || is_loading_stats.get() 
+                                || rate_limit.get().map(|r| r.is_critical).unwrap_or(false)
+                        }
+                        title=move || {
+                            if rate_limit.get().map(|r| r.is_critical).unwrap_or(false) {
+                                "APIレート制限のため同期できません"
+                            } else {
+                                "GitHubからコード統計を同期"
+                            }
+                        }
                     >
                         <span class=move || if is_syncing.get() { "animate-spin" } else { "" }>"🔄"</span>
                         {move || if is_syncing.get() { "同期中..." } else { "同期" }}

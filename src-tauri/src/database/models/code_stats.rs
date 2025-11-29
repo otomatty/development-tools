@@ -207,32 +207,161 @@ pub struct CommitDailyStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Datelike;
+    use chrono::Timelike;
+
+    // ========================================================================
+    // DailyCodeStats Tests
+    // ========================================================================
+
+    fn create_daily_stats(id: i64, date: &str, additions: i32, deletions: i32, commits: i32) -> DailyCodeStats {
+        DailyCodeStats {
+            id,
+            user_id: 1,
+            date: date.to_string(),
+            additions,
+            deletions,
+            commits_count: commits,
+            repositories_json: None,
+            created_at: Utc::now().to_rfc3339(),
+            updated_at: Utc::now().to_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn test_daily_code_stats_date_as_naive() {
+        let stats = create_daily_stats(1, "2025-11-30", 100, 50, 5);
+        let date = stats.date_as_naive();
+        
+        assert!(date.is_some());
+        let naive_date = date.unwrap();
+        assert_eq!(naive_date.year(), 2025);
+        assert_eq!(naive_date.month(), 11);
+        assert_eq!(naive_date.day(), 30);
+    }
+
+    #[test]
+    fn test_daily_code_stats_date_as_naive_invalid() {
+        let stats = DailyCodeStats {
+            id: 1,
+            user_id: 1,
+            date: "invalid-date".to_string(),
+            additions: 100,
+            deletions: 50,
+            commits_count: 5,
+            repositories_json: None,
+            created_at: Utc::now().to_rfc3339(),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        
+        assert!(stats.date_as_naive().is_none());
+    }
+
+    #[test]
+    fn test_daily_code_stats_net_change() {
+        let stats = create_daily_stats(1, "2025-11-30", 150, 50, 5);
+        assert_eq!(stats.net_change(), 100);
+        
+        // Negative net change (more deletions)
+        let stats2 = create_daily_stats(2, "2025-11-29", 30, 100, 3);
+        assert_eq!(stats2.net_change(), -70);
+    }
+
+    #[test]
+    fn test_daily_code_stats_repositories_parsing() {
+        let mut stats = create_daily_stats(1, "2025-11-30", 100, 50, 5);
+        stats.repositories_json = Some(r#"["repo1", "repo2", "repo3"]"#.to_string());
+        
+        let repos = stats.repositories();
+        assert_eq!(repos.len(), 3);
+        assert_eq!(repos[0], "repo1");
+        assert_eq!(repos[1], "repo2");
+        assert_eq!(repos[2], "repo3");
+    }
+
+    #[test]
+    fn test_daily_code_stats_repositories_empty() {
+        let stats = create_daily_stats(1, "2025-11-30", 100, 50, 5);
+        let repos = stats.repositories();
+        assert!(repos.is_empty());
+    }
+
+    #[test]
+    fn test_daily_code_stats_repositories_invalid_json() {
+        let mut stats = create_daily_stats(1, "2025-11-30", 100, 50, 5);
+        stats.repositories_json = Some("invalid json".to_string());
+        
+        let repos = stats.repositories();
+        assert!(repos.is_empty());
+    }
+
+    // ========================================================================
+    // SyncMetadata Tests
+    // ========================================================================
+
+    #[test]
+    fn test_sync_metadata_last_sync_at_parsed() {
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: "code_stats".to_string(),
+            last_sync_at: Some("2025-11-30T12:00:00Z".to_string()),
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: Some(4500),
+            rate_limit_reset_at: None,
+        };
+        
+        let parsed = metadata.last_sync_at_parsed();
+        assert!(parsed.is_some());
+        let dt = parsed.unwrap();
+        assert_eq!(dt.hour(), 12);
+        assert_eq!(dt.minute(), 0);
+    }
+
+    #[test]
+    fn test_sync_metadata_last_sync_at_none() {
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: "code_stats".to_string(),
+            last_sync_at: None,
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: None,
+            rate_limit_reset_at: None,
+        };
+        
+        assert!(metadata.last_sync_at_parsed().is_none());
+    }
+
+    #[test]
+    fn test_sync_metadata_rate_limit_reset_parsed() {
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: "code_stats".to_string(),
+            last_sync_at: None,
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: Some(100),
+            rate_limit_reset_at: Some("2025-11-30T13:00:00Z".to_string()),
+        };
+        
+        let parsed = metadata.rate_limit_reset_at_parsed();
+        assert!(parsed.is_some());
+        assert_eq!(parsed.unwrap().hour(), 13);
+    }
+
+    // ========================================================================
+    // CodeStatsSummary Tests
+    // ========================================================================
 
     #[test]
     fn test_code_stats_summary_from_daily_stats() {
         let stats = vec![
-            DailyCodeStats {
-                id: 1,
-                user_id: 1,
-                date: "2025-11-28".to_string(),
-                additions: 100,
-                deletions: 50,
-                commits_count: 5,
-                repositories_json: None,
-                created_at: Utc::now().to_rfc3339(),
-                updated_at: Utc::now().to_rfc3339(),
-            },
-            DailyCodeStats {
-                id: 2,
-                user_id: 1,
-                date: "2025-11-29".to_string(),
-                additions: 200,
-                deletions: 30,
-                commits_count: 3,
-                repositories_json: None,
-                created_at: Utc::now().to_rfc3339(),
-                updated_at: Utc::now().to_rfc3339(),
-            },
+            create_daily_stats(1, "2025-11-28", 100, 50, 5),
+            create_daily_stats(2, "2025-11-29", 200, 30, 3),
         ];
 
         let summary = CodeStatsSummary::from_daily_stats(&stats);
@@ -245,6 +374,36 @@ mod tests {
     }
 
     #[test]
+    fn test_code_stats_summary_empty_stats() {
+        let stats: Vec<DailyCodeStats> = vec![];
+        let summary = CodeStatsSummary::from_daily_stats(&stats);
+
+        assert_eq!(summary.additions, 0);
+        assert_eq!(summary.deletions, 0);
+        assert_eq!(summary.net_change, 0);
+        assert_eq!(summary.commits_count, 0);
+        assert_eq!(summary.active_days, 0);
+    }
+
+    #[test]
+    fn test_code_stats_summary_inactive_days_not_counted() {
+        let stats = vec![
+            create_daily_stats(1, "2025-11-28", 100, 50, 5),
+            create_daily_stats(2, "2025-11-29", 0, 0, 0), // No activity
+            create_daily_stats(3, "2025-11-30", 50, 20, 2),
+        ];
+
+        let summary = CodeStatsSummary::from_daily_stats(&stats);
+
+        assert_eq!(summary.active_days, 2); // Only 2 days with commits
+        assert_eq!(summary.commits_count, 7);
+    }
+
+    // ========================================================================
+    // StatsPeriod Tests
+    // ========================================================================
+
+    #[test]
     fn test_stats_period_days() {
         assert_eq!(StatsPeriod::Week.days(), 7);
         assert_eq!(StatsPeriod::Month.days(), 30);
@@ -252,8 +411,12 @@ mod tests {
         assert_eq!(StatsPeriod::Year.days(), 365);
     }
 
+    // ========================================================================
+    // RateLimitInfo Tests
+    // ========================================================================
+
     #[test]
-    fn test_rate_limit_critical_check() {
+    fn test_rate_limit_critical_check_search_critical() {
         let mut info = RateLimitInfo {
             rest_remaining: 100,
             rest_limit: 5000,
@@ -266,8 +429,43 @@ mod tests {
         
         info.check_critical();
         assert!(info.is_critical); // search is below 20%
+    }
+
+    #[test]
+    fn test_rate_limit_critical_check_rest_critical() {
+        let mut info = RateLimitInfo {
+            rest_remaining: 500,
+            rest_limit: 5000,
+            graphql_remaining: 4000,
+            graphql_limit: 5000,
+            search_remaining: 25,
+            search_limit: 30,
+            ..Default::default()
+        };
         
-        let mut info2 = RateLimitInfo {
+        info.check_critical();
+        assert!(info.is_critical); // REST is 10%, below 20%
+    }
+
+    #[test]
+    fn test_rate_limit_critical_check_graphql_critical() {
+        let mut info = RateLimitInfo {
+            rest_remaining: 4000,
+            rest_limit: 5000,
+            graphql_remaining: 800,
+            graphql_limit: 5000,
+            search_remaining: 25,
+            search_limit: 30,
+            ..Default::default()
+        };
+        
+        info.check_critical();
+        assert!(info.is_critical); // GraphQL is 16%, below 20%
+    }
+
+    #[test]
+    fn test_rate_limit_critical_check_all_ok() {
+        let mut info = RateLimitInfo {
             rest_remaining: 4000,
             rest_limit: 5000,
             graphql_remaining: 4000,
@@ -277,7 +475,23 @@ mod tests {
             ..Default::default()
         };
         
-        info2.check_critical();
-        assert!(!info2.is_critical); // all above 20%
+        info.check_critical();
+        assert!(!info.is_critical); // all above 20%
+    }
+
+    #[test]
+    fn test_rate_limit_critical_check_zero_limits() {
+        let mut info = RateLimitInfo {
+            rest_remaining: 0,
+            rest_limit: 0,
+            graphql_remaining: 0,
+            graphql_limit: 0,
+            search_remaining: 0,
+            search_limit: 0,
+            ..Default::default()
+        };
+        
+        info.check_critical();
+        assert!(!info.is_critical); // Zero limits don't trigger critical
     }
 }
