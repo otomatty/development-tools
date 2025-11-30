@@ -174,7 +174,8 @@ fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
                     <div class="flex items-center gap-2 justify-end">
                         <AnimatedEmoji
                             emoji=EmojiType::Trophy
-                            size="text-badge-gold"
+                            size="text-lg"
+                            class="text-badge-gold"
                             hover_only=true
                         />
                         <span class="text-lg font-gaming-mono text-badge-gold">{move || longest_streak()}</span>

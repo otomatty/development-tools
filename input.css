@@ -497,30 +497,39 @@
 /* Animation classes */
 .animate-emoji-flame {
   animation: emoji-flame 0.8s ease-in-out infinite;
+  will-change: transform, filter;
 }
 .animate-emoji-shine {
   animation: emoji-shine 2s ease-in-out infinite;
+  will-change: transform, filter;
 }
 .animate-emoji-twinkle {
   animation: emoji-twinkle 1.5s ease-in-out infinite;
+  will-change: transform, opacity, filter;
 }
 .animate-emoji-pulse-scale {
   animation: emoji-pulse-scale 1s ease-in-out infinite;
+  will-change: transform, filter;
 }
 .animate-emoji-flex {
   animation: emoji-flex 1.2s ease-in-out infinite;
+  will-change: transform;
 }
 .animate-emoji-float {
   animation: emoji-float 2s ease-in-out infinite;
+  will-change: transform, filter;
 }
 .animate-emoji-bounce {
   animation: emoji-bounce 1s ease-in-out infinite;
+  will-change: transform;
 }
 .animate-emoji-sparkle {
   animation: emoji-sparkle 1.5s ease-in-out infinite;
+  will-change: transform, opacity, filter;
 }
 .animate-emoji-launch {
   animation: emoji-launch 1.5s ease-in-out infinite;
+  will-change: transform, filter;
 }
 
 /* Intensity modifiers */

@@ -62,18 +62,18 @@ impl EmojiType {
         }
     }
 
-    /// Get the base color class for this emoji (used when not animating)
-    pub fn color_class(&self) -> &'static str {
+    /// Get accessible aria-label for screen readers
+    pub fn aria_label(&self) -> &'static str {
         match self {
-            Self::Fire => "text-orange-400",
-            Self::Trophy => "text-yellow-400",
-            Self::Star => "text-yellow-300",
-            Self::Target => "text-red-400",
-            Self::Muscle => "text-amber-400",
-            Self::Crown => "text-yellow-500",
-            Self::Party => "text-pink-400",
-            Self::Sparkles => "text-cyan-300",
-            Self::Rocket => "text-blue-400",
+            Self::Fire => "streak fire",
+            Self::Trophy => "trophy achievement",
+            Self::Star => "star rating",
+            Self::Target => "goal target",
+            Self::Muscle => "strength milestone",
+            Self::Crown => "crown achievement",
+            Self::Party => "celebration",
+            Self::Sparkles => "sparkles effect",
+            Self::Rocket => "progress rocket",
         }
     }
 }
@@ -102,6 +102,41 @@ impl AnimationIntensity {
             Self::Strong => "animation-strong",
         }
     }
+}
+
+/// Build CSS classes for animated emoji
+///
+/// Helper function to avoid code duplication between components.
+fn build_emoji_classes(
+    is_animation_enabled: bool,
+    is_hovered: bool,
+    hover_only: bool,
+    emoji: EmojiType,
+    intensity: AnimationIntensity,
+    size: &str,
+    custom_class: &str,
+) -> String {
+    let should_animate = is_animation_enabled
+        && intensity != AnimationIntensity::None
+        && (!hover_only || is_hovered);
+
+    let mut classes = vec![size.to_string()];
+
+    if should_animate {
+        classes.push(emoji.animation_class().to_string());
+        if !intensity.class_modifier().is_empty() {
+            classes.push(intensity.class_modifier().to_string());
+        }
+    }
+
+    // Add transition for smooth animation start/stop
+    classes.push("transition-transform duration-200".to_string());
+
+    if !custom_class.is_empty() {
+        classes.push(custom_class.to_string());
+    }
+
+    classes.join(" ")
 }
 
 /// Animated emoji component
@@ -140,28 +175,15 @@ pub fn AnimatedEmoji(
     let (is_hovered, set_is_hovered) = signal(false);
 
     let computed_class = move || {
-        let enabled = animation_ctx.is_enabled();
-        let hovered = is_hovered.get();
-        let should_animate = enabled && intensity != AnimationIntensity::None && (!hover_only || hovered);
-
-        let mut classes = vec![size.to_string()];
-        
-        if should_animate {
-            classes.push(emoji.animation_class().to_string());
-            if !intensity.class_modifier().is_empty() {
-                classes.push(intensity.class_modifier().to_string());
-            }
-        }
-
-        // Add transition for smooth animation start/stop
-        classes.push("transition-transform duration-200".to_string());
-
-        // Add custom classes
-        if !class.is_empty() {
-            classes.push(class.to_string());
-        }
-
-        classes.join(" ")
+        build_emoji_classes(
+            animation_ctx.is_enabled(),
+            is_hovered.get(),
+            hover_only,
+            emoji,
+            intensity,
+            size,
+            class,
+        )
     };
 
     view! {
@@ -170,7 +192,7 @@ pub fn AnimatedEmoji(
             on:mouseenter=move |_| set_is_hovered.set(true)
             on:mouseleave=move |_| set_is_hovered.set(false)
             role="img"
-            aria-label=emoji.emoji()
+            aria-label=emoji.aria_label()
         >
             {emoji.emoji()}
         </span>
@@ -217,27 +239,15 @@ pub fn AnimatedEmojiWithIntensity(
     let (is_hovered, set_is_hovered) = signal(false);
 
     let computed_class = move || {
-        let enabled = animation_ctx.is_enabled();
-        let hovered = is_hovered.get();
-        let current_intensity = intensity();
-        let should_animate = enabled && current_intensity != AnimationIntensity::None && (!hover_only || hovered);
-
-        let mut classes = vec![size.to_string()];
-        
-        if should_animate {
-            classes.push(emoji.animation_class().to_string());
-            if !current_intensity.class_modifier().is_empty() {
-                classes.push(current_intensity.class_modifier().to_string());
-            }
-        }
-
-        classes.push("transition-transform duration-200".to_string());
-
-        if !class.is_empty() {
-            classes.push(class.to_string());
-        }
-
-        classes.join(" ")
+        build_emoji_classes(
+            animation_ctx.is_enabled(),
+            is_hovered.get(),
+            hover_only,
+            emoji,
+            intensity(),
+            size,
+            class,
+        )
     };
 
     view! {
@@ -246,7 +256,7 @@ pub fn AnimatedEmojiWithIntensity(
             on:mouseenter=move |_| set_is_hovered.set(true)
             on:mouseleave=move |_| set_is_hovered.set(false)
             role="img"
-            aria-label=emoji.emoji()
+            aria-label=emoji.aria_label()
         >
             {emoji.emoji()}
         </span>
@@ -268,6 +278,13 @@ mod tests {
     fn test_emoji_type_animation_class() {
         assert_eq!(EmojiType::Fire.animation_class(), "animate-emoji-flame");
         assert_eq!(EmojiType::Trophy.animation_class(), "animate-emoji-shine");
+    }
+
+    #[test]
+    fn test_emoji_type_aria_label() {
+        assert_eq!(EmojiType::Fire.aria_label(), "streak fire");
+        assert_eq!(EmojiType::Trophy.aria_label(), "trophy achievement");
+        assert_eq!(EmojiType::Sparkles.aria_label(), "sparkles effect");
     }
 
     #[test]
