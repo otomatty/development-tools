@@ -280,6 +280,37 @@ pub async fn get_github_stats_with_cache() -> Result<crate::types::CachedRespons
         .map_err(|e| format!("Failed to get GitHub stats with cache: {:?}", e))
 }
 
+// ============================================
+// キャッシュ管理API
+// ============================================
+
+/// キャッシュ統計を取得
+pub async fn get_cache_stats() -> Result<crate::types::CacheStats, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_cache_stats", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get cache stats: {:?}", e))
+}
+
+/// ユーザーのすべてのキャッシュをクリア
+pub async fn clear_user_cache() -> Result<u64, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("clear_user_cache", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to clear user cache: {:?}", e))
+}
+
+/// 期限切れキャッシュのクリーンアップ
+pub async fn cleanup_expired_cache() -> Result<u64, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("cleanup_expired_cache", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to cleanup expired cache: {:?}", e))
+}
+
 /// コントリビューションカレンダーを取得
 pub async fn get_contribution_calendar() -> Result<serde_json::Value, String> {
     let args = serde_wasm_bindgen::to_value(&()).unwrap();

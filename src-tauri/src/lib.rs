@@ -19,6 +19,8 @@ use commands::{
     get_near_completion_badges, get_user_stats, sync_github_stats,
     // Cache fallback commands
     get_github_stats_with_cache, get_user_stats_with_cache,
+    // Cache management commands
+    cleanup_expired_cache, clear_user_cache, get_cache_stats,
     // Code Statistics commands (Issue #74)
     get_code_stats_summary, get_rate_limit_info, sync_code_stats,
     // Gamification commands
@@ -80,6 +82,22 @@ pub fn run() {
             // Register Database as managed state (needed by mock_server commands)
             app.manage(app_state.db.clone());
             
+            // Clean up expired cache on startup
+            let db_for_cleanup = app_state.db.clone();
+            tauri::async_runtime::spawn(async move {
+                match db_for_cleanup.clear_expired_cache().await {
+                    Ok(deleted) if deleted > 0 => {
+                        eprintln!("Startup: Cleaned up {} expired cache entries", deleted);
+                    }
+                    Ok(_) => {
+                        // No expired cache entries to clean up (silent)
+                    }
+                    Err(e) => {
+                        eprintln!("Startup: Failed to clean up expired cache: {}", e);
+                    }
+                }
+            });
+            
             app.manage(app_state);
             
             // Initialize Mock Server manager
@@ -113,6 +131,10 @@ pub fn run() {
             // Cache fallback commands
             get_github_stats_with_cache,
             get_user_stats_with_cache,
+            // Cache management commands
+            get_cache_stats,
+            clear_user_cache,
+            cleanup_expired_cache,
             // Code Statistics commands (Issue #74)
             sync_code_stats,
             get_code_stats_summary,

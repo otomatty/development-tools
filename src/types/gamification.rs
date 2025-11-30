@@ -24,6 +24,20 @@ pub struct CachedResponse<T> {
     pub expires_at: Option<String>,
 }
 
+/// Cache statistics for display in settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheStats {
+    /// Total cache size in bytes
+    pub total_size_bytes: u64,
+    /// Number of cache entries
+    pub entry_count: u64,
+    /// Number of expired entries
+    pub expired_count: u64,
+    /// Last cleanup timestamp (ISO8601)
+    pub last_cleanup_at: Option<String>,
+}
+
 /// ユーザー統計
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

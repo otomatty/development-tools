@@ -1238,3 +1238,94 @@ pub async fn get_user_stats_with_cache(
     }
 }
 
+
+// ============================================================================
+// Cache Management Commands
+// ============================================================================
+
+/// Cache statistics for display in settings
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheStats {
+    /// Total cache size in bytes
+    pub total_size_bytes: u64,
+    /// Number of cache entries
+    pub entry_count: u64,
+    /// Number of expired entries
+    pub expired_count: u64,
+    /// Last cleanup timestamp (ISO8601)
+    pub last_cleanup_at: Option<String>,
+}
+
+/// Get cache statistics for the current user
+#[command]
+pub async fn get_cache_stats(state: State<'_, AppState>) -> Result<CacheStats, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // Get cache size
+    let total_size = state.db.get_user_cache_size(user.id).await.map_err(|e| e.to_string())?;
+    
+    // Get entry count and expired count
+    let now = chrono::Utc::now().to_rfc3339();
+    
+    let (entry_count, expired_count): (i64, i64) = sqlx::query_as(
+        r#"
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN expires_at <= ? THEN 1 ELSE 0 END) as expired
+        FROM activity_cache
+        WHERE user_id = ?
+        "#,
+    )
+    .bind(&now)
+    .bind(user.id)
+    .fetch_one(state.db.pool())
+    .await
+    .map_err(|e| format!("Failed to get cache stats: {}", e))?;
+
+    Ok(CacheStats {
+        total_size_bytes: total_size,
+        entry_count: entry_count as u64,
+        expired_count: expired_count as u64,
+        last_cleanup_at: None, // TODO: track this in a settings table
+    })
+}
+
+/// Clear all cache for the current user
+#[command]
+pub async fn clear_user_cache(state: State<'_, AppState>) -> Result<u64, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    let result = sqlx::query("DELETE FROM activity_cache WHERE user_id = ?")
+        .bind(user.id)
+        .execute(state.db.pool())
+        .await
+        .map_err(|e| format!("Failed to clear cache: {}", e))?;
+
+    eprintln!("Cleared {} cache entries for user {}", result.rows_affected(), user.id);
+    
+    Ok(result.rows_affected())
+}
+
+/// Clear only expired cache entries (cleanup)
+#[command]
+pub async fn cleanup_expired_cache(state: State<'_, AppState>) -> Result<u64, String> {
+    let deleted = state.db.clear_expired_cache().await.map_err(|e| e.to_string())?;
+    
+    if deleted > 0 {
+        eprintln!("Cleaned up {} expired cache entries", deleted);
+    }
+    
+    Ok(deleted)
+}
+
