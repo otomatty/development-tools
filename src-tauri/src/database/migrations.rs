@@ -241,6 +241,32 @@ CREATE INDEX IF NOT EXISTS idx_daily_code_stats_summary ON daily_code_stats(user
 CREATE INDEX IF NOT EXISTS idx_sync_metadata_user_type ON sync_metadata(user_id, sync_type);
 "#,
     },
+    Migration {
+        version: 6,
+        name: "add_github_stats_snapshots",
+        sql: r#"
+-- GitHub stats snapshots table: stores daily snapshots for diff calculation
+-- Related Issue: GitHub Issue #35 - GitHub統計の前日比表示機能
+CREATE TABLE IF NOT EXISTS github_stats_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    total_commits INTEGER NOT NULL DEFAULT 0,
+    total_prs INTEGER NOT NULL DEFAULT 0,
+    total_reviews INTEGER NOT NULL DEFAULT 0,
+    total_issues INTEGER NOT NULL DEFAULT 0,
+    total_stars_received INTEGER NOT NULL DEFAULT 0,
+    total_contributions INTEGER NOT NULL DEFAULT 0,
+    snapshot_date DATE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, snapshot_date)
+);
+
+-- Create indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_github_stats_snapshots_user_date 
+    ON github_stats_snapshots(user_id, snapshot_date DESC);
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

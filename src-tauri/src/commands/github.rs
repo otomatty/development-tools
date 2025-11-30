@@ -5,7 +5,9 @@
 use tauri::{command, Emitter, State};
 
 use super::auth::AppState;
-use crate::database::{badge, challenge, level, streak, xp, UserStats, XpActionType};
+use crate::database::{
+    badge, challenge, level, streak, xp, GitHubStatsSnapshot, UserStats, XpActionType,
+};
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
 use crate::utils::notifications::send_notification;
 
@@ -73,6 +75,22 @@ pub struct SyncResult {
     pub xp_breakdown: XpBreakdownResult,
     pub streak_bonus: StreakBonusInfo,
     pub new_badges: Vec<NewBadgeInfo>,
+    /// Day-over-day statistics difference (None if first sync)
+    pub stats_diff: Option<StatsDiffResult>,
+}
+
+/// Statistics difference compared to previous snapshot
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsDiffResult {
+    pub commits_diff: i32,
+    pub prs_diff: i32,
+    pub reviews_diff: i32,
+    pub issues_diff: i32,
+    pub stars_diff: i32,
+    pub contributions_diff: i32,
+    /// Date of the snapshot being compared against
+    pub comparison_date: Option<String>,
 }
 
 /// Information about newly earned badge
@@ -683,6 +701,63 @@ pub async fn sync_github_stats(
         eprintln!("Failed to check expired challenges: {}", e);
     }
 
+    // Save today's snapshot and calculate diff from previous day
+    let today = chrono::Utc::now().date_naive().to_string();
+    let stats_diff = {
+        // Get previous snapshot for diff calculation
+        let previous_snapshot = state
+            .db
+            .get_previous_github_stats_snapshot(user.id, &today)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Create current snapshot for diff calculation
+        let current_snapshot = GitHubStatsSnapshot::new(
+            user.id,
+            github_stats.total_commits,
+            github_stats.total_prs,
+            github_stats.total_reviews,
+            github_stats.total_issues,
+            github_stats.total_stars_received,
+            github_stats.total_contributions,
+            &today,
+        );
+
+        // Save current snapshot (UPSERT)
+        if let Err(e) = state
+            .db
+            .save_github_stats_snapshot(
+                user.id,
+                github_stats.total_commits,
+                github_stats.total_prs,
+                github_stats.total_reviews,
+                github_stats.total_issues,
+                github_stats.total_stars_received,
+                github_stats.total_contributions,
+                &today,
+            )
+            .await
+        {
+            eprintln!("Failed to save github stats snapshot: {}", e);
+        }
+
+        // Calculate diff and convert to StatsDiffResult
+        let diff = current_snapshot.calculate_diff(previous_snapshot.as_ref());
+        if diff.comparison_date.is_some() {
+            Some(StatsDiffResult {
+                commits_diff: diff.commits_diff,
+                prs_diff: diff.prs_diff,
+                reviews_diff: diff.reviews_diff,
+                issues_diff: diff.issues_diff,
+                stars_diff: diff.stars_diff,
+                contributions_diff: diff.contributions_diff,
+                comparison_date: diff.comparison_date,
+            })
+        } else {
+            None
+        }
+    };
+
     Ok(SyncResult {
         user_stats: updated_stats,
         xp_gained: total_xp_gained,
@@ -692,6 +767,7 @@ pub async fn sync_github_stats(
         xp_breakdown: xp_breakdown_result,
         streak_bonus: streak_bonus_result,
         new_badges,
+        stats_diff,
     })
 }
 
