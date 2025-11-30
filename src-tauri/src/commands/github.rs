@@ -1285,6 +1285,7 @@ pub async fn clear_user_cache(state: State<'_, AppState>) -> Result<u64, String>
     // Use repository method instead of direct SQL
     let deleted = state.db.delete_user_cache(user.id).await.map_err(|e| e.to_string())?;
 
+    // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
     eprintln!("Cleared {} cache entries for user {}", deleted, user.id);
     
     Ok(deleted)
@@ -1296,6 +1297,7 @@ pub async fn cleanup_expired_cache(state: State<'_, AppState>) -> Result<u64, St
     let deleted = state.db.clear_expired_cache().await.map_err(|e| e.to_string())?;
     
     if deleted > 0 {
+        // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
         eprintln!("Cleaned up {} expired cache entries", deleted);
     }
     

@@ -99,6 +99,8 @@ pub fn NetworkStatusProvider(children: Children) -> impl IntoView {
             on_offline.as_ref().unchecked_ref(),
         );
 
+        // TODO: [BUG] イベントリスナーのメモリリーク（アプリルートでのみ使用のため影響軽微）
+        // on_cleanupでremove_event_listenerを呼ぶべきだが、Closureのライフタイム管理が複雑
         // クロージャをリークして永続化（コンポーネントのライフタイム中は必要）
         on_online.forget();
         on_offline.forget();

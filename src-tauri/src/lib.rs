@@ -87,12 +87,14 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 match db_for_cleanup.clear_expired_cache().await {
                     Ok(deleted) if deleted > 0 => {
+                        // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
                         eprintln!("Startup: Cleaned up {} expired cache entries", deleted);
                     }
                     Ok(_) => {
                         // No expired cache entries to clean up (silent)
                     }
                     Err(e) => {
+                        // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
                         eprintln!("Startup: Failed to clean up expired cache: {}", e);
                     }
                 }

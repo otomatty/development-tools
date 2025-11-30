@@ -147,6 +147,7 @@ fn InitialView(on_login: Callback<ev::MouseEvent>) -> impl IntoView {
                             if !online { "opacity-50" } else { "" }
                         )
                     }
+                    // TODO: [IMPROVE] disabled属性があれば冗長だが、防御的コードとして残す
                     on:click=move |e| {
                         if is_online.get() {
                             on_login.run(e);
