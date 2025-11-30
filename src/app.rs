@@ -4,7 +4,7 @@ use leptos::task::spawn_local;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
-use crate::components::{AnimationContext, HomePage, LogViewer, ResultView, Sidebar, ToolDetail};
+use crate::components::{AnimationContext, HomePage, LogViewer, NetworkStatusProvider, OfflineBanner, ResultView, Sidebar, ToolDetail};
 use crate::components::settings::SettingsPage;
 use crate::tauri_api;
 use crate::types::{
@@ -209,76 +209,81 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <div class=move || {
-            let base = "flex h-screen bg-dt-bg";
-            if animation_context.enabled.get() {
-                base.to_string()
-            } else {
-                format!("{} no-animation", base)
-            }
-        }>
-            // サイドバー
-            <Sidebar 
-                tools=tools
-                selected_tool=selected_tool_name
-                set_selected_tool=set_selected_tool_name
-                current_page=current_page
-                set_current_page=set_current_page
-                loading=loading_tools
-            />
+        <NetworkStatusProvider>
+            <div class=move || {
+                let base = "flex h-screen bg-dt-bg";
+                if animation_context.enabled.get() {
+                    base.to_string()
+                } else {
+                    format!("{} no-animation", base)
+                }
+            }>
+                // サイドバー
+                <Sidebar 
+                    tools=tools
+                    selected_tool=selected_tool_name
+                    set_selected_tool=set_selected_tool_name
+                    current_page=current_page
+                    set_current_page=set_current_page
+                    loading=loading_tools
+                />
 
-            // メインコンテンツ
-            <main class="flex-1 flex flex-col overflow-hidden">
-                // ページに応じてコンテンツを表示
-                {move || match current_page.get() {
-                    AppPage::Home => view! {
-                        <HomePage set_current_page=set_current_page />
-                    }.into_any(),
+                // メインコンテンツ
+                <main class="flex-1 flex flex-col overflow-hidden">
+                    // オフラインバナー（オフライン時のみ表示）
+                    <OfflineBanner />
                     
-                    AppPage::Tools => view! {
-                        // 上部: ツール詳細・オプション
-                        <div class="flex-1 overflow-y-auto">
-                            <ToolDetail 
-                                config=tool_config
-                                option_values=option_values
-                                set_option_values=set_option_values
-                                trigger_run=set_trigger_run
-                                running=running
-                                status=status
-                            />
-                        </div>
-
-                        // 下部: 結果表示
-                        <Show when=move || result.get().is_some() || show_logs.get()>
-                            <div class="border-t border-slate-700/50 bg-dt-card p-4 max-h-[50vh] overflow-y-auto">
-                                // ログビューア
-                                <LogViewer 
-                                    logs=logs
-                                    visible=show_logs
-                                />
-
-                                // 結果表示
-                                <ResultView 
-                                    result=result
-                                    schema=result_schema
+                    // ページに応じてコンテンツを表示
+                    {move || match current_page.get() {
+                        AppPage::Home => view! {
+                            <HomePage set_current_page=set_current_page />
+                        }.into_any(),
+                        
+                        AppPage::Tools => view! {
+                            // 上部: ツール詳細・オプション
+                            <div class="flex-1 overflow-y-auto">
+                                <ToolDetail 
+                                    config=tool_config
+                                    option_values=option_values
+                                    set_option_values=set_option_values
+                                    trigger_run=set_trigger_run
+                                    running=running
+                                    status=status
                                 />
                             </div>
-                        </Show>
-                    }.into_any(),
-                    
-                    AppPage::MockServer => view! {
-                        <crate::components::MockServerPage />
-                    }.into_any(),
-                    
-                    AppPage::Settings => view! {
-                        <SettingsPage
-                            auth_state=auth_state
-                            set_auth_state=set_auth_state
-                            set_current_page=set_current_page
-                        />
-                    }.into_any(),
-                }}
-            </main>
-        </div>
+
+                            // 下部: 結果表示
+                            <Show when=move || result.get().is_some() || show_logs.get()>
+                                <div class="border-t border-slate-700/50 bg-dt-card p-4 max-h-[50vh] overflow-y-auto">
+                                    // ログビューア
+                                    <LogViewer 
+                                        logs=logs
+                                        visible=show_logs
+                                    />
+
+                                    // 結果表示
+                                    <ResultView 
+                                        result=result
+                                        schema=result_schema
+                                    />
+                                </div>
+                            </Show>
+                        }.into_any(),
+                        
+                        AppPage::MockServer => view! {
+                            <crate::components::MockServerPage />
+                        }.into_any(),
+                        
+                        AppPage::Settings => view! {
+                            <SettingsPage
+                                auth_state=auth_state
+                                set_auth_state=set_auth_state
+                                set_current_page=set_current_page
+                            />
+                        }.into_any(),
+                    }}
+                </main>
+            </div>
+        </NetworkStatusProvider>
     }
 }

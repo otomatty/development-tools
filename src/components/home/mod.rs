@@ -26,6 +26,7 @@ use wasm_bindgen::JsCast;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::components::network_status::use_is_online;
 use crate::tauri_api;
 use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, NotificationMethod, UserSettings, UserStats, SyncResult, XpGainedEvent};
 
@@ -227,6 +228,52 @@ pub fn HomePage(
         
         set_loading.set(false);
     });
+
+    // Online recovery sync - sync when coming back online
+    // This is separate from the interval-based auto-sync
+    {
+        let is_online = use_is_online();
+        
+        // Track previous online state to detect transition
+        Effect::new(move |prev_online: Option<bool>| {
+            let current_online = is_online.get();
+            
+            // Check if we just came back online (was offline, now online)
+            if let Some(was_online) = prev_online {
+                if !was_online && current_online {
+                    web_sys::console::log_1(&"Network: Online recovery detected, triggering sync...".into());
+                    
+                    // Check if user is logged in before syncing
+                    let auth = auth_state.get_untracked();
+                    if auth.is_logged_in {
+                        spawn_local(async move {
+                            match tauri_api::sync_github_stats().await {
+                                Ok(sync_result) => {
+                                    set_user_stats.set(Some(sync_result.user_stats.clone()));
+                                    
+                                    // Handle notifications
+                                    handle_sync_result_notifications(
+                                        &sync_result,
+                                        notification_settings,
+                                        set_xp_event,
+                                        set_level_up_event,
+                                        set_new_badges_event,
+                                    );
+                                    
+                                    web_sys::console::log_1(&format!("Online recovery sync: Completed, XP gained: {}", sync_result.xp_gained).into());
+                                }
+                                Err(e) => {
+                                    web_sys::console::error_1(&format!("Online recovery sync failed: {}", e).into());
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+            
+            current_online
+        });
+    }
 
     // Setup auto-sync timer - interval is determined by user settings
     {
