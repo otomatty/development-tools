@@ -1047,7 +1047,7 @@ pub async fn get_rate_limit_info(
 // Cache Fallback Commands
 // ============================================================================
 
-use crate::database::models::cache::cache_types;
+use crate::database::cache_types;
 
 /// Generic cached response wrapper
 #[derive(Debug, Clone, serde::Serialize)]
