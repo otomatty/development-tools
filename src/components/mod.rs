@@ -1,3 +1,4 @@
+pub mod animated_emoji;
 pub mod animation_context;
 pub mod confirm_dialog;
 pub mod dropdown_menu;
@@ -13,6 +14,7 @@ pub mod sidebar;
 pub mod skeleton;
 pub mod tool_detail;
 
+pub use animated_emoji::{AnimatedEmoji, AnimatedEmojiWithIntensity, EmojiType, AnimationIntensity};
 pub use animation_context::{AnimationContext, use_animation_context, use_animation_context_or_default};
 pub use confirm_dialog::ConfirmDialog;
 pub use dropdown_menu::{DropdownMenu, DropdownMenuItem, DropdownMenuDivider};

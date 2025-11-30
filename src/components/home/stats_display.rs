@@ -4,6 +4,7 @@
 
 use leptos::prelude::*;
 
+use crate::components::{AnimatedEmoji, AnimatedEmojiWithIntensity, EmojiType};
 use crate::types::{GitHubStats, StatsDiffResult, UserStats};
 
 /// Streak milestone thresholds
@@ -137,19 +138,8 @@ fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
     let current_streak = move || user_stats.get().map(|s| s.current_streak).unwrap_or(0);
     let longest_streak = move || user_stats.get().map(|s| s.longest_streak).unwrap_or(0);
     
-    // Flame intensity based on streak
-    let flame_class = move || {
-        let streak = current_streak();
-        if streak >= 30 {
-            "animate-pulse text-orange-500" // Strong flame
-        } else if streak >= 7 {
-            "animate-bounce text-orange-400" // Moderate flame
-        } else if streak > 0 {
-            "text-orange-300" // Small flame
-        } else {
-            "text-slate-500 opacity-50" // No streak
-        }
-    };
+    // Create a signal for the streak value (used by AnimatedEmojiWithIntensity)
+    let streak_signal = Signal::derive(current_streak);
 
     let next_milestone_info = move || {
         let streak = current_streak();
@@ -162,11 +152,15 @@ fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
     view! {
         <div class="p-6 bg-gradient-to-br from-orange-900/30 via-gm-bg-card/80 to-red-900/20 backdrop-blur-sm rounded-2xl border border-orange-500/30 shadow-lg shadow-orange-500/10">
             <div class="flex items-center justify-between">
-                // Left side: Current streak with flame
+                // Left side: Current streak with animated flame
                 <div class="flex items-center gap-4">
-                    <div class=move || format!("text-5xl {}", flame_class())>
-                        "🔥"
-                    </div>
+                    <AnimatedEmojiWithIntensity
+                        emoji=EmojiType::Fire
+                        size="text-5xl"
+                        hover_only=true
+                        value=streak_signal
+                        thresholds=[1, 7, 30]
+                    />
                     <div>
                         <div class="text-4xl font-gaming-mono font-bold text-orange-400">
                             {move || current_streak()}<span class="text-lg text-orange-300/70">" days"</span>
@@ -178,7 +172,11 @@ fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
                 // Right side: Best streak and next milestone
                 <div class="text-right space-y-2">
                     <div class="flex items-center gap-2 justify-end">
-                        <span class="text-badge-gold">"🏆"</span>
+                        <AnimatedEmoji
+                            emoji=EmojiType::Trophy
+                            size="text-badge-gold"
+                            hover_only=true
+                        />
                         <span class="text-lg font-gaming-mono text-badge-gold">{move || longest_streak()}</span>
                         <span class="text-xs text-dt-text-sub">"Best"</span>
                     </div>
