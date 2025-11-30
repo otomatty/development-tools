@@ -182,10 +182,10 @@ pub fn OfflineBanner() -> impl IntoView {
 fn format_timestamp(iso_string: &str) -> String {
     // 簡易的な実装：ISO文字列から日時部分を抽出
     // 例: "2025-11-30T12:34:56.789Z" -> "12:34"
-    if let Some(time_part) = iso_string.split('T').nth(1) {
-        if let Some(hm) = time_part.split(':').take(2).collect::<Vec<_>>().join(":").chars().take(5).collect::<String>().into() {
-            return hm;
-        }
-    }
-    iso_string.to_string()
+    iso_string
+        .split('T')
+        .nth(1)
+        .and_then(|time_part| time_part.get(0..5))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| iso_string.to_string())
 }

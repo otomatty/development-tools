@@ -29,9 +29,9 @@
 pub struct NetworkState {
     /// オンラインかどうか
     pub is_online: bool,
-    /// 最終確認時刻 (RFC3339形式)
+    /// 最終確認時刻 (ISO 8601形式)
     pub last_checked_at: Option<String>,
-    /// 最後にオンラインになった時刻
+    /// 最後にオンラインになった時刻 (ISO 8601形式)
     pub last_online_at: Option<String>,
 }
 ```

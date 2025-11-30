@@ -91,7 +91,7 @@ pub fn ChallengeCard() -> impl IntoView {
                         disabled=move || !is_online.get()
                         title=move || {
                             if is_online.get() {
-                                "Refresh challenges"
+                                "チャレンジを更新"
                             } else {
                                 "オフラインのため更新できません"
                             }

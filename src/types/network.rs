@@ -12,8 +12,21 @@ fn get_current_timestamp() -> String {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        // テスト用：固定の時刻を返す
-        "2025-01-01T00:00:00.000Z".to_string()
+        // 非WASM環境（テスト・LSP解析用）: std::timeから現在時刻を生成
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let duration = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = duration.as_secs();
+        // 簡易的なISO 8601形式（UTC）
+        let days_since_epoch = secs / 86400;
+        let time_of_day = secs % 86400;
+        let hours = time_of_day / 3600;
+        let minutes = (time_of_day % 3600) / 60;
+        let seconds = time_of_day % 60;
+        // 1970-01-01からの日数を年月日に変換（簡易計算）
+        let years = 1970 + (days_since_epoch / 365);
+        format!("{:04}-01-01T{:02}:{:02}:{:02}Z", years, hours, minutes, seconds)
     }
 }
 

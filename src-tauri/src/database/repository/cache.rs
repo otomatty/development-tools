@@ -118,4 +118,63 @@ impl Database {
 
         Ok(result as u64)
     }
+
+    /// Get any cache entry (even if expired) - for offline fallback
+    /// Returns (data_json, fetched_at, expires_at)
+    pub async fn get_any_cache(
+        &self,
+        user_id: i64,
+        data_type: &str,
+    ) -> DbResult<Option<(String, String, String)>> {
+        let result: Option<(String, String, String)> = sqlx::query_as(
+            r#"
+            SELECT data_json, fetched_at, expires_at 
+            FROM activity_cache
+            WHERE user_id = ? AND data_type = ?
+            ORDER BY fetched_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id)
+        .bind(data_type)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    /// Get cache statistics for a user
+    /// Returns (entry_count, expired_count)
+    pub async fn get_cache_stats(&self, user_id: i64) -> DbResult<(u64, u64)> {
+        let now = Utc::now().to_rfc3339();
+        
+        let (entry_count, expired_count): (i64, i64) = sqlx::query_as(
+            r#"
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN expires_at <= ? THEN 1 ELSE 0 END) as expired
+            FROM activity_cache
+            WHERE user_id = ?
+            "#,
+        )
+        .bind(&now)
+        .bind(user_id)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok((entry_count as u64, expired_count as u64))
+    }
+
+    /// Clear all cache for a user
+    pub async fn delete_user_cache(&self, user_id: i64) -> DbResult<u64> {
+        let result = sqlx::query("DELETE FROM activity_cache WHERE user_id = ?")
+            .bind(user_id)
+            .execute(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result.rows_affected())
+    }
 }

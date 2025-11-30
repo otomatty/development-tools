@@ -1048,6 +1048,15 @@ pub async fn get_rate_limit_info(
 // ============================================================================
 
 use crate::database::cache_types;
+use crate::github::client::GitHubError;
+
+/// Check if the error is a network error (should fallback to cache)
+fn is_network_error(error: &GitHubError) -> bool {
+    matches!(
+        error,
+        GitHubError::HttpRequest(_) | GitHubError::RateLimited(_)
+    )
+}
 
 /// Generic cached response wrapper
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1065,8 +1074,9 @@ pub struct CachedResponse<T> {
 
 /// Get GitHub stats with cache fallback
 /// 
-/// Attempts to fetch fresh data from GitHub API. If that fails (e.g., offline),
+/// Attempts to fetch fresh data from GitHub API. If that fails due to network error,
 /// falls back to cached data if available.
+/// Note: Authentication errors do NOT trigger cache fallback for security reasons.
 #[command]
 pub async fn get_github_stats_with_cache(
     state: State<'_, AppState>,
@@ -1084,13 +1094,10 @@ pub async fn get_github_stats_with_cache(
             .token_manager
             .get_access_token()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| GitHubError::ApiError(e.to_string()))?;
 
         let client = GitHubClient::new(token);
-        client
-            .get_user_stats(&user.username)
-            .await
-            .map_err(|e| e.to_string())
+        client.get_user_stats(&user.username).await
     }
     .await;
 
@@ -1117,25 +1124,22 @@ pub async fn get_github_stats_with_cache(
             })
         }
         Err(api_error) => {
-            // API failed - try cache fallback
-            eprintln!("GitHub API failed, attempting cache fallback: {}", api_error);
+            // Check if this is a network error (should fallback) or auth error (should not)
+            if !is_network_error(&api_error) {
+                // Authentication or other API error - do not fallback to cache
+                return Err(format!("GitHub API error: {}", api_error));
+            }
+
+            // Network error - try cache fallback
+            eprintln!("GitHub API network error, attempting cache fallback: {}", api_error);
             
-            // Try to get from cache (even if expired - better than nothing when offline)
-            let cache_result: Option<(String, String, String)> = sqlx::query_as(
-                r#"
-                SELECT data_json, fetched_at, expires_at 
-                FROM activity_cache
-                WHERE user_id = ? AND data_type = ?
-                ORDER BY fetched_at DESC
-                LIMIT 1
-                "#,
-            )
-            .bind(user.id)
-            .bind(cache_types::GITHUB_STATS)
-            .fetch_optional(state.db.pool())
-            .await
-            .ok()
-            .flatten();
+            // Use repository method instead of direct SQL
+            let cache_result = state
+                .db
+                .get_any_cache(user.id, cache_types::GITHUB_STATS)
+                .await
+                .ok()
+                .flatten();
 
             match cache_result {
                 Some((data_json, cached_at, expires_at)) => {
@@ -1151,10 +1155,7 @@ pub async fn get_github_stats_with_cache(
                 }
                 None => {
                     // No cache available
-                    Err(format!(
-                        "オフラインでキャッシュデータがありません。オンライン時に一度データを取得してください。元のエラー: {}",
-                        api_error
-                    ))
+                    Err("オフラインでキャッシュデータがありません。オンライン時に一度データを取得してください。".to_string())
                 }
             }
         }
@@ -1189,7 +1190,7 @@ pub async fn get_user_stats_with_cache(
             
             let _ = state
                 .db
-                .save_cache(user.id, "user_stats", &stats_json, expires_at)
+                .save_cache(user.id, cache_types::USER_STATS, &stats_json, expires_at)
                 .await;
 
             Ok(CachedResponse {
@@ -1204,21 +1205,13 @@ pub async fn get_user_stats_with_cache(
             // Database error - try cache fallback
             eprintln!("Database error, attempting cache fallback: {}", e);
             
-            let cache_result: Option<(String, String, String)> = sqlx::query_as(
-                r#"
-                SELECT data_json, fetched_at, expires_at 
-                FROM activity_cache
-                WHERE user_id = ? AND data_type = ?
-                ORDER BY fetched_at DESC
-                LIMIT 1
-                "#,
-            )
-            .bind(user.id)
-            .bind("user_stats")
-            .fetch_optional(state.db.pool())
-            .await
-            .ok()
-            .flatten();
+            // Use repository method instead of direct SQL
+            let cache_result = state
+                .db
+                .get_any_cache(user.id, cache_types::USER_STATS)
+                .await
+                .ok()
+                .flatten();
 
             match cache_result {
                 Some((data_json, cached_at, expires_at)) => {
@@ -1267,31 +1260,14 @@ pub async fn get_cache_stats(state: State<'_, AppState>) -> Result<CacheStats, S
         .map_err(|e| e.to_string())?
         .ok_or("Not logged in")?;
 
-    // Get cache size
+    // Use repository methods instead of direct SQL
     let total_size = state.db.get_user_cache_size(user.id).await.map_err(|e| e.to_string())?;
-    
-    // Get entry count and expired count
-    let now = chrono::Utc::now().to_rfc3339();
-    
-    let (entry_count, expired_count): (i64, i64) = sqlx::query_as(
-        r#"
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN expires_at <= ? THEN 1 ELSE 0 END) as expired
-        FROM activity_cache
-        WHERE user_id = ?
-        "#,
-    )
-    .bind(&now)
-    .bind(user.id)
-    .fetch_one(state.db.pool())
-    .await
-    .map_err(|e| format!("Failed to get cache stats: {}", e))?;
+    let (entry_count, expired_count) = state.db.get_cache_stats(user.id).await.map_err(|e| e.to_string())?;
 
     Ok(CacheStats {
         total_size_bytes: total_size,
-        entry_count: entry_count as u64,
-        expired_count: expired_count as u64,
+        entry_count,
+        expired_count,
         last_cleanup_at: None, // TODO: track this in a settings table
     })
 }
@@ -1306,15 +1282,12 @@ pub async fn clear_user_cache(state: State<'_, AppState>) -> Result<u64, String>
         .map_err(|e| e.to_string())?
         .ok_or("Not logged in")?;
 
-    let result = sqlx::query("DELETE FROM activity_cache WHERE user_id = ?")
-        .bind(user.id)
-        .execute(state.db.pool())
-        .await
-        .map_err(|e| format!("Failed to clear cache: {}", e))?;
+    // Use repository method instead of direct SQL
+    let deleted = state.db.delete_user_cache(user.id).await.map_err(|e| e.to_string())?;
 
-    eprintln!("Cleared {} cache entries for user {}", result.rows_affected(), user.id);
+    eprintln!("Cleared {} cache entries for user {}", deleted, user.id);
     
-    Ok(result.rows_affected())
+    Ok(deleted)
 }
 
 /// Clear only expired cache entries (cleanup)
