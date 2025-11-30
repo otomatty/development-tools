@@ -47,9 +47,9 @@ CREATE TABLE github_stats_snapshots (
     total_issues INTEGER NOT NULL DEFAULT 0,
     total_stars_received INTEGER NOT NULL DEFAULT 0,
     total_contributions INTEGER NOT NULL DEFAULT 0,
-    snapshot_date TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
+    snapshot_date DATE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(user_id, snapshot_date)
 );
 ```

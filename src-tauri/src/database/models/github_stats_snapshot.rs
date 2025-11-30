@@ -6,8 +6,8 @@
 //! DEPENDENCY MAP:
 //!
 //! Parents (Files that import this model):
-//!   ├─ src-tauri/src/database/repository/github_stats_snapshot.rs (planned)
-//!   └─ src-tauri/src/commands/github.rs (planned)
+//!   ├─ src-tauri/src/database/repository/github_stats_snapshot.rs
+//!   └─ src-tauri/src/commands/github.rs
 //! Related Documentation:
 //!   ├─ Spec: ./github_stats_snapshot.spec.md
 //!   └─ Issue: docs/01_issues/open/2025_11/20251129_02_github-stats-daily-comparison.md

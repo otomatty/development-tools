@@ -5,7 +5,8 @@
 - Implementation: `src-tauri/src/database/models/github_stats_snapshot.rs`
 - Migration: `src-tauri/src/database/migrations.rs` (version 6)
 - Repository: `src-tauri/src/database/repository/github_stats_snapshot.rs`
-- Tests: `src-tauri/src/database/repository/tests.rs` (snapshot tests)
+- Model Tests: `src-tauri/src/database/models/github_stats_snapshot.rs` (tests module)
+- Repository Tests: `src-tauri/src/database/repository/github_stats_snapshot.rs` (tests module)
 
 ## Related Documentation
 
@@ -53,7 +54,7 @@
 
 #### GitHubStatsSnapshot
 
-- `from_github_stats(user_id, stats, date)`: GitHubStats からスナップショットを作成
+- `new(user_id, total_commits, total_prs, total_reviews, total_issues, total_stars_received, total_contributions, snapshot_date)`: 各統計値からスナップショットを作成
 - `calculate_diff(previous)`: 前のスナップショットとの差分を計算
 
 #### StatsDiff
@@ -64,10 +65,10 @@
 
 ## Test Cases
 
-### TC-001: GitHubStatsSnapshot from_github_stats
+### TC-001: GitHubStatsSnapshot new
 
-- **Given**: GitHubStats と user_id、日付
-- **When**: `from_github_stats(user_id, stats, date)` を実行
+- **Given**: user_id、各統計値、日付
+- **When**: `GitHubStatsSnapshot::new(...)` を実行
 - **Then**: 正しい値でスナップショットが作成される
 
 ### TC-002: calculate_diff with previous snapshot

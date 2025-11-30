@@ -6,7 +6,7 @@
 //! DEPENDENCY MAP:
 //!
 //! Parents (Files that import this repository):
-//!   └─ src-tauri/src/commands/github.rs (planned)
+//!   └─ src-tauri/src/commands/github.rs
 //! Dependencies (Files this repository imports):
 //!   └─ src-tauri/src/database/models/github_stats_snapshot.rs
 //! Related Documentation:
@@ -25,14 +25,7 @@ impl Database {
     /// or updates the existing one if it does.
     pub async fn save_github_stats_snapshot(
         &self,
-        user_id: i64,
-        total_commits: i32,
-        total_prs: i32,
-        total_reviews: i32,
-        total_issues: i32,
-        total_stars_received: i32,
-        total_contributions: i32,
-        snapshot_date: &str,
+        snapshot: &GitHubStatsSnapshot,
     ) -> DbResult<()> {
         sqlx::query(
             r#"
@@ -50,14 +43,14 @@ impl Database {
                 total_contributions = excluded.total_contributions
             "#,
         )
-        .bind(user_id)
-        .bind(total_commits)
-        .bind(total_prs)
-        .bind(total_reviews)
-        .bind(total_issues)
-        .bind(total_stars_received)
-        .bind(total_contributions)
-        .bind(snapshot_date)
+        .bind(snapshot.user_id)
+        .bind(snapshot.total_commits)
+        .bind(snapshot.total_prs)
+        .bind(snapshot.total_reviews)
+        .bind(snapshot.total_issues)
+        .bind(snapshot.total_stars_received)
+        .bind(snapshot.total_contributions)
+        .bind(&snapshot.snapshot_date)
         .execute(self.pool())
         .await?;
 
@@ -142,8 +135,8 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::database::connection::Database;
+    use crate::database::models::github_stats_snapshot::GitHubStatsSnapshot;
 
     async fn setup_test_db() -> Database {
         let db = Database::in_memory().await.expect("Failed to create test database");
@@ -156,34 +149,28 @@ mod tests {
         db
     }
 
+    fn create_snapshot(user_id: i64, commits: i32, prs: i32, reviews: i32, issues: i32, stars: i32, contributions: i32, date: &str) -> GitHubStatsSnapshot {
+        GitHubStatsSnapshot::new(user_id, commits, prs, reviews, issues, stars, contributions, date)
+    }
+
     // TC-101: Save new snapshot
     #[tokio::test]
     async fn test_save_new_snapshot() {
         let db = setup_test_db().await;
+        let snapshot = create_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30");
 
-        let result = db
-            .save_github_stats_snapshot(
-                1,    // user_id
-                100,  // commits
-                20,   // prs
-                30,   // reviews
-                15,   // issues
-                50,   // stars
-                200,  // contributions
-                "2025-11-30",
-            )
-            .await;
+        let result = db.save_github_stats_snapshot(&snapshot).await;
 
         assert!(result.is_ok(), "Should save snapshot successfully");
 
         // Verify the snapshot was saved
-        let snapshot = db
+        let saved = db
             .get_github_stats_snapshot_for_date(1, "2025-11-30")
             .await
             .expect("Should query snapshot");
 
-        assert!(snapshot.is_some(), "Snapshot should exist");
-        let s = snapshot.unwrap();
+        assert!(saved.is_some(), "Snapshot should exist");
+        let s = saved.unwrap();
         assert_eq!(s.total_commits, 100);
         assert_eq!(s.total_prs, 20);
         assert_eq!(s.total_reviews, 30);
@@ -198,12 +185,14 @@ mod tests {
         let db = setup_test_db().await;
 
         // Save initial snapshot
-        db.save_github_stats_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30")
+        let initial = create_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30");
+        db.save_github_stats_snapshot(&initial)
             .await
             .expect("Should save initial snapshot");
 
         // Update with new values
-        db.save_github_stats_snapshot(1, 110, 22, 35, 18, 55, 220, "2025-11-30")
+        let updated = create_snapshot(1, 110, 22, 35, 18, 55, 220, "2025-11-30");
+        db.save_github_stats_snapshot(&updated)
             .await
             .expect("Should update snapshot");
 
@@ -228,15 +217,18 @@ mod tests {
         let db = setup_test_db().await;
 
         // Save snapshots for multiple days
-        db.save_github_stats_snapshot(1, 90, 18, 25, 12, 45, 180, "2025-11-28")
+        let snap1 = create_snapshot(1, 90, 18, 25, 12, 45, 180, "2025-11-28");
+        db.save_github_stats_snapshot(&snap1)
             .await
             .expect("Should save first snapshot");
 
-        db.save_github_stats_snapshot(1, 95, 19, 27, 14, 47, 190, "2025-11-29")
+        let snap2 = create_snapshot(1, 95, 19, 27, 14, 47, 190, "2025-11-29");
+        db.save_github_stats_snapshot(&snap2)
             .await
             .expect("Should save second snapshot");
 
-        db.save_github_stats_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30")
+        let snap3 = create_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30");
+        db.save_github_stats_snapshot(&snap3)
             .await
             .expect("Should save third snapshot");
 
@@ -257,7 +249,8 @@ mod tests {
         let db = setup_test_db().await;
 
         // Save only one snapshot
-        db.save_github_stats_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30")
+        let snapshot = create_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30");
+        db.save_github_stats_snapshot(&snapshot)
             .await
             .expect("Should save snapshot");
 
@@ -294,11 +287,13 @@ mod tests {
             .expect("Failed to create second user");
 
         // Save snapshots for both users on same date
-        db.save_github_stats_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30")
+        let user1_snap = create_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30");
+        db.save_github_stats_snapshot(&user1_snap)
             .await
             .expect("Should save user 1 snapshot");
 
-        db.save_github_stats_snapshot(2, 50, 10, 15, 7, 25, 100, "2025-11-30")
+        let user2_snap = create_snapshot(2, 50, 10, 15, 7, 25, 100, "2025-11-30");
+        db.save_github_stats_snapshot(&user2_snap)
             .await
             .expect("Should save user 2 snapshot");
 

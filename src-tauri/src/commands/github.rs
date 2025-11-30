@@ -93,6 +93,20 @@ pub struct StatsDiffResult {
     pub comparison_date: Option<String>,
 }
 
+impl From<crate::database::StatsDiff> for StatsDiffResult {
+    fn from(diff: crate::database::StatsDiff) -> Self {
+        Self {
+            commits_diff: diff.commits_diff,
+            prs_diff: diff.prs_diff,
+            reviews_diff: diff.reviews_diff,
+            issues_diff: diff.issues_diff,
+            stars_diff: diff.stars_diff,
+            contributions_diff: diff.contributions_diff,
+            comparison_date: diff.comparison_date,
+        }
+    }
+}
+
 /// Information about newly earned badge
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -711,7 +725,7 @@ pub async fn sync_github_stats(
             .await
             .map_err(|e| e.to_string())?;
 
-        // Create current snapshot for diff calculation
+        // Create current snapshot for diff calculation and saving
         let current_snapshot = GitHubStatsSnapshot::new(
             user.id,
             github_stats.total_commits,
@@ -724,35 +738,14 @@ pub async fn sync_github_stats(
         );
 
         // Save current snapshot (UPSERT)
-        if let Err(e) = state
-            .db
-            .save_github_stats_snapshot(
-                user.id,
-                github_stats.total_commits,
-                github_stats.total_prs,
-                github_stats.total_reviews,
-                github_stats.total_issues,
-                github_stats.total_stars_received,
-                github_stats.total_contributions,
-                &today,
-            )
-            .await
-        {
+        if let Err(e) = state.db.save_github_stats_snapshot(&current_snapshot).await {
             eprintln!("Failed to save github stats snapshot: {}", e);
         }
 
-        // Calculate diff and convert to StatsDiffResult
+        // Calculate diff and convert to StatsDiffResult using From trait
         let diff = current_snapshot.calculate_diff(previous_snapshot.as_ref());
         if diff.comparison_date.is_some() {
-            Some(StatsDiffResult {
-                commits_diff: diff.commits_diff,
-                prs_diff: diff.prs_diff,
-                reviews_diff: diff.reviews_diff,
-                issues_diff: diff.issues_diff,
-                stars_diff: diff.stars_diff,
-                contributions_diff: diff.contributions_diff,
-                comparison_date: diff.comparison_date,
-            })
+            Some(diff.into())
         } else {
             None
         }
