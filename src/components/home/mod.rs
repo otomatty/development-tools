@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::components::network_status::use_is_online;
 use crate::tauri_api;
-use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, NotificationMethod, UserSettings, UserStats, SyncResult, XpGainedEvent};
+use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, NotificationMethod, StatsDiffResult, UserSettings, UserStats, SyncResult, XpGainedEvent};
 
 /// Handle sync result notifications
 /// 
@@ -126,6 +126,9 @@ pub fn HomePage(
     let (badge_definitions, set_badge_definitions) = signal(Vec::<BadgeDefinition>::new());
     let (error, set_error) = signal(Option::<String>::None);
     
+    // Stats diff for day-over-day comparison
+    let (stats_diff, set_stats_diff) = signal(Option::<StatsDiffResult>::None);
+    
     // Cache status tracking
     let (data_from_cache, set_data_from_cache) = signal(false);
     let (cache_timestamp, set_cache_timestamp) = signal(Option::<String>::None);
@@ -186,6 +189,7 @@ pub fn HomePage(
                                 match tauri_api::sync_github_stats().await {
                                     Ok(sync_result) => {
                                         set_user_stats.set(Some(sync_result.user_stats.clone()));
+                                        set_stats_diff.set(sync_result.stats_diff.clone());
                                         
                                         // Handle notifications to provide consistent UX with other syncs
                                         handle_sync_result_notifications(
@@ -256,6 +260,7 @@ pub fn HomePage(
                             match tauri_api::sync_github_stats().await {
                                 Ok(sync_result) => {
                                     set_user_stats.set(Some(sync_result.user_stats.clone()));
+                                    set_stats_diff.set(sync_result.stats_diff.clone());
                                     
                                     // Clear cache indicator - we have fresh data now
                                     set_data_from_cache.set(false);
@@ -366,6 +371,7 @@ pub fn HomePage(
                         match tauri_api::sync_github_stats().await {
                             Ok(sync_result) => {
                                 set_user_stats.set(Some(sync_result.user_stats.clone()));
+                                set_stats_diff.set(sync_result.stats_diff.clone());
                                 
                                 // Handle notifications based on sync result
                                 handle_sync_result_notifications(
@@ -644,6 +650,7 @@ pub fn HomePage(
                             <StatsDisplay
                                 github_stats=github_stats
                                 user_stats=user_stats
+                                stats_diff=stats_diff
                             />
 
                             // Challenges

@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::types::{GitHubStats, UserStats};
+use crate::types::{GitHubStats, StatsDiffResult, UserStats};
 
 /// Streak milestone thresholds
 const STREAK_MILESTONES: &[(i32, &str)] = &[
@@ -28,7 +28,14 @@ fn get_next_milestone(current_streak: i32) -> Option<(i32, &'static str)> {
 pub fn StatsDisplay(
     github_stats: ReadSignal<Option<GitHubStats>>,
     user_stats: ReadSignal<Option<UserStats>>,
+    /// Optional day-over-day stats difference
+    #[prop(optional)] stats_diff: Option<ReadSignal<Option<StatsDiffResult>>>,
 ) -> impl IntoView {
+    // Create unified diff signals - returns None when no stats_diff or when diff is None
+    let get_diff = move |field: fn(&StatsDiffResult) -> i32| -> Option<i32> {
+        stats_diff?.get().map(|d| field(&d))
+    };
+
     view! {
         <div class="space-y-6">
             // Streak Section - Prominent display
@@ -51,6 +58,7 @@ pub fn StatsDisplay(
                                 .unwrap_or_else(|| "-".to_string())
                         })
                         color="cyan"
+                        diff=Signal::derive(move || get_diff(|d| d.commits_diff))
                     />
 
                     // Pull Requests
@@ -63,6 +71,7 @@ pub fn StatsDisplay(
                                 .unwrap_or_else(|| "-".to_string())
                         })
                         color="purple"
+                        diff=Signal::derive(move || get_diff(|d| d.prs_diff))
                     />
 
                     // Reviews
@@ -75,6 +84,7 @@ pub fn StatsDisplay(
                                 .unwrap_or_else(|| "-".to_string())
                         })
                         color="pink"
+                        diff=Signal::derive(move || get_diff(|d| d.reviews_diff))
                     />
 
                     // Issues
@@ -87,6 +97,7 @@ pub fn StatsDisplay(
                                 .unwrap_or_else(|| "-".to_string())
                         })
                         color="green"
+                        diff=Signal::derive(move || get_diff(|d| d.issues_diff))
                     />
 
                     // Stars
@@ -99,9 +110,10 @@ pub fn StatsDisplay(
                                 .unwrap_or_else(|| "-".to_string())
                         })
                         color="gold"
+                        diff=Signal::derive(move || get_diff(|d| d.stars_diff))
                     />
 
-                    // Languages
+                    // Languages (no diff for this)
                     <StatCard
                         icon="🌍"
                         label="Languages"
@@ -111,6 +123,7 @@ pub fn StatsDisplay(
                                 .unwrap_or_else(|| "-".to_string())
                         })
                         color="cyan"
+                        diff=Signal::derive(|| None)
                     />
                 </div>
             </div>
@@ -220,13 +233,15 @@ fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
     }
 }
 
-/// Individual stat card
+/// Individual stat card with optional day-over-day diff
 #[component]
 fn StatCard(
     icon: &'static str,
     label: &'static str,
     #[prop(into)] value: Signal<String>,
     color: &'static str,
+    /// Day-over-day difference (None if no diff available)
+    #[prop(into)] diff: Signal<Option<i32>>,
 ) -> impl IntoView {
     let color_class = match color {
         "cyan" => "text-gm-accent-cyan",
@@ -238,13 +253,39 @@ fn StatCard(
         _ => "text-dt-text",
     };
 
+    // Diff display component
+    let diff_view = move || {
+        let diff_value = diff.get();
+        match diff_value {
+            Some(d) if d > 0 => view! {
+                <span class="text-xs font-bold text-gm-success flex items-center gap-0.5">
+                    "↑" {d}
+                </span>
+            }.into_any(),
+            Some(d) if d < 0 => view! {
+                <span class="text-xs font-bold text-gm-error flex items-center gap-0.5">
+                    "↓" {d.abs()}
+                </span>
+            }.into_any(),
+            Some(_) => view! {
+                <span class="text-xs text-slate-500 flex items-center gap-0.5">
+                    "→" "0"
+                </span>
+            }.into_any(),
+            None => view! {}.into_any(),
+        }
+    };
+
     view! {
         <div class="p-4 bg-gm-bg-secondary/50 rounded-xl border border-slate-700/30 hover:border-gm-accent-cyan/30 transition-all duration-200">
             <div class="flex items-center gap-3">
                 <span class="text-2xl">{icon}</span>
-                <div>
-                    <div class=format!("text-xl font-gaming-mono font-bold {}", color_class)>
-                        {move || value.get()}
+                <div class="flex-1">
+                    <div class="flex items-center gap-2">
+                        <div class=format!("text-xl font-gaming-mono font-bold {}", color_class)>
+                            {move || value.get()}
+                        </div>
+                        {diff_view}
                     </div>
                     <div class="text-xs text-dt-text-sub">{label}</div>
                 </div>

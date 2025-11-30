@@ -233,6 +233,28 @@ pub struct SyncResult {
     pub xp_breakdown: XpBreakdown,
     pub streak_bonus: StreakBonusInfo,
     pub new_badges: Vec<NewBadgeInfo>,
+    /// 前日比の統計差分（初回同期時はNone）
+    pub stats_diff: Option<StatsDiffResult>,
+}
+
+/// 前日比の統計差分
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsDiffResult {
+    /// コミット数の差分
+    pub commits_diff: i32,
+    /// PR数の差分
+    pub prs_diff: i32,
+    /// レビュー数の差分
+    pub reviews_diff: i32,
+    /// Issue数の差分
+    pub issues_diff: i32,
+    /// スター獲得数の差分
+    pub stars_diff: i32,
+    /// コントリビューション数の差分
+    pub contributions_diff: i32,
+    /// 比較対象の日付（YYYY-MM-DD形式）
+    pub comparison_date: Option<String>,
 }
 
 /// 新しく獲得したバッジ情報
