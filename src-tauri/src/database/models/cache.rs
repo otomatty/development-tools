@@ -31,6 +31,7 @@ impl ActivityCache {
 pub mod cache_types {
     pub const CONTRIBUTION_GRAPH: &str = "contribution_graph";
     pub const GITHUB_STATS: &str = "github_stats";
+    pub const USER_STATS: &str = "user_stats";
     pub const REPOSITORIES: &str = "repositories";
     pub const LANGUAGES: &str = "languages";
 }

@@ -6,8 +6,9 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
+use crate::components::network_status::use_is_online;
 use crate::tauri_api;
-use crate::types::DatabaseInfo;
+use crate::types::{CacheStats, DatabaseInfo};
 
 /// Helper to refresh database info and handle errors
 /// Returns Ok(info) on success, Err(error_message) on failure
@@ -166,13 +167,18 @@ fn ResetConfirmDialog(
 #[component]
 pub fn DataManagement() -> impl IntoView {
     let (db_info, set_db_info) = signal(Option::<DatabaseInfo>::None);
+    let (cache_stats, set_cache_stats) = signal(Option::<CacheStats>::None);
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(None::<String>);
     let (success_message, set_success_message) = signal(None::<String>);
     let (clearing_cache, set_clearing_cache) = signal(false);
+    let (cleaning_expired, set_cleaning_expired) = signal(false);
     let (exporting, set_exporting) = signal(false);
     let (resetting, set_resetting) = signal(false);
     let (show_reset_dialog, set_show_reset_dialog) = signal(false);
+    
+    // Network status for offline detection
+    let is_online = use_is_online();
     
     // Store timeout handle for success message cleanup
     let (success_msg_handle, set_success_msg_handle) = signal(Option::<i32>::None);
@@ -221,7 +227,11 @@ pub fn DataManagement() -> impl IntoView {
         set_error.set(None);
         
         spawn_local(async move {
-            match tauri_api::get_database_info().await {
+            // Fetch both database info and cache stats in parallel
+            let db_result = tauri_api::get_database_info().await;
+            let cache_result = tauri_api::get_cache_stats().await;
+            
+            match db_result {
                 Ok(info) => {
                     set_db_info.set(Some(info));
                 }
@@ -229,6 +239,12 @@ pub fn DataManagement() -> impl IntoView {
                     set_error.set(Some(format!("データベース情報の取得に失敗しました: {}", e)));
                 }
             }
+            
+            // Cache stats - don't show error if not logged in
+            if let Ok(stats) = cache_result {
+                set_cache_stats.set(Some(stats));
+            }
+            
             set_loading.set(false);
             set_initial_load_complete.set(true);
         });
@@ -253,12 +269,53 @@ pub fn DataManagement() -> impl IntoView {
                         Ok(info) => set_db_info.set(Some(info)),
                         Err(e) => set_error.set(Some(e)),
                     }
+                    
+                    // Also refresh cache stats
+                    if let Ok(stats) = tauri_api::get_cache_stats().await {
+                        set_cache_stats.set(Some(stats));
+                    }
                 }
                 Err(e) => {
                     set_error.set(Some(format!("キャッシュのクリアに失敗しました: {}", e)));
                 }
             }
             set_clearing_cache.set(false);
+        });
+    };
+    
+    // Cleanup expired cache handler
+    let on_cleanup_expired = move |_| {
+        set_cleaning_expired.set(true);
+        set_error.set(None);
+        
+        spawn_local(async move {
+            match tauri_api::cleanup_expired_cache().await {
+                Ok(deleted_count) => {
+                    if deleted_count > 0 {
+                        show_success(format!(
+                            "期限切れキャッシュをクリーンアップしました（{}エントリ削除）",
+                            deleted_count
+                        ));
+                    } else {
+                        show_success("期限切れのキャッシュはありませんでした".to_string());
+                    }
+                    
+                    // Refresh database info
+                    match refresh_database_info("キャッシュクリーンアップ").await {
+                        Ok(info) => set_db_info.set(Some(info)),
+                        Err(e) => set_error.set(Some(e)),
+                    }
+                    
+                    // Also refresh cache stats
+                    if let Ok(stats) = tauri_api::get_cache_stats().await {
+                        set_cache_stats.set(Some(stats));
+                    }
+                }
+                Err(e) => {
+                    set_error.set(Some(format!("クリーンアップに失敗しました: {}", e)));
+                }
+            }
+            set_cleaning_expired.set(false);
         });
     };
     
@@ -384,38 +441,123 @@ pub fn DataManagement() -> impl IntoView {
             <Show when=move || !loading.get()>
                 // Cache section
                 <div class="space-y-3">
-                    <h3 class="text-lg font-gaming font-bold text-white">
-                        "キャッシュ"
+                    <h3 class="text-lg font-gaming font-bold text-white flex items-center gap-2">
+                        "📦 キャッシュ管理"
+                        // Offline indicator
+                        <Show when=move || !is_online.get()>
+                            <span class="text-xs px-2 py-0.5 bg-gm-warning/20 text-gm-warning rounded-full border border-gm-warning/30">
+                                "オフライン"
+                            </span>
+                        </Show>
                     </h3>
+                    
+                    // Cache statistics card
                     <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-gm-accent-cyan/10 flex items-center justify-center border border-gm-accent-cyan/20">
-                                    <span class="text-xl">"📦"</span>
+                        // Statistics grid
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            // Total size
+                            <div class="p-3 bg-gm-bg-primary/50 rounded-lg border border-gm-accent-cyan/10">
+                                <div class="text-dt-text-sub text-xs mb-1">"総サイズ"</div>
+                                <div class="text-gm-accent-cyan font-gaming text-lg">
+                                    {move || cache_stats.get().map(|s| format_bytes(s.total_size_bytes)).unwrap_or_else(|| db_info.get().map(|i| format_bytes(i.cache_size_bytes)).unwrap_or_else(|| "--".to_string()))}
                                 </div>
-                                <div>
-                                    <span class="text-white font-gaming font-bold block">
-                                        "キャッシュサイズ"
-                                    </span>
-                                    <span class="text-gm-accent-cyan font-gaming text-lg">
-                                        {move || db_info.get().map(|i| format_bytes(i.cache_size_bytes)).unwrap_or_else(|| "不明".to_string())}
-                                    </span>
+                            </div>
+                            
+                            // Entry count
+                            <div class="p-3 bg-gm-bg-primary/50 rounded-lg border border-gm-accent-cyan/10">
+                                <div class="text-dt-text-sub text-xs mb-1">"エントリ数"</div>
+                                <div class="text-gm-accent-purple font-gaming text-lg">
+                                    {move || cache_stats.get().map(|s| format!("{}", s.entry_count)).unwrap_or_else(|| "--".to_string())}
+                                </div>
+                            </div>
+                            
+                            // Expired count
+                            <div class="p-3 bg-gm-bg-primary/50 rounded-lg border border-gm-accent-cyan/10">
+                                <div class="text-dt-text-sub text-xs mb-1">"期限切れ"</div>
+                                <div class=move || {
+                                    let expired = cache_stats.get().map(|s| s.expired_count).unwrap_or(0);
+                                    if expired > 0 {
+                                        "text-gm-warning font-gaming text-lg"
+                                    } else {
+                                        "text-gm-success font-gaming text-lg"
+                                    }
+                                }>
+                                    {move || cache_stats.get().map(|s| format!("{}", s.expired_count)).unwrap_or_else(|| "--".to_string())}
+                                </div>
+                            </div>
+                            
+                            // Status indicator
+                            <div class="p-3 bg-gm-bg-primary/50 rounded-lg border border-gm-accent-cyan/10">
+                                <div class="text-dt-text-sub text-xs mb-1">"ステータス"</div>
+                                <div class=move || {
+                                    if !is_online.get() {
+                                        "text-gm-warning font-gaming text-sm"
+                                    } else {
+                                        "text-gm-success font-gaming text-sm"
+                                    }
+                                }>
+                                    {move || {
+                                        if !is_online.get() {
+                                            "⚠️ オフライン"
+                                        } else {
+                                            "✅ オンライン"
+                                        }
+                                    }}
                                 </div>
                             </div>
                         </div>
-                        <button
-                            class="w-full px-4 py-3 bg-amber-600/80 hover:bg-amber-500 rounded-lg text-white font-gaming font-bold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-amber-500/30 hover:shadow-[0_0_15px_rgba(251,191,36,0.3)]"
-                            on:click=on_clear_cache
-                            disabled=move || clearing_cache.get()
-                            aria-busy=move || clearing_cache.get().to_string()
-                        >
-                            <span class=move || if clearing_cache.get() { "animate-spin" } else { "" }>
-                                "🗑️"
-                            </span>
-                            {move || if clearing_cache.get() { "クリア中..." } else { "キャッシュをクリア" }}
-                        </button>
-                        <p class="mt-2 text-xs text-dt-text-sub">
-                            "コントリビューショングラフなどのキャッシュを削除します"
+                        
+                        // Action buttons
+                        <div class="space-y-2">
+                            // Cleanup expired cache button
+                            <button
+                                class=move || {
+                                    let expired = cache_stats.get().map(|s| s.expired_count).unwrap_or(0);
+                                    if expired > 0 {
+                                        "w-full px-4 py-3 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-lg text-white font-gaming font-bold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:opacity-90"
+                                    } else {
+                                        "w-full px-4 py-3 bg-gm-bg-secondary rounded-lg text-dt-text-sub font-gaming font-bold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-gm-accent-cyan/20"
+                                    }
+                                }
+                                on:click=on_cleanup_expired
+                                disabled=move || cleaning_expired.get() || cache_stats.get().map(|s| s.expired_count).unwrap_or(0) == 0
+                                aria-busy=move || cleaning_expired.get().to_string()
+                            >
+                                <span class=move || if cleaning_expired.get() { "animate-spin" } else { "" }>
+                                    "🧹"
+                                </span>
+                                {move || {
+                                    if cleaning_expired.get() {
+                                        "クリーンアップ中...".to_string()
+                                    } else {
+                                        let expired = cache_stats.get().map(|s| s.expired_count).unwrap_or(0);
+                                        if expired > 0 {
+                                            format!("期限切れをクリーンアップ ({}件)", expired)
+                                        } else {
+                                            "期限切れなし".to_string()
+                                        }
+                                    }
+                                }}
+                            </button>
+                            
+                            // Clear all cache button
+                            <button
+                                class="w-full px-4 py-3 bg-amber-600/80 hover:bg-amber-500 rounded-lg text-white font-gaming font-bold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-amber-500/30 hover:shadow-[0_0_15px_rgba(251,191,36,0.3)]"
+                                on:click=on_clear_cache
+                                disabled=move || clearing_cache.get() || cache_stats.get().map(|s| s.entry_count).unwrap_or(0) == 0
+                                aria-busy=move || clearing_cache.get().to_string()
+                            >
+                                <span class=move || if clearing_cache.get() { "animate-spin" } else { "" }>
+                                    "🗑️"
+                                </span>
+                                {move || if clearing_cache.get() { "クリア中..." } else { "すべてのキャッシュをクリア" }}
+                            </button>
+                        </div>
+                        
+                        <p class="mt-3 text-xs text-dt-text-sub">
+                            "キャッシュはオフライン時にデータを表示するために使用されます。"
+                            <br/>
+                            "期限切れのキャッシュはアプリ起動時に自動でクリーンアップされます。"
                         </p>
                     </div>
                 </div>
