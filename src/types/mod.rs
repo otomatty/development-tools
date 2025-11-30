@@ -7,6 +7,7 @@ mod auth;
 mod challenge;
 mod gamification;
 mod mock_server;
+mod network;
 mod settings;
 mod tool;
 
@@ -15,6 +16,7 @@ pub use auth::*;
 pub use challenge::*;
 pub use gamification::*;
 pub use mock_server::*;
+pub use network::*;
 pub use settings::*;
 pub use tool::*;
 

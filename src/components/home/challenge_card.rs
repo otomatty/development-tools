@@ -1,16 +1,32 @@
 //! Challenge card component
 //!
 //! Displays active challenges with progress bars and completion status.
+//!
+//! DEPENDENCY MAP:
+//!
+//! Parents (Files that import this component):
+//!   └─ src/components/home/mod.rs
+//!
+//! Dependencies (Files this module imports):
+//!   └─ src/components/network_status.rs (use_is_online)
+//!
+//! Related Documentation:
+//!   ├─ Spec: (TODO: create challenge_card.spec.md)
+//!   └─ Issue: GitHub Issue #10 (Phase 5: Offline Support)
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use crate::components::network_status::use_is_online;
 use crate::tauri_api;
 use crate::types::ChallengeInfo;
 
 /// Challenge card component - displays a list of active challenges
 #[component]
 pub fn ChallengeCard() -> impl IntoView {
+    // Network status
+    let is_online = use_is_online();
+    
     // Signals for challenges
     let (challenges, set_challenges) = signal::<Vec<ChallengeInfo>>(Vec::new());
     let (loading, set_loading) = signal(true);
@@ -34,8 +50,11 @@ pub fn ChallengeCard() -> impl IntoView {
         });
     });
 
-    // Reload challenges function
+    // Reload challenges function - only works when online
     let reload_challenges = move || {
+        if !is_online.get_untracked() {
+            return;
+        }
         spawn_local(async move {
             match tauri_api::get_active_challenges().await {
                 Ok(c) => {
@@ -55,17 +74,41 @@ pub fn ChallengeCard() -> impl IntoView {
                 <h3 class="text-xl font-gaming font-bold text-gm-accent-gold">
                     "🎯 Challenges"
                 </h3>
-                <button
-                    class="p-2 rounded-lg bg-gm-bg-secondary/50 hover:bg-gm-bg-secondary 
-                           text-gm-text-secondary hover:text-gm-text-primary
-                           transition-all duration-200"
-                    on:click=move |_| reload_challenges()
-                    title="Refresh challenges"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                </button>
+                <div class="relative group">
+                    <button
+                        class=move || {
+                            let online = is_online.get();
+                            format!(
+                                "p-2 rounded-lg transition-all duration-200 {}",
+                                if online {
+                                    "bg-gm-bg-secondary/50 hover:bg-gm-bg-secondary text-gm-text-secondary hover:text-gm-text-primary"
+                                } else {
+                                    "bg-gm-bg-secondary/30 text-gm-text-muted cursor-not-allowed"
+                                }
+                            )
+                        }
+                        on:click=move |_| reload_challenges()
+                        disabled=move || !is_online.get()
+                        title=move || {
+                            if is_online.get() {
+                                "チャレンジを更新"
+                            } else {
+                                "オフラインのため更新できません"
+                            }
+                        }
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                    
+                    // Offline tooltip
+                    <Show when=move || !is_online.get()>
+                        <div class="absolute -bottom-10 right-0 px-3 py-1.5 bg-gm-bg-dark/95 text-gm-warning text-xs rounded-lg border border-gm-warning/30 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+                            "⚠️ オフライン"
+                        </div>
+                    </Show>
+                </div>
             </div>
 
             // Loading state

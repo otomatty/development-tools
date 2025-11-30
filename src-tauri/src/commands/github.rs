@@ -1043,3 +1043,264 @@ pub async fn get_rate_limit_info(
         .map_err(|e| e.to_string())
 }
 
+// ============================================================================
+// Cache Fallback Commands
+// ============================================================================
+
+use crate::database::cache_types;
+use crate::github::client::GitHubError;
+
+/// Check if the error is a network error (should fallback to cache)
+fn is_network_error(error: &GitHubError) -> bool {
+    matches!(
+        error,
+        GitHubError::HttpRequest(_) | GitHubError::RateLimited(_)
+    )
+}
+
+/// Generic cached response wrapper
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedResponse<T> {
+    /// The actual data
+    pub data: T,
+    /// Whether the data was retrieved from cache
+    pub from_cache: bool,
+    /// When the data was cached (ISO8601 format)
+    pub cached_at: Option<String>,
+    /// When the cache expires (ISO8601 format)  
+    pub expires_at: Option<String>,
+}
+
+/// Get GitHub stats with cache fallback
+/// 
+/// Attempts to fetch fresh data from GitHub API. If that fails due to network error,
+/// falls back to cached data if available.
+/// Note: Authentication errors do NOT trigger cache fallback for security reasons.
+#[command]
+pub async fn get_github_stats_with_cache(
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<GitHubStats>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // Try to get fresh data from API
+    let api_result = async {
+        let token = state
+            .token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| GitHubError::ApiError(e.to_string()))?;
+
+        let client = GitHubClient::new(token);
+        client.get_user_stats(&user.username).await
+    }
+    .await;
+
+    match api_result {
+        Ok(stats) => {
+            // API succeeded - cache the data
+            let stats_json = serde_json::to_string(&stats)
+                .map_err(|e| format!("Failed to serialize stats: {}", e))?;
+            
+            let now = chrono::Utc::now();
+            let expires_at = now + chrono::Duration::minutes(30);
+            
+            // Save to cache (ignore errors - caching is best effort)
+            let _ = state
+                .db
+                .save_cache(user.id, cache_types::GITHUB_STATS, &stats_json, expires_at)
+                .await;
+
+            Ok(CachedResponse {
+                data: stats,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Err(api_error) => {
+            // Check if this is a network error (should fallback) or auth error (should not)
+            if !is_network_error(&api_error) {
+                // Authentication or other API error - do not fallback to cache
+                return Err(format!("GitHub API error: {}", api_error));
+            }
+
+            // Network error - try cache fallback
+            eprintln!("GitHub API network error, attempting cache fallback: {}", api_error);
+            
+            // Use repository method instead of direct SQL
+            let cache_result = state
+                .db
+                .get_any_cache(user.id, cache_types::GITHUB_STATS)
+                .await
+                .ok()
+                .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let stats: GitHubStats = serde_json::from_str(&data_json)
+                        .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    
+                    Ok(CachedResponse {
+                        data: stats,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => {
+                    // No cache available
+                    Err("オフラインでキャッシュデータがありません。オンライン時に一度データを取得してください。".to_string())
+                }
+            }
+        }
+    }
+}
+
+/// Get user stats with cache fallback
+/// 
+/// Attempts to fetch user stats from database. If that fails,
+/// falls back to cached data if available.
+#[command]
+pub async fn get_user_stats_with_cache(
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<UserStats>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // User stats are stored locally, so they should always be available
+    // But we still cache for consistency and to support future scenarios
+    match state.db.get_user_stats(user.id).await {
+        Ok(Some(stats)) => {
+            // Cache the stats
+            let stats_json = serde_json::to_string(&stats)
+                .map_err(|e| format!("Failed to serialize stats: {}", e))?;
+            
+            let now = chrono::Utc::now();
+            let expires_at = now + chrono::Duration::minutes(60);
+            
+            let _ = state
+                .db
+                .save_cache(user.id, cache_types::USER_STATS, &stats_json, expires_at)
+                .await;
+
+            Ok(CachedResponse {
+                data: stats,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Ok(None) => Err("User stats not found".to_string()),
+        Err(e) => {
+            // Database error - try cache fallback
+            eprintln!("Database error, attempting cache fallback: {}", e);
+            
+            // Use repository method instead of direct SQL
+            let cache_result = state
+                .db
+                .get_any_cache(user.id, cache_types::USER_STATS)
+                .await
+                .ok()
+                .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let stats: UserStats = serde_json::from_str(&data_json)
+                        .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    
+                    Ok(CachedResponse {
+                        data: stats,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!("データベースエラー、キャッシュもありません: {}", e)),
+            }
+        }
+    }
+}
+
+
+// ============================================================================
+// Cache Management Commands
+// ============================================================================
+
+/// Cache statistics for display in settings
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheStats {
+    /// Total cache size in bytes
+    pub total_size_bytes: u64,
+    /// Number of cache entries
+    pub entry_count: u64,
+    /// Number of expired entries
+    pub expired_count: u64,
+    /// Last cleanup timestamp (ISO8601)
+    pub last_cleanup_at: Option<String>,
+}
+
+/// Get cache statistics for the current user
+#[command]
+pub async fn get_cache_stats(state: State<'_, AppState>) -> Result<CacheStats, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // Use repository methods instead of direct SQL
+    let total_size = state.db.get_user_cache_size(user.id).await.map_err(|e| e.to_string())?;
+    let (entry_count, expired_count) = state.db.get_cache_stats(user.id).await.map_err(|e| e.to_string())?;
+
+    Ok(CacheStats {
+        total_size_bytes: total_size,
+        entry_count,
+        expired_count,
+        last_cleanup_at: None, // TODO: track this in a settings table
+    })
+}
+
+/// Clear all cache for the current user
+#[command]
+pub async fn clear_user_cache(state: State<'_, AppState>) -> Result<u64, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // Use repository method instead of direct SQL
+    let deleted = state.db.delete_user_cache(user.id).await.map_err(|e| e.to_string())?;
+
+    // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+    eprintln!("Cleared {} cache entries for user {}", deleted, user.id);
+    
+    Ok(deleted)
+}
+
+/// Clear only expired cache entries (cleanup)
+#[command]
+pub async fn cleanup_expired_cache(state: State<'_, AppState>) -> Result<u64, String> {
+    let deleted = state.db.clear_expired_cache().await.map_err(|e| e.to_string())?;
+    
+    if deleted > 0 {
+        // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+        eprintln!("Cleaned up {} expired cache entries", deleted);
+    }
+    
+    Ok(deleted)
+}
+

@@ -1,5 +1,5 @@
-あなたは優秀なAIコーディングエージェントです。
-以下のLegible Architectureの原則に則って実装作業を行なってください。
+あなたは優秀な AI コーディングエージェントです。
+以下の Legible Architecture の原則に則って実装作業を行なってください。
 
 ---
 
@@ -9,30 +9,77 @@
 
 このフレームワークは、「Legible Architecture」の**Concept（概念）**と**Synchronization（同期）**の原則を中核に据えます。以下の目的を達成します：
 
-- **AIにとって理解しやすい**: 変更対象のConceptやSynchronizationという限定的なコンテキストのみを理解すれば、安全で精度の高いコード生成が可能
+- **AI にとって理解しやすい**: 変更対象の Concept や Synchronization という限定的なコンテキストのみを理解すれば、安全で精度の高いコード生成が可能
 - **人間にとって把握しやすい**: システムの全体像が把握しやすく、変更の影響範囲が明確
 - **変更に強い**: 関心事の分離により、一箇所の変更が他に波及しにくい構造
 
-### ConceptとSynchronizationの基本概念
+### Concept と Synchronization の基本概念
 
-*   **Concept**: アプリケーションの機能単位。自己完結しており、自身の状態とそれを操作するロジックのみを持つ。他のConceptを直接参照しない。
-*   **Synchronization**: 複数のConceptを連携させるためのルールセット。「何が起きたら(when)、何をする(then)」を記述する。状態を持たず、Concept間の仲介役に徹する。
+- **Concept**: アプリケーションの機能単位。自己完結しており、自身の状態とそれを操作するロジックのみを持つ。他の Concept を直接参照しない。
+- **Synchronization**: 複数の Concept を連携させるためのルールセット。「何が起きたら(when)、何をする(then)」を記述する。状態を持たず、Concept 間の仲介役に徹する。
 
 ---
 
 ## 基本原則
 
-### Legible Architectureの原則
+### Legible Architecture の原則
 
-1. **Conceptの独立性**: Conceptは、他のいかなるConceptも直接`use`してはならない。完全に独立した単位として設計する。
-2. **状態の単一所有**: 状態は必ず単一のConceptに属する。Synchronizationは状態を持たない。
-3. **Synchronizationの仲介役**: Concept間の連携は、Synchronizationを通じてのみ行われる。Synchronizationは状態を持たず、Conceptの状態を読み取り、別のConceptのアクションをトリガーする役割に徹する。
+1. **Concept の独立性**: Concept は、他のいかなる Concept も直接`use`してはならない。完全に独立した単位として設計する。
+2. **状態の単一所有**: 状態は必ず単一の Concept に属する。Synchronization は状態を持たない。
+3. **Synchronization の仲介役**: Concept 間の連携は、Synchronization を通じてのみ行われる。Synchronization は状態を持たず、Concept の状態を読み取り、別の Concept のアクションをトリガーする役割に徹する。
 
 ### なぜこの原則が重要なのか
 
-- **AIの理解範囲を限定**: AIは変更対象のConceptやSynchronizationという限定的なコンテキストのみを理解すればよい
+- **AI の理解範囲を限定**: AI は変更対象の Concept や Synchronization という限定的なコンテキストのみを理解すればよい
 - **影響範囲の明確化**: 依存関係が明確なため、変更の影響範囲が即座に判定できる
-- **テストの容易さ**: Concept単体のテストが容易で、Synchronizationのテストも複数のConceptの状態をインプットとして検証できる
+- **テストの容易さ**: Concept 単体のテストが容易で、Synchronization のテストも複数の Concept の状態をインプットとして検証できる
+
+### TODO コメント規約
+
+コードレビューや実装中に「今は対応しないが、将来対応すべき項目」が発生した場合、`TODO: [カテゴリ]` 形式でコメントを残します。
+
+#### カテゴリ一覧
+
+| カテゴリ     | 用途                                        | 例                                                               |
+| ------------ | ------------------------------------------- | ---------------------------------------------------------------- |
+| `[INFRA]`    | ログ基盤、CI/CD、ビルド設定など基盤系の改善 | `// TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）` |
+| `[BUG]`      | 既知のバグだが影響軽微で後回しにするもの    | `// TODO: [BUG] イベントリスナーのメモリリーク（影響軽微）`      |
+| `[IMPROVE]`  | コード品質向上、リファクタリング            | `// TODO: [IMPROVE] 冗長なチェックを削除`                        |
+| `[PERF]`     | パフォーマンス改善                          | `// TODO: [PERF] N+1クエリの解消`                                |
+| `[SECURITY]` | セキュリティ関連の改善                      | `// TODO: [SECURITY] 入力値のサニタイズ強化`                     |
+| `[DEBT]`     | 技術的負債の解消                            | `// TODO: [DEBT] 非推奨APIの置換`                                |
+| `[FEATURE]`  | 将来追加予定の機能                          | `// TODO: [FEATURE] オフライン時の自動リトライ`                  |
+
+#### 記述ルール
+
+1. **フォーマット**: `// TODO: [カテゴリ] 説明（補足情報）`
+2. **説明は具体的に**: 何を、なぜ、いつ対応すべきかがわかるように
+3. **補足情報**: 影響範囲、対応タイミングの目安を括弧内に記載
+
+**✅ 良い例:**
+
+```rust
+// TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+eprintln!("Error: {}", e);
+
+// TODO: [BUG] イベントリスナーのメモリリーク（アプリルートでのみ使用のため影響軽微）
+// on_cleanupでremove_event_listenerを呼ぶべきだが、Closureのライフタイム管理が複雑
+on_online.forget();
+on_offline.forget();
+```
+
+**❌ 悪い例:**
+
+```rust
+// TODO: 後で直す  ← カテゴリがない、説明が曖昧
+// TODO: fix this  ← 何を直すのかわからない
+```
+
+#### TODO の追跡
+
+- `grep -r "TODO:" src/` でプロジェクト内の TODO を一覧化できます
+- カテゴリごとの検索: `grep -r "TODO: \[INFRA\]" src/`
+- 定期的なレビューで、解決済みの TODO を削除し、優先度の高いものを Issue 化します
 
 ---
 
@@ -84,7 +131,7 @@
 
 ### 発展的な構造（ドメイン別グルーピング）
 
-Conceptが増えてきたら、ドメイン（関連領域）でグルーピングします。
+Concept が増えてきたら、ドメイン（関連領域）でグルーピングします。
 
 ```plaintext
 src/
@@ -107,13 +154,14 @@ src/
 
 ## コーディングルール
 
-### A. Conceptのルール
+### A. Concept のルール
 
 #### 1. 独立性の原則
 
-Conceptは、他のいかなるConceptも直接`use`してはならない。
+Concept は、他のいかなる Concept も直接`use`してはならない。
 
 **❌ 悪い例:**
+
 ```rust
 // src/concepts/post/actions.rs
 use crate::concepts::user::state::UserState; // ❌ 他のConceptを直接参照
@@ -124,6 +172,7 @@ pub fn add_post(state: PostState, post: Post, user_state: UserState) -> PostStat
 ```
 
 **✅ 良い例:**
+
 ```rust
 // src/concepts/post/actions.rs
 use super::state::{Post, PostState};
@@ -141,20 +190,22 @@ pub fn add_post(state: PostState, post: Post) -> PostState {
 
 #### 2. 自己完結
 
-Conceptは、自身の`state`とそれを操作する`actions`のみで構成される。`actions`は可能な限り純粋関数として実装する。
+Concept は、自身の`state`とそれを操作する`actions`のみで構成される。`actions`は可能な限り純粋関数として実装する。
 
 **ファイル構成:**
+
 - `state.rs`: 状態の型定義と初期状態
 - `actions.rs`: 状態を操作するロジック（純粋関数）
-- `mod.rs`: 公開API（型定義、アクションの再エクスポート）
-- `tests.rs`: 単体テスト（.spec.mdのTest Casesに基づいて記述）
-- `{concept-name}.spec.md`: 仕様書（RequirementsとTest Casesを含む）
+- `mod.rs`: 公開 API（型定義、アクションの再エクスポート）
+- `tests.rs`: 単体テスト（.spec.md の Test Cases に基づいて記述）
+- `{concept-name}.spec.md`: 仕様書（Requirements と Test Cases を含む）
 
 #### 3. 副作用の分離
 
-外部APIの呼び出しやデータベースへのアクセスといった副作用はConcept内に直接記述しない。これらは上位層（`synchronizations`やアプリケーションサービス層）が担当し、結果を引数として`actions`に渡す。
+外部 API の呼び出しやデータベースへのアクセスといった副作用は Concept 内に直接記述しない。これらは上位層（`synchronizations`やアプリケーションサービス層）が担当し、結果を引数として`actions`に渡す。
 
 **例: `src/concepts/post/actions.rs`**
+
 ```rust
 use super::state::{Post, PostState};
 
@@ -175,13 +226,14 @@ pub fn add_post(state: PostState, post: Post) -> PostState {
 // }
 ```
 
-### B. Synchronizationのルール
+### B. Synchronization のルール
 
 #### 1. 唯一の連携点
 
-複数のConceptを`use`し、連携させることができるのは`synchronizations`ディレクトリ内のファイルのみ。
+複数の Concept を`use`し、連携させることができるのは`synchronizations`ディレクトリ内のファイルのみ。
 
 **例: `src/synchronizations/user_posts_sync.rs`**
+
 ```rust
 use crate::concepts::user;
 use crate::concepts::post;
@@ -194,7 +246,7 @@ pub fn on_user_created(
     user_id: &str
 ) -> post::state::PostState {
     let user = user_state.users.iter().find(|u| u.id == user_id);
-    
+
     match user {
         None => post_state, // where: ユーザーが存在しない場合は何もしない
         Some(u) => {
@@ -211,13 +263,14 @@ pub fn on_user_created(
 
 #### 2. 状態を持たない
 
-Synchronizationは状態を持たない。Conceptの状態を読み取り、別のConceptのアクションをトリガーする役割に徹する。
+Synchronization は状態を持たない。Concept の状態を読み取り、別の Concept のアクションをトリガーする役割に徹する。
 
 #### 3. 宣言的な記述
 
 「when (イベント), where (条件), then (アクション)」を意識したコードを記述する。イベント駆動の設計が適している。
 
 **命名規則:**
+
 - `on_{event}`: イベントハンドラー（例: `on_user_created`）
 - `when_{condition}`: 条件付き処理（例: `when_user_likes_post`）
 
@@ -226,10 +279,11 @@ Synchronizationは状態を持たない。Conceptの状態を読み取り、別�
 #### 1. テスト駆動開発
 
 - 新しい`action`を実装する前に、必ず`tests.rs`にテストケースを追加する
-- `cargo test`で、Concept単体のロジックが期待通りに動作することを保証する
-- Synchronizationのテストでは、複数のConceptの状態をインプットとし、連携後の状態が期待通りか検証する
+- `cargo test`で、Concept 単体のロジックが期待通りに動作することを保証する
+- Synchronization のテストでは、複数の Concept の状態をインプットとし、連携後の状態が期待通りか検証する
 
 **例: `src/concepts/post/tests.rs`**
+
 ```rust
 #[cfg(test)]
 mod tests {
@@ -244,9 +298,9 @@ mod tests {
             author_id: "user-1".to_string(),
             content: "Hello".to_string(),
         };
-        
+
         let result = add_post(state, new_post.clone());
-        
+
         assert_eq!(result.posts.len(), 1);
         assert_eq!(result.posts[0], new_post);
     }
@@ -260,21 +314,25 @@ mod tests {
 **ドキュメントの種類:**
 
 1. **Spec（仕様書）**: `src/concepts/{concept-name}/{concept-name}.spec.md` / `src/synchronizations/{name}.spec.md`
-   - Concept/Synchronizationの仕様定義とテストケース定義を記述
-   - Requirements（要件）とTest Cases（テストケース）を含む
+
+   - Concept/Synchronization の仕様定義とテストケース定義を記述
+   - Requirements（要件）と Test Cases（テストケース）を含む
    - 実装ファイルと同じディレクトリに配置
 
 2. **Issue（問題・要件）**: `docs/01_issues/open/YYYY_MM/YYYYMMDD_{issue-name}.md`
+
    - 新機能の要件定義やバグ報告を記述
    - 実装前に作成し、実装完了後に`resolved/`に移動
 
 3. **Research（技術調査）**: `docs/02_research/YYYY_MM/YYYYMMDD_{research-name}.md`
+
    - 技術選定や調査結果を記述
-   - Concept/Synchronizationの実装前に技術的な検討が必要な場合に作成
+   - Concept/Synchronization の実装前に技術的な検討が必要な場合に作成
 
 4. **Plan（実装計画）**: `docs/03_plans/{feature-name}/YYYYMMDD_{plan-name}.md`
+
    - 段階的な実装計画を記述
-   - 複数のConcept/Synchronizationにまたがる機能の場合に作成
+   - 複数の Concept/Synchronization にまたがる機能の場合に作成
 
 5. **Log（作業ログ）**: `docs/05_logs/YYYY_MM/YYYYMMDD/{log-name}.md`
    - 実装作業の記録を記述
@@ -282,14 +340,15 @@ mod tests {
 
 **仕様書の配置:**
 
-- **Conceptの仕様書**: `src/concepts/{concept-name}/{concept-name}.spec.md`
-  - そのConceptが担当する責務、管理する状態の構造、各アクションの目的と動作を記述
-  - Requirements（要件）とTest Cases（テストケース）を含む
+- **Concept の仕様書**: `src/concepts/{concept-name}/{concept-name}.spec.md`
 
-- **Synchronizationの仕様書**: `src/synchronizations/{name}.spec.md`
-  - どのConcept間を、どのようなルールで連携させるのかを記述
+  - その Concept が担当する責務、管理する状態の構造、各アクションの目的と動作を記述
+  - Requirements（要件）と Test Cases（テストケース）を含む
+
+- **Synchronization の仕様書**: `src/synchronizations/{name}.spec.md`
+  - どの Concept 間を、どのようなルールで連携させるのかを記述
   - when（イベント）、where（条件）、then（アクション）を明確に記述
-  - Requirements（要件）とTest Cases（テストケース）を含む
+  - Requirements（要件）と Test Cases（テストケース）を含む
 
 **仕様書の構造例:**
 
@@ -314,14 +373,17 @@ mod tests {
 ## Requirements
 
 ### 責務
+
 - 投稿データの管理
 - 投稿の追加・更新・削除
 
 ### 状態構造
+
 - PostState: { posts: Vec<Post> }
 - Post: { id: String, author_id: String, content: String }
 
 ### アクション
+
 - add_post: 投稿を追加
 - update_post: 投稿を更新
 - delete_post: 投稿を削除
@@ -329,14 +391,16 @@ mod tests {
 ## Test Cases
 
 ### TC-001: add_post
-- Given: 空のPostState
+
+- Given: 空の PostState
 - When: add_post(state, new_post)を実行
-- Then: posts配列にnew_postが追加される
+- Then: posts 配列に new_post が追加される
 
 ### TC-002: update_post
-- Given: 既存の投稿を含むPostState
+
+- Given: 既存の投稿を含む PostState
 - When: update_post(state, post_id, updated_content)を実行
-- Then: 指定された投稿のcontentが更新される
+- Then: 指定された投稿の content が更新される
 ```
 
 **ファイルとドキュメントの同期:**
@@ -344,23 +408,26 @@ mod tests {
 実装ファイルを修正したら、必ず関連ドキュメントも更新してください：
 
 **必須の更新:**
+
 - `.spec.md`の「Requirements」セクションを更新
 - `.spec.md`の「Test Cases」に新規テストケースを追加
-- `tests.rs`に対応するテストを追加（.spec.mdのTest Casesに基づいて）
-- DEPENDENCY MAPを更新（実装ファイルの先頭コメント）
+- `tests.rs`に対応するテストを追加（.spec.md の Test Cases に基づいて）
+- DEPENDENCY MAP を更新（実装ファイルの先頭コメント）
 
 **推奨の更新:**
-- 実装計画の進捗状況を更新（Planが存在する場合）
+
+- 実装計画の進捗状況を更新（Plan が存在する場合）
 - 作業ログを記録（大きな変更の場合）
-- Issueの状態を更新（open → resolved など、バグ修正の場合）
+- Issue の状態を更新（open → resolved など、バグ修正の場合）
 
 **更新チェックリスト:**
+
 - [ ] `.spec.md`の「Requirements」は最新か？
 - [ ] `.spec.md`の「Test Cases」に新しいケースを追加したか？
-- [ ] `tests.rs`は`.spec.md`のTest Casesと一致しているか？
-- [ ] DEPENDENCY MAPが最新か？（Parents / Dependencies）
-- [ ] 親ファイル（Parents）のDEPENDENCY MAPも更新したか？
-- [ ] Spec/Issue/Plan/Logへの参照が最新か？
+- [ ] `tests.rs`は`.spec.md`の Test Cases と一致しているか？
+- [ ] DEPENDENCY MAP が最新か？（Parents / Dependencies）
+- [ ] 親ファイル（Parents）の DEPENDENCY MAP も更新したか？
+- [ ] Spec/Issue/Plan/Log への参照が最新か？
 
 ---
 
@@ -375,12 +442,12 @@ PROMPT → ISSUE → RESEARCH → PLAN → SPEC+TEST → IMPLEMENTATION → LOG
 1. **Prompt（プロンプト）**: `docs/00_prompts/` - AI・開発者への指示書（このファイル）
 2. **Issue（問題・要件）**: `docs/01_issues/open/YYYY_MM/` - 問題・要件定義
 3. **Research（技術調査）**: `docs/02_research/YYYY_MM/` - 技術選定・調査結果（必要に応じて）
-4. **Plan（実装計画）**: `docs/03_plans/{機能名}/` - 段階的な実装計画（複数Conceptにまたがる場合）
+4. **Plan（実装計画）**: `docs/03_plans/{機能名}/` - 段階的な実装計画（複数 Concept にまたがる場合）
 5. **Spec（仕様書）**: `src/concepts/{concept-name}/{concept-name}.spec.md` / `src/synchronizations/{name}.spec.md` - 仕様定義＋テストケース定義
 6. **Implementation（実装）**: テスト駆動開発で実装
 7. **Log（作業ログ）**: `docs/05_logs/YYYY_MM/YYYYMMDD/` - 作業記録
 
-### Concept作成フロー
+### Concept 作成フロー
 
 ```
 1. Issue作成（必要に応じて）
@@ -428,7 +495,7 @@ PROMPT → ISSUE → RESEARCH → PLAN → SPEC+TEST → IMPLEMENTATION → LOG
     └── docs/01_issues/open/ → docs/01_issues/resolved/ へ移動
 ```
 
-### Synchronization作成フロー
+### Synchronization 作成フロー
 
 ```
 1. Issue作成（必要に応じて）
@@ -505,13 +572,13 @@ PROMPT → ISSUE → RESEARCH → PLAN → SPEC+TEST → IMPLEMENTATION → LOG
 
 ## 依存関係の明示
 
-### Concept間の依存関係マッピング
+### Concept 間の依存関係マッピング
 
-Conceptは他のConceptを直接参照しないため、Concept間の依存関係は存在しません。代わりに、SynchronizationがConcept間の連携を担当します。
+Concept は他の Concept を直接参照しないため、Concept 間の依存関係は存在しません。代わりに、Synchronization が Concept 間の連携を担当します。
 
-### Synchronizationの依存関係
+### Synchronization の依存関係
 
-Synchronizationファイルの先頭に、依存関係マップを記載してください：
+Synchronization ファイルの先頭に、依存関係マップを記載してください：
 
 ```rust
 /**
@@ -537,9 +604,9 @@ use crate::concepts::{user, post};
 // ...
 ```
 
-### Conceptファイルの依存関係マッピング
+### Concept ファイルの依存関係マッピング
 
-Conceptファイルの先頭にも、依存関係マップを記載してください：
+Concept ファイルの先頭にも、依存関係マップを記載してください：
 
 ```rust
 /**
@@ -572,115 +639,131 @@ pub use actions::*;
 ```
 
 **なぜ必要か:**
+
 - 修正時の影響範囲が即座に判定できる
 - リファクタリングのリスク評価が容易
-- 軽量AIモデルでも依存関係を理解できる
+- 軽量 AI モデルでも依存関係を理解できる
 - デッドコード検出が簡単
 
 ---
 
 ## チェックリスト
 
-### Concept作成時のチェックリスト
+### Concept 作成時のチェックリスト
 
-新しいConceptを作成する際は、以下を確認してください：
+新しい Concept を作成する際は、以下を確認してください：
 
 **ドキュメント作成:**
-- [ ] Issueを作成したか？（必要に応じて）`docs/01_issues/open/YYYY_MM/YYYYMMDD_{concept-name}.md`
-- [ ] Researchを作成したか？（技術的な検討が必要な場合）`docs/02_research/YYYY_MM/YYYYMMDD_{concept-name}-research.md`
-- [ ] Planを作成したか？（複数のConcept/Synchronizationにまたがる場合）`docs/03_plans/{feature-name}/YYYYMMDD_{plan-name}.md`
-- [ ] Specを作成したか？`src/concepts/{concept-name}/{concept-name}.spec.md`
+
+- [ ] Issue を作成したか？（必要に応じて）`docs/01_issues/open/YYYY_MM/YYYYMMDD_{concept-name}.md`
+- [ ] Research を作成したか？（技術的な検討が必要な場合）`docs/02_research/YYYY_MM/YYYYMMDD_{concept-name}-research.md`
+- [ ] Plan を作成したか？（複数の Concept/Synchronization にまたがる場合）`docs/03_plans/{feature-name}/YYYYMMDD_{plan-name}.md`
+- [ ] Spec を作成したか？`src/concepts/{concept-name}/{concept-name}.spec.md`
   - [ ] Requirements（要件）を記述したか？
   - [ ] Test Cases（テストケース）を記述したか？
 
 **実装:**
+
 - [ ] `src/concepts/{concept-name}/` ディレクトリを作成したか？
 - [ ] `state.rs` に状態の型定義と初期状態を定義したか？
 - [ ] `actions.rs` に純粋関数としてアクションを実装したか？
-- [ ] `mod.rs` に公開APIを定義したか？
-- [ ] 他のConceptを直接`use`していないか？（独立性の原則）
-- [ ] 副作用（API呼び出し、DBアクセス）を含んでいないか？
+- [ ] `mod.rs` に公開 API を定義したか？
+- [ ] 他の Concept を直接`use`していないか？（独立性の原則）
+- [ ] 副作用（API 呼び出し、DB アクセス）を含んでいないか？
 
 **テスト:**
-- [ ] `.spec.md`のTest Casesに基づいて`tests.rs`にテストケースを追加したか？
+
+- [ ] `.spec.md`の Test Cases に基づいて`tests.rs`にテストケースを追加したか？
 - [ ] `cargo test` でテストが通るか？
 
 **ドキュメント更新:**
-- [ ] `.spec.md`のRequirementsを実装に合わせて更新したか？
+
+- [ ] `.spec.md`の Requirements を実装に合わせて更新したか？
 - [ ] ファイル先頭に DEPENDENCY MAP を記載したか？
-  - [ ] Specへの参照を記載したか？
-  - [ ] Issue/Plan/Logへの参照を記載したか？（存在する場合）
+  - [ ] Spec への参照を記載したか？
+  - [ ] Issue/Plan/Log への参照を記載したか？（存在する場合）
 
 **完了作業:**
-- [ ] Logを作成したか？`docs/05_logs/YYYY_MM/YYYYMMDD/{concept-name}-implementation.md`
-- [ ] Issueを`resolved/`に移動したか？（Issueを作成した場合）
 
-### Synchronization作成時のチェックリスト
+- [ ] Log を作成したか？`docs/05_logs/YYYY_MM/YYYYMMDD/{concept-name}-implementation.md`
+- [ ] Issue を`resolved/`に移動したか？（Issue を作成した場合）
 
-新しいSynchronizationを作成する際は、以下を確認してください：
+### Synchronization 作成時のチェックリスト
+
+新しい Synchronization を作成する際は、以下を確認してください：
 
 **ドキュメント作成:**
-- [ ] Issueを作成したか？（必要に応じて）`docs/01_issues/open/YYYY_MM/YYYYMMDD_{sync-name}.md`
-- [ ] Researchを作成したか？（技術的な検討が必要な場合）`docs/02_research/YYYY_MM/YYYYMMDD_{sync-name}-research.md`
-- [ ] Planを作成したか？（複数のConcept/Synchronizationにまたがる場合）`docs/03_plans/{feature-name}/YYYYMMDD_{plan-name}.md`
-- [ ] Specを作成したか？`src/synchronizations/{name}.spec.md`
+
+- [ ] Issue を作成したか？（必要に応じて）`docs/01_issues/open/YYYY_MM/YYYYMMDD_{sync-name}.md`
+- [ ] Research を作成したか？（技術的な検討が必要な場合）`docs/02_research/YYYY_MM/YYYYMMDD_{sync-name}-research.md`
+- [ ] Plan を作成したか？（複数の Concept/Synchronization にまたがる場合）`docs/03_plans/{feature-name}/YYYYMMDD_{plan-name}.md`
+- [ ] Spec を作成したか？`src/synchronizations/{name}.spec.md`
   - [ ] Requirements（要件）を記述したか？
   - [ ] when（イベント）、where（条件）、then（アクション）を明確に記述したか？
   - [ ] Test Cases（テストケース）を記述したか？
 
 **実装:**
+
 - [ ] `src/synchronizations/{name}_sync.rs` を作成したか？
-- [ ] 連携するConceptを明確に特定したか？
+- [ ] 連携する Concept を明確に特定したか？
 - [ ] 「when (イベント), where (条件), then (アクション)」を意識した実装か？
 - [ ] 状態を持たない実装か？（純粋関数として実装）
 
 **テスト:**
-- [ ] `.spec.md`のTest Casesに基づいて`{name}_sync_test.rs`（またはモジュール内テスト）にテストケースを追加したか？
-- [ ] 複数のConceptの状態をインプットとしてテストしているか？
+
+- [ ] `.spec.md`の Test Cases に基づいて`{name}_sync_test.rs`（またはモジュール内テスト）にテストケースを追加したか？
+- [ ] 複数の Concept の状態をインプットとしてテストしているか？
 - [ ] `cargo test` でテストが通るか？
 
 **ドキュメント更新:**
-- [ ] `.spec.md`のRequirementsを実装に合わせて更新したか？
+
+- [ ] `.spec.md`の Requirements を実装に合わせて更新したか？
 - [ ] ファイル先頭に DEPENDENCY MAP を記載したか？
-  - [ ] Specへの参照を記載したか？
-  - [ ] Issue/Plan/Logへの参照を記載したか？（存在する場合）
+  - [ ] Spec への参照を記載したか？
+  - [ ] Issue/Plan/Log への参照を記載したか？（存在する場合）
 
 **完了作業:**
-- [ ] Logを作成したか？`docs/05_logs/YYYY_MM/YYYYMMDD/{sync-name}-implementation.md`
-- [ ] Issueを`resolved/`に移動したか？（Issueを作成した場合）
+
+- [ ] Log を作成したか？`docs/05_logs/YYYY_MM/YYYYMMDD/{sync-name}-implementation.md`
+- [ ] Issue を`resolved/`に移動したか？（Issue を作成した場合）
 
 ### コード更新時のチェックリスト
 
-既存のConceptやSynchronizationを更新する際は、以下を確認してください：
+既存の Concept や Synchronization を更新する際は、以下を確認してください：
 
 **ドキュメント更新:**
+
 - [ ] `.spec.md`の「Requirements」セクションを更新したか？
 - [ ] `.spec.md`の「Test Cases」に新規テストケースを追加したか？
-- [ ] 実装計画の進捗状況を更新したか？（Planが存在する場合）
+- [ ] 実装計画の進捗状況を更新したか？（Plan が存在する場合）
 - [ ] 作業ログを記録したか？（大きな変更の場合）
 
 **テスト:**
-- [ ] `tests.rs`に`.spec.md`のTest Casesに基づいてテストケースを追加・更新したか？
+
+- [ ] `tests.rs`に`.spec.md`の Test Cases に基づいてテストケースを追加・更新したか？
 - [ ] `cargo test` でテストが通るか？
 
 **依存関係:**
+
 - [ ] DEPENDENCY MAP が最新か？（Parents / Dependencies）
 - [ ] 親ファイル（Parents）の DEPENDENCY MAP も更新したか？
-- [ ] Spec/Issue/Plan/Logへの参照が最新か？
+- [ ] Spec/Issue/Plan/Log への参照が最新か？
 
 **原則の確認:**
-- [ ] 他のConceptを直接`use`していないか？（Conceptの場合）
-- [ ] 副作用を含んでいないか？（Conceptの場合）
-- [ ] 状態を持たない実装か？（Synchronizationの場合）
 
-**Issue管理:**
-- [ ] Issueの状態を更新したか？（open → resolved など、バグ修正の場合）
+- [ ] 他の Concept を直接`use`していないか？（Concept の場合）
+- [ ] 副作用を含んでいないか？（Concept の場合）
+- [ ] 状態を持たない実装か？（Synchronization の場合）
+
+**Issue 管理:**
+
+- [ ] Issue の状態を更新したか？（open → resolved など、バグ修正の場合）
 
 ---
 
-## AIモデルへの指示例
+## AI モデルへの指示例
 
-### Concept追加の指示例
+### Concept 追加の指示例
 
 ```
 【タスク】Post Conceptに「いいね」機能を追加
@@ -728,7 +811,7 @@ pub use actions::*;
 - 実装完了後、.spec.mdのRequirementsを実装に合わせて更新
 ```
 
-### Synchronization追加の指示例
+### Synchronization 追加の指示例
 
 ```
 【タスク】ユーザーが投稿にいいねしたら通知を送るSynchronizationを追加
@@ -820,17 +903,18 @@ pub use actions::*;
 
 ## 発展的な質問への回答
 
-### Q1: 3個以上のConceptが関わる場合はどうするのでしょうか？
+### Q1: 3 個以上の Concept が関わる場合はどうするのでしょうか？
 
-**回答:** 1つのSynchronizationファイルで3つ以上のConceptを扱います。重要なのは、その**連携の関心事が単一であること**です。
+**回答:** 1 つの Synchronization ファイルで 3 つ以上の Concept を扱います。重要なのは、その**連携の関心事が単一であること**です。
 
-*   **命名**: ファイル名は、連携の目的がわかるように命名します。
-    *   例: `ユーザーが投稿にいいねしたら通知を送る` という連携
-        *   関わるConcept: `User`, `Post`, `Notification`
-        *   ファイル名: `user_like_post_notification_sync.rs`
-*   **責務**: 1つのSynchronizationファイルが、1つのビジネス上のユースケースに対応するように設計します。もし1つのファイルが肥大化し、複数のユースケースを扱っている場合は、ファイルを分割することを検討してください。
+- **命名**: ファイル名は、連携の目的がわかるように命名します。
+  - 例: `ユーザーが投稿にいいねしたら通知を送る` という連携
+    - 関わる Concept: `User`, `Post`, `Notification`
+    - ファイル名: `user_like_post_notification_sync.rs`
+- **責務**: 1 つの Synchronization ファイルが、1 つのビジネス上のユースケースに対応するように設計します。もし 1 つのファイルが肥大化し、複数のユースケースを扱っている場合は、ファイルを分割することを検討してください。
 
 **例: `src/synchronizations/user_like_post_notification_sync.rs`**
+
 ```rust
 use crate::concepts::{user, post, notification};
 
@@ -845,11 +929,11 @@ pub fn on_user_likes_post(
 ) -> notification::state::NotificationState {
     let user = user_state.users.iter().find(|u| u.id == user_id);
     let post = post_state.posts.iter().find(|p| p.id == post_id);
-    
+
     if user.is_none() || post.is_none() {
         return notification_state; // where: ユーザーまたは投稿が存在しない場合は何もしない
     }
-    
+
     let u = user.unwrap();
     let p = post.unwrap();
 
@@ -865,7 +949,7 @@ pub fn on_user_likes_post(
 
 ### Q2: 実装が複雑になってきた時にはどのようなディレクトリ構造が望ましいのでしょうか？
 
-**回答:** Conceptが増えてきたら、ドメイン（関連領域）でグルーピングします。
+**回答:** Concept が増えてきたら、ドメイン（関連領域）でグルーピングします。
 
 ```plaintext
 src/
@@ -913,15 +997,17 @@ src/
     └── publishing_internal.spec.md
 ```
 
-### Q3: Concept間にまたがりそうな状態などはどうしたら良いのでしょうか？
+### Q3: Concept 間にまたがりそうな状態などはどうしたら良いのでしょうか？
 
-**回答:** 「Legible Architecture」の原則では、**状態は必ず単一のConceptに属します**。一見またがっているように見える状態は、以下のいずれかの方法で解決します。
+**回答:** 「Legible Architecture」の原則では、**状態は必ず単一の Concept に属します**。一見またがっているように見える状態は、以下のいずれかの方法で解決します。
 
-1.  **主となるConceptに所属させる**:
-    *   例: 「ユーザーがいいねした投稿のリスト」
-    *   これは `User` Conceptの状態（`liked_post_ids: Vec<String>`）として持つのが自然かもしれません。`Post` Conceptは自身のいいね数をカウントするだけです。
+1.  **主となる Concept に所属させる**:
+
+    - 例: 「ユーザーがいいねした投稿のリスト」
+    - これは `User` Concept の状態（`liked_post_ids: Vec<String>`）として持つのが自然かもしれません。`Post` Concept は自身のいいね数をカウントするだけです。
 
     **例: `src/concepts/user/state.rs`**
+
     ```rust
     pub struct User {
         pub id: String,
@@ -930,12 +1016,14 @@ src/
     }
     ```
 
-2.  **新しいConceptを作成する**:
-    *   状態の所有者が曖昧で、どちらのConceptに置いても不自然な場合は、その状態を管理するための新しいConceptを作成します。
-    *   例: 「ユーザーと投稿のマッチング情報」
-    *   `User` にも `Post` にも属しづらい場合、`Matching` という新しいConceptを作成し、`{ user_id, post_id, score }` のような状態を管理させます。
+2.  **新しい Concept を作成する**:
+
+    - 状態の所有者が曖昧で、どちらの Concept に置いても不自然な場合は、その状態を管理するための新しい Concept を作成します。
+    - 例: 「ユーザーと投稿のマッチング情報」
+    - `User` にも `Post` にも属しづらい場合、`Matching` という新しい Concept を作成し、`{ user_id, post_id, score }` のような状態を管理させます。
 
     **例: `src/concepts/matching/state.rs`**
+
     ```rust
     pub struct Matching {
         pub user_id: String,
@@ -948,7 +1036,7 @@ src/
     }
     ```
 
-**重要なのは、Synchronizationは状態を持たず、必ずいずれかのConceptが状態の「信頼できる情報源（Single Source of Truth）」となるルールを徹底することです。**
+**重要なのは、Synchronization は状態を持たず、必ずいずれかの Concept が状態の「信頼できる情報源（Single Source of Truth）」となるルールを徹底することです。**
 
 ---
 
@@ -956,12 +1044,11 @@ src/
 
 このフレームワークを採用することで、以下のメリットが得られます：
 
-- **AIにとって理解しやすい**: 変更対象のConceptやSynchronizationという限定的なコンテキストのみを理解すれば、安全で精度の高いコード生成が可能。ドキュメント駆動開発により、仕様書（.spec.md）から要件とテストケースを明確に把握できる
-- **人間にとって把握しやすい**: システムの全体像が把握しやすく、変更の影響範囲が明確。Issue/Research/Plan/Logにより、開発の文脈と意思決定の経緯が追跡可能
-- **変更に強い**: 関心事の分離により、一箇所の変更が他に波及しにくい構造。DEPENDENCY MAPにより、影響範囲が即座に判定できる
-- **テストが容易**: Concept単体のテストが容易で、Synchronizationのテストも複数のConceptの状態をインプットとして検証できる。.spec.mdのTest Casesに基づいてテストを記述することで、仕様とテストの整合性が保たれる
+- **AI にとって理解しやすい**: 変更対象の Concept や Synchronization という限定的なコンテキストのみを理解すれば、安全で精度の高いコード生成が可能。ドキュメント駆動開発により、仕様書（.spec.md）から要件とテストケースを明確に把握できる
+- **人間にとって把握しやすい**: システムの全体像が把握しやすく、変更の影響範囲が明確。Issue/Research/Plan/Log により、開発の文脈と意思決定の経緯が追跡可能
+- **変更に強い**: 関心事の分離により、一箇所の変更が他に波及しにくい構造。DEPENDENCY MAP により、影響範囲が即座に判定できる
+- **テストが容易**: Concept 単体のテストが容易で、Synchronization のテストも複数の Concept の状態をインプットとして検証できる。.spec.md の Test Cases に基づいてテストを記述することで、仕様とテストの整合性が保たれる
 - **ドキュメントとコードの同期**: 実装ファイルと仕様書（.spec.md）が同じディレクトリに配置され、常に同期を保つことで、コードとドキュメントの乖離を防ぐ
-- **開発プロセスの可視化**: Issue/Research/Plan/Logにより、開発プロセス全体が可視化され、後から振り返りや引き継ぎが容易
+- **開発プロセスの可視化**: Issue/Research/Plan/Log により、開発プロセス全体が可視化され、後から振り返りや引き継ぎが容易
 
-このガイドラインに従うことで、AIと人間双方にとって可読性が高く、変更に強いソフトウェア構造を実現できます。
-
+このガイドラインに従うことで、AI と人間双方にとって可読性が高く、変更に強いソフトウェア構造を実現できます。
