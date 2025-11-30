@@ -269,6 +269,17 @@ pub async fn get_github_stats() -> Result<GitHubStats, String> {
         .map_err(|e| format!("Failed to get GitHub stats: {:?}", e))
 }
 
+/// GitHub統計を取得（キャッシュフォールバック付き）
+/// 
+/// オフライン時はキャッシュされたデータを返します。
+pub async fn get_github_stats_with_cache() -> Result<crate::types::CachedResponse<GitHubStats>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_github_stats_with_cache", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get GitHub stats with cache: {:?}", e))
+}
+
 /// コントリビューションカレンダーを取得
 pub async fn get_contribution_calendar() -> Result<serde_json::Value, String> {
     let args = serde_wasm_bindgen::to_value(&()).unwrap();
@@ -325,6 +336,17 @@ pub async fn get_user_stats() -> Result<Option<UserStats>, String> {
     
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to get user stats: {:?}", e))
+}
+
+/// ユーザー統計を取得（キャッシュフォールバック付き）
+///
+/// データベースエラー時はキャッシュされたデータを返します。
+pub async fn get_user_stats_with_cache() -> Result<crate::types::CachedResponse<UserStats>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_user_stats_with_cache", args).await;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get user stats with cache: {:?}", e))
 }
 
 /// レベル情報を取得

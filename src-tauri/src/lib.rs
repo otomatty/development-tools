@@ -17,6 +17,8 @@ use commands::{
     // GitHub commands
     get_badges_with_progress, get_contribution_calendar, get_github_stats, get_github_user,
     get_near_completion_badges, get_user_stats, sync_github_stats,
+    // Cache fallback commands
+    get_github_stats_with_cache, get_user_stats_with_cache,
     // Code Statistics commands (Issue #74)
     get_code_stats_summary, get_rate_limit_info, sync_code_stats,
     // Gamification commands
@@ -108,6 +110,9 @@ pub fn run() {
             get_contribution_calendar,
             get_badges_with_progress,
             get_near_completion_badges,
+            // Cache fallback commands
+            get_github_stats_with_cache,
+            get_user_stats_with_cache,
             // Code Statistics commands (Issue #74)
             sync_code_stats,
             get_code_stats_summary,

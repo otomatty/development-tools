@@ -7,6 +7,23 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Generic cached response wrapper
+/// 
+/// Wraps any data type with cache metadata to indicate whether the data
+/// came from a fresh API call or from local cache (e.g., when offline).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedResponse<T> {
+    /// The actual data
+    pub data: T,
+    /// Whether the data was retrieved from cache
+    pub from_cache: bool,
+    /// When the data was cached (ISO8601 format)
+    pub cached_at: Option<String>,
+    /// When the cache expires (ISO8601 format)
+    pub expires_at: Option<String>,
+}
+
 /// ユーザー統計
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

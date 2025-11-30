@@ -1043,3 +1043,198 @@ pub async fn get_rate_limit_info(
         .map_err(|e| e.to_string())
 }
 
+// ============================================================================
+// Cache Fallback Commands
+// ============================================================================
+
+use crate::database::models::cache::cache_types;
+
+/// Generic cached response wrapper
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedResponse<T> {
+    /// The actual data
+    pub data: T,
+    /// Whether the data was retrieved from cache
+    pub from_cache: bool,
+    /// When the data was cached (ISO8601 format)
+    pub cached_at: Option<String>,
+    /// When the cache expires (ISO8601 format)  
+    pub expires_at: Option<String>,
+}
+
+/// Get GitHub stats with cache fallback
+/// 
+/// Attempts to fetch fresh data from GitHub API. If that fails (e.g., offline),
+/// falls back to cached data if available.
+#[command]
+pub async fn get_github_stats_with_cache(
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<GitHubStats>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // Try to get fresh data from API
+    let api_result = async {
+        let token = state
+            .token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let client = GitHubClient::new(token);
+        client
+            .get_user_stats(&user.username)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    .await;
+
+    match api_result {
+        Ok(stats) => {
+            // API succeeded - cache the data
+            let stats_json = serde_json::to_string(&stats)
+                .map_err(|e| format!("Failed to serialize stats: {}", e))?;
+            
+            let now = chrono::Utc::now();
+            let expires_at = now + chrono::Duration::minutes(30);
+            
+            // Save to cache (ignore errors - caching is best effort)
+            let _ = state
+                .db
+                .save_cache(user.id, cache_types::GITHUB_STATS, &stats_json, expires_at)
+                .await;
+
+            Ok(CachedResponse {
+                data: stats,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Err(api_error) => {
+            // API failed - try cache fallback
+            eprintln!("GitHub API failed, attempting cache fallback: {}", api_error);
+            
+            // Try to get from cache (even if expired - better than nothing when offline)
+            let cache_result: Option<(String, String, String)> = sqlx::query_as(
+                r#"
+                SELECT data_json, fetched_at, expires_at 
+                FROM activity_cache
+                WHERE user_id = ? AND data_type = ?
+                ORDER BY fetched_at DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(user.id)
+            .bind(cache_types::GITHUB_STATS)
+            .fetch_optional(state.db.pool())
+            .await
+            .ok()
+            .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let stats: GitHubStats = serde_json::from_str(&data_json)
+                        .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    
+                    Ok(CachedResponse {
+                        data: stats,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => {
+                    // No cache available
+                    Err(format!(
+                        "オフラインでキャッシュデータがありません。オンライン時に一度データを取得してください。元のエラー: {}",
+                        api_error
+                    ))
+                }
+            }
+        }
+    }
+}
+
+/// Get user stats with cache fallback
+/// 
+/// Attempts to fetch user stats from database. If that fails,
+/// falls back to cached data if available.
+#[command]
+pub async fn get_user_stats_with_cache(
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<UserStats>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // User stats are stored locally, so they should always be available
+    // But we still cache for consistency and to support future scenarios
+    match state.db.get_user_stats(user.id).await {
+        Ok(Some(stats)) => {
+            // Cache the stats
+            let stats_json = serde_json::to_string(&stats)
+                .map_err(|e| format!("Failed to serialize stats: {}", e))?;
+            
+            let now = chrono::Utc::now();
+            let expires_at = now + chrono::Duration::minutes(60);
+            
+            let _ = state
+                .db
+                .save_cache(user.id, "user_stats", &stats_json, expires_at)
+                .await;
+
+            Ok(CachedResponse {
+                data: stats,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Ok(None) => Err("User stats not found".to_string()),
+        Err(e) => {
+            // Database error - try cache fallback
+            eprintln!("Database error, attempting cache fallback: {}", e);
+            
+            let cache_result: Option<(String, String, String)> = sqlx::query_as(
+                r#"
+                SELECT data_json, fetched_at, expires_at 
+                FROM activity_cache
+                WHERE user_id = ? AND data_type = ?
+                ORDER BY fetched_at DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(user.id)
+            .bind("user_stats")
+            .fetch_optional(state.db.pool())
+            .await
+            .ok()
+            .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let stats: UserStats = serde_json::from_str(&data_json)
+                        .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    
+                    Ok(CachedResponse {
+                        data: stats,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!("データベースエラー、キャッシュもありません: {}", e)),
+            }
+        }
+    }
+}
+
