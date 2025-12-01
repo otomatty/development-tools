@@ -237,7 +237,13 @@ mod tests {
     // DailyCodeStats Tests
     // ========================================================================
 
-    fn create_daily_stats(id: i64, date: &str, additions: i32, deletions: i32, commits: i32) -> DailyCodeStats {
+    fn create_daily_stats(
+        id: i64,
+        date: &str,
+        additions: i32,
+        deletions: i32,
+        commits: i32,
+    ) -> DailyCodeStats {
         DailyCodeStats {
             id,
             user_id: 1,
@@ -255,7 +261,7 @@ mod tests {
     fn test_daily_code_stats_date_as_naive() {
         let stats = create_daily_stats(1, "2025-11-30", 100, 50, 5);
         let date = stats.date_as_naive();
-        
+
         assert!(date.is_some());
         let naive_date = date.unwrap();
         assert_eq!(naive_date.year(), 2025);
@@ -276,7 +282,7 @@ mod tests {
             created_at: Utc::now().to_rfc3339(),
             updated_at: Utc::now().to_rfc3339(),
         };
-        
+
         assert!(stats.date_as_naive().is_none());
     }
 
@@ -284,7 +290,7 @@ mod tests {
     fn test_daily_code_stats_net_change() {
         let stats = create_daily_stats(1, "2025-11-30", 150, 50, 5);
         assert_eq!(stats.net_change(), 100);
-        
+
         // Negative net change (more deletions)
         let stats2 = create_daily_stats(2, "2025-11-29", 30, 100, 3);
         assert_eq!(stats2.net_change(), -70);
@@ -294,7 +300,7 @@ mod tests {
     fn test_daily_code_stats_repositories_parsing() {
         let mut stats = create_daily_stats(1, "2025-11-30", 100, 50, 5);
         stats.repositories_json = Some(r#"["repo1", "repo2", "repo3"]"#.to_string());
-        
+
         let repos = stats.repositories();
         assert_eq!(repos.len(), 3);
         assert_eq!(repos[0], "repo1");
@@ -313,7 +319,7 @@ mod tests {
     fn test_daily_code_stats_repositories_invalid_json() {
         let mut stats = create_daily_stats(1, "2025-11-30", 100, 50, 5);
         stats.repositories_json = Some("invalid json".to_string());
-        
+
         let repos = stats.repositories();
         assert!(repos.is_empty());
     }
@@ -334,7 +340,7 @@ mod tests {
             rate_limit_remaining: Some(4500),
             rate_limit_reset_at: None,
         };
-        
+
         let parsed = metadata.last_sync_at_parsed();
         assert!(parsed.is_some());
         let dt = parsed.unwrap();
@@ -354,7 +360,7 @@ mod tests {
             rate_limit_remaining: None,
             rate_limit_reset_at: None,
         };
-        
+
         assert!(metadata.last_sync_at_parsed().is_none());
     }
 
@@ -370,7 +376,7 @@ mod tests {
             rate_limit_remaining: Some(100),
             rate_limit_reset_at: Some("2025-11-30T13:00:00Z".to_string()),
         };
-        
+
         let parsed = metadata.rate_limit_reset_at_parsed();
         assert!(parsed.is_some());
         assert_eq!(parsed.unwrap().hour(), 13);
@@ -449,7 +455,7 @@ mod tests {
             search_limit: 30,
             ..Default::default()
         };
-        
+
         info.check_critical();
         assert!(info.is_critical); // search is below 20%
     }
@@ -465,7 +471,7 @@ mod tests {
             search_limit: 30,
             ..Default::default()
         };
-        
+
         info.check_critical();
         assert!(info.is_critical); // REST is 10%, below 20%
     }
@@ -481,7 +487,7 @@ mod tests {
             search_limit: 30,
             ..Default::default()
         };
-        
+
         info.check_critical();
         assert!(info.is_critical); // GraphQL is 16%, below 20%
     }
@@ -497,7 +503,7 @@ mod tests {
             search_limit: 30,
             ..Default::default()
         };
-        
+
         info.check_critical();
         assert!(!info.is_critical); // all above 20%
     }
@@ -513,7 +519,7 @@ mod tests {
             search_limit: 0,
             ..Default::default()
         };
-        
+
         info.check_critical();
         assert!(!info.is_critical); // Zero limits don't trigger critical
     }

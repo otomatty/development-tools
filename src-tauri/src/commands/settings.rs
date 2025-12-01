@@ -40,14 +40,16 @@ pub struct UpdateSettingsRequest {
 #[tauri::command]
 pub async fn get_settings(state: tauri::State<'_, AppState>) -> Result<UserSettings, String> {
     // Get current user
-    let user = state.db
+    let user = state
+        .db
         .get_current_user()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Not logged in".to_string())?;
 
     // Get or create settings
-    let settings = state.db
+    let settings = state
+        .db
         .get_or_create_user_settings(user.id)
         .await
         .map_err(|e| e.to_string())?;
@@ -62,14 +64,16 @@ pub async fn update_settings(
     settings: UpdateSettingsRequest,
 ) -> Result<UserSettings, String> {
     // Get current user
-    let user = state.db
+    let user = state
+        .db
         .get_current_user()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Not logged in".to_string())?;
 
     // Get existing settings
-    let mut existing = state.db
+    let mut existing = state
+        .db
         .get_or_create_user_settings(user.id)
         .await
         .map_err(|e| e.to_string())?;
@@ -87,7 +91,8 @@ pub async fn update_settings(
     existing.animations_enabled = settings.animations_enabled;
 
     // Save
-    let updated = state.db
+    let updated = state
+        .db
         .update_user_settings(user.id, &existing)
         .await
         .map_err(|e| e.to_string())?;
@@ -99,14 +104,16 @@ pub async fn update_settings(
 #[tauri::command]
 pub async fn reset_settings(state: tauri::State<'_, AppState>) -> Result<UserSettings, String> {
     // Get current user
-    let user = state.db
+    let user = state
+        .db
         .get_current_user()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Not logged in".to_string())?;
 
     // Reset settings
-    let settings = state.db
+    let settings = state
+        .db
         .reset_user_settings(user.id)
         .await
         .map_err(|e| e.to_string())?;
@@ -118,14 +125,16 @@ pub async fn reset_settings(state: tauri::State<'_, AppState>) -> Result<UserSet
 #[tauri::command]
 pub async fn clear_cache(state: tauri::State<'_, AppState>) -> Result<ClearCacheResult, String> {
     // Get current user
-    let user = state.db
+    let user = state
+        .db
         .get_current_user()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Not logged in".to_string())?;
 
     // Clear cache
-    let result = state.db
+    let result = state
+        .db
         .clear_user_cache(user.id)
         .await
         .map_err(|e| e.to_string())?;
@@ -140,26 +149,23 @@ pub async fn get_database_info(
     state: tauri::State<'_, AppState>,
 ) -> Result<DatabaseInfo, String> {
     // Get current user
-    let user = state.db
+    let user = state
+        .db
         .get_current_user()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Not logged in".to_string())?;
 
     // Get database path
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = app_data_dir.join("app.db");
 
     // Get database size
-    let size_bytes = std::fs::metadata(&db_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
     // Get cache size
-    let cache_size_bytes = state.db
+    let cache_size_bytes = state
+        .db
         .get_user_cache_size(user.id)
         .await
         .map_err(|e| e.to_string())?;
@@ -175,14 +181,16 @@ pub async fn get_database_info(
 #[tauri::command]
 pub async fn reset_all_data(state: tauri::State<'_, AppState>) -> Result<(), String> {
     // Get current user
-    let user = state.db
+    let user = state
+        .db
         .get_current_user()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Not logged in".to_string())?;
 
     // Reset all data
-    state.db
+    state
+        .db
         .reset_all_user_data(user.id)
         .await
         .map_err(|e| e.to_string())?;
@@ -203,7 +211,7 @@ pub struct SyncIntervalOption {
 #[tauri::command]
 pub fn get_sync_intervals() -> Vec<SyncIntervalOption> {
     use crate::database::models::settings_defaults::SYNC_INTERVALS;
-    
+
     SYNC_INTERVALS
         .iter()
         .map(|(value, label)| SyncIntervalOption {
@@ -217,29 +225,33 @@ pub fn get_sync_intervals() -> Vec<SyncIntervalOption> {
 #[tauri::command]
 pub async fn export_data(state: tauri::State<'_, AppState>) -> Result<String, String> {
     use crate::database::models::{ExportData, ExportUser};
-    
+
     // Get current user
-    let user = state.db
+    let user = state
+        .db
         .get_current_user()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Not logged in".to_string())?;
 
     // Get user stats
-    let stats = state.db
+    let stats = state
+        .db
         .get_user_stats(user.id)
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "User stats not found".to_string())?;
 
     // Get badges
-    let badges = state.db
+    let badges = state
+        .db
         .get_user_badges(user.id)
         .await
         .map_err(|e| e.to_string())?;
 
     // Get XP history (last 1000 entries)
-    let xp_history = state.db
+    let xp_history = state
+        .db
         .get_recent_xp_history(user.id, 1000)
         .await
         .map_err(|e| e.to_string())?;
@@ -258,8 +270,7 @@ pub async fn export_data(state: tauri::State<'_, AppState>) -> Result<String, St
     };
 
     // Serialize to JSON
-    serde_json::to_string_pretty(&export)
-        .map_err(|e| format!("Failed to serialize data: {}", e))
+    serde_json::to_string_pretty(&export).map_err(|e| format!("Failed to serialize data: {}", e))
 }
 
 /// Get application information
@@ -278,7 +289,7 @@ pub fn get_app_info() -> AppInfo {
 #[tauri::command]
 pub async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    
+
     app.opener()
         .open_url(&url, None::<String>)
         .map_err(|e| format!("Failed to open URL: {}", e))
@@ -295,11 +306,25 @@ mod tests {
         assert_eq!(NotificationMethod::OsOnly.as_str(), "os_only");
         assert_eq!(NotificationMethod::None.as_str(), "none");
 
-        assert_eq!(NotificationMethod::from_str("both"), NotificationMethod::Both);
-        assert_eq!(NotificationMethod::from_str("app_only"), NotificationMethod::AppOnly);
-        assert_eq!(NotificationMethod::from_str("os_only"), NotificationMethod::OsOnly);
-        assert_eq!(NotificationMethod::from_str("none"), NotificationMethod::None);
-        assert_eq!(NotificationMethod::from_str("invalid"), NotificationMethod::Both); // default
+        assert_eq!(
+            NotificationMethod::from_str("both"),
+            NotificationMethod::Both
+        );
+        assert_eq!(
+            NotificationMethod::from_str("app_only"),
+            NotificationMethod::AppOnly
+        );
+        assert_eq!(
+            NotificationMethod::from_str("os_only"),
+            NotificationMethod::OsOnly
+        );
+        assert_eq!(
+            NotificationMethod::from_str("none"),
+            NotificationMethod::None
+        );
+        assert_eq!(
+            NotificationMethod::from_str("invalid"),
+            NotificationMethod::Both
+        ); // default
     }
 }
-

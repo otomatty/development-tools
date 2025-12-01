@@ -23,10 +23,7 @@ impl Database {
     ///
     /// Uses UPSERT semantics: inserts a new snapshot if none exists for the date,
     /// or updates the existing one if it does.
-    pub async fn save_github_stats_snapshot(
-        &self,
-        snapshot: &GitHubStatsSnapshot,
-    ) -> DbResult<()> {
+    pub async fn save_github_stats_snapshot(&self, snapshot: &GitHubStatsSnapshot) -> DbResult<()> {
         sqlx::query(
             r#"
             INSERT INTO github_stats_snapshots (
@@ -139,7 +136,9 @@ mod tests {
     use crate::database::models::github_stats_snapshot::GitHubStatsSnapshot;
 
     async fn setup_test_db() -> Database {
-        let db = Database::in_memory().await.expect("Failed to create test database");
+        let db = Database::in_memory()
+            .await
+            .expect("Failed to create test database");
 
         // Create a test user
         db.create_user(12345, "testuser", None, "encrypted_token", None, None)
@@ -149,8 +148,26 @@ mod tests {
         db
     }
 
-    fn create_snapshot(user_id: i64, commits: i32, prs: i32, reviews: i32, issues: i32, stars: i32, contributions: i32, date: &str) -> GitHubStatsSnapshot {
-        GitHubStatsSnapshot::new(user_id, commits, prs, reviews, issues, stars, contributions, date)
+    fn create_snapshot(
+        user_id: i64,
+        commits: i32,
+        prs: i32,
+        reviews: i32,
+        issues: i32,
+        stars: i32,
+        contributions: i32,
+        date: &str,
+    ) -> GitHubStatsSnapshot {
+        GitHubStatsSnapshot::new(
+            user_id,
+            commits,
+            prs,
+            reviews,
+            issues,
+            stars,
+            contributions,
+            date,
+        )
     }
 
     // TC-101: Save new snapshot

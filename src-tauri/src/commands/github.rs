@@ -57,7 +57,11 @@ pub async fn get_user_stats(state: State<'_, AppState>) -> Result<Option<UserSta
         .map_err(|e| e.to_string())?;
 
     if let Some(u) = user {
-        state.db.get_user_stats(u.id).await.map_err(|e| e.to_string())
+        state
+            .db
+            .get_user_stats(u.id)
+            .await
+            .map_err(|e| e.to_string())
     } else {
         Ok(None)
     }
@@ -293,10 +297,10 @@ pub async fn sync_github_stats(
             )
             .await
             .map_err(|e| e.to_string())?;
-        
+
         let new_streak = updated_stats.current_streak;
         let bonus = streak::calculate_streak_bonus(old_streak, new_streak);
-        
+
         Some((bonus, new_streak))
     } else {
         // Log warning when streak_info is not available
@@ -312,7 +316,7 @@ pub async fn sync_github_stats(
     let (streak_bonus_result, streak_bonus_xp) = if let Some((bonus, new_streak)) = &streak_result {
         let next_milestone = streak::get_next_milestone(*new_streak);
         let days_to_next = streak::days_to_next_milestone(*new_streak);
-        
+
         (
             StreakBonusInfo {
                 daily_bonus: bonus.daily_bonus,
@@ -364,7 +368,7 @@ pub async fn sync_github_stats(
             } else {
                 "連続コミットボーナス".to_string()
             };
-            
+
             state
                 .db
                 .record_xp_gain(
@@ -418,11 +422,7 @@ pub async fn sync_github_stats(
     };
 
     // Get user settings for notification preferences
-    let user_settings = match state
-        .db
-        .get_or_create_user_settings(user.id)
-        .await
-    {
+    let user_settings = match state.db.get_or_create_user_settings(user.id).await {
         Ok(settings) => Some(settings),
         Err(e) => {
             eprintln!("Failed to get or create user settings: {}", e);
@@ -559,7 +559,10 @@ pub async fn sync_github_stats(
             .map_err(|e| e.to_string())?;
 
         // Find badge definition for event
-        if let Some(def) = badge_definitions.iter().find(|d| d.id == badge_result.badge_id) {
+        if let Some(def) = badge_definitions
+            .iter()
+            .find(|d| d.id == badge_result.badge_id)
+        {
             let badge_info = NewBadgeInfo {
                 badge_id: def.id.clone(),
                 badge_type: def.badge_type.clone(),
@@ -609,55 +612,73 @@ pub async fn sync_github_stats(
     let challenge_stats_json = serde_json::to_string(&challenge_stats).unwrap_or_default();
 
     // Check if we need to generate new daily challenges
-    let last_daily = state.db.get_last_daily_challenge_date(user.id).await.ok().flatten();
+    let last_daily = state
+        .db
+        .get_last_daily_challenge_date(user.id)
+        .await
+        .ok()
+        .flatten();
     let now = chrono::Utc::now();
-    
+
     if challenge::should_generate_daily_challenges(last_daily, now) {
         // Generate daily challenges
         let config = challenge::ChallengeGeneratorConfig::default();
         let historical = challenge::HistoricalStats::default(); // TODO: Calculate from GitHub data
         let targets = challenge::calculate_recommended_targets(&historical, &config);
         let daily_templates = challenge::generate_daily_challenges(&targets);
-        
+
         for template in daily_templates {
             let (start, end) = challenge::calculate_challenge_period(&template.challenge_type, now);
-            if let Err(e) = state.db.create_challenge_with_stats(
-                user.id,
-                &template.challenge_type,
-                &template.target_metric,
-                template.target_value,
-                template.reward_xp,
-                start,
-                end,
-                &challenge_stats_json,
-            ).await {
+            if let Err(e) = state
+                .db
+                .create_challenge_with_stats(
+                    user.id,
+                    &template.challenge_type,
+                    &template.target_metric,
+                    template.target_value,
+                    template.reward_xp,
+                    start,
+                    end,
+                    &challenge_stats_json,
+                )
+                .await
+            {
                 eprintln!("Failed to create daily challenge: {}", e);
             }
         }
     }
 
     // Check if we need to generate new weekly challenges
-    let last_weekly = state.db.get_last_weekly_challenge_date(user.id).await.ok().flatten();
-    
+    let last_weekly = state
+        .db
+        .get_last_weekly_challenge_date(user.id)
+        .await
+        .ok()
+        .flatten();
+
     if challenge::should_generate_weekly_challenges(last_weekly, now) {
         // Generate weekly challenges
         let config = challenge::ChallengeGeneratorConfig::default();
         let historical = challenge::HistoricalStats::default(); // TODO: Calculate from GitHub data
         let targets = challenge::calculate_recommended_targets(&historical, &config);
         let weekly_templates = challenge::generate_weekly_challenges(&targets);
-        
+
         for template in weekly_templates {
             let (start, end) = challenge::calculate_challenge_period(&template.challenge_type, now);
-            if let Err(e) = state.db.create_challenge_with_stats(
-                user.id,
-                &template.challenge_type,
-                &template.target_metric,
-                template.target_value,
-                template.reward_xp,
-                start,
-                end,
-                &challenge_stats_json,
-            ).await {
+            if let Err(e) = state
+                .db
+                .create_challenge_with_stats(
+                    user.id,
+                    &template.challenge_type,
+                    &template.target_metric,
+                    template.target_value,
+                    template.reward_xp,
+                    start,
+                    end,
+                    &challenge_stats_json,
+                )
+                .await
+            {
                 eprintln!("Failed to create weekly challenge: {}", e);
             }
         }
@@ -675,9 +696,12 @@ pub async fn sync_github_stats(
     for ch in active_challenges {
         // Get start stats for this challenge
         if let Ok(Some(start_stats_json)) = state.db.get_challenge_start_stats(ch.id).await {
-            if let Ok(start_stats) = serde_json::from_str::<challenge::ChallengeStats>(&start_stats_json) {
+            if let Ok(start_stats) =
+                serde_json::from_str::<challenge::ChallengeStats>(&start_stats_json)
+            {
                 // Calculate progress based on metric
-                let progress = challenge_stats.get_metric(&ch.target_metric)
+                let progress = challenge_stats
+                    .get_metric(&ch.target_metric)
                     .saturating_sub(start_stats.get_metric(&ch.target_metric));
 
                 // Update progress in database
@@ -687,16 +711,25 @@ pub async fn sync_github_stats(
                             // Check if challenge was just completed (active -> completed transition)
                             if ch.status == "active" && updated_challenge.status == "completed" {
                                 // Award XP for completing the challenge
-                                if let Err(e) = state.db.record_xp_gain(
-                                    user.id,
-                                    "challenge_completed",
-                                    updated_challenge.reward_xp,
-                                    Some(&format!("Completed {} challenge", updated_challenge.challenge_type)),
-                                    None,
-                                ).await {
+                                if let Err(e) = state
+                                    .db
+                                    .record_xp_gain(
+                                        user.id,
+                                        "challenge_completed",
+                                        updated_challenge.reward_xp,
+                                        Some(&format!(
+                                            "Completed {} challenge",
+                                            updated_challenge.challenge_type
+                                        )),
+                                        None,
+                                    )
+                                    .await
+                                {
                                     eprintln!("Failed to record XP gain for challenge: {}", e);
                                 }
-                                if let Err(e) = state.db.add_xp(user.id, updated_challenge.reward_xp).await {
+                                if let Err(e) =
+                                    state.db.add_xp(user.id, updated_challenge.reward_xp).await
+                                {
                                     eprintln!("Failed to add XP for challenge: {}", e);
                                 }
                             }
@@ -792,7 +825,7 @@ pub async fn get_contribution_calendar(
 }
 
 /// Helper function to build badge evaluation context
-/// 
+///
 /// Consolidates the common logic for building BadgeEvalContext used by
 /// both `get_badges_with_progress` and `get_near_completion_badges`.
 async fn build_badge_context(
@@ -923,7 +956,7 @@ pub struct CodeStatsSyncResult {
 }
 
 /// Sync code statistics from GitHub
-/// 
+///
 /// Fetches additions/deletions data from GitHub API and stores in local database.
 /// Uses incremental sync to minimize API calls.
 #[command]
@@ -972,7 +1005,11 @@ pub async fn sync_code_stats(
     }
 
     // Determine sync start date
-    let default_days_back = if force_full_sync.unwrap_or(false) { StatsPeriod::Quarter.days() } else { StatsPeriod::Month.days() };
+    let default_days_back = if force_full_sync.unwrap_or(false) {
+        StatsPeriod::Quarter.days()
+    } else {
+        StatsPeriod::Month.days()
+    };
     let sync_from = state
         .db
         .get_sync_start_date(user.id, default_days_back)
@@ -1096,9 +1133,7 @@ pub async fn get_code_stats_summary(
 
 /// Get detailed rate limit information
 #[command]
-pub async fn get_rate_limit_info(
-    state: State<'_, AppState>,
-) -> Result<RateLimitDetailed, String> {
+pub async fn get_rate_limit_info(state: State<'_, AppState>) -> Result<RateLimitDetailed, String> {
     let token = state
         .token_manager
         .get_access_token()
@@ -1142,7 +1177,7 @@ pub struct CachedResponse<T> {
 }
 
 /// Get GitHub stats with cache fallback
-/// 
+///
 /// Attempts to fetch fresh data from GitHub API. If that fails due to network error,
 /// falls back to cached data if available.
 /// Note: Authentication errors do NOT trigger cache fallback for security reasons.
@@ -1175,10 +1210,10 @@ pub async fn get_github_stats_with_cache(
             // API succeeded - cache the data
             let stats_json = serde_json::to_string(&stats)
                 .map_err(|e| format!("Failed to serialize stats: {}", e))?;
-            
+
             let now = chrono::Utc::now();
             let expires_at = now + chrono::Duration::minutes(30);
-            
+
             // Save to cache (ignore errors - caching is best effort)
             let _ = state
                 .db
@@ -1200,8 +1235,11 @@ pub async fn get_github_stats_with_cache(
             }
 
             // Network error - try cache fallback
-            eprintln!("GitHub API network error, attempting cache fallback: {}", api_error);
-            
+            eprintln!(
+                "GitHub API network error, attempting cache fallback: {}",
+                api_error
+            );
+
             // Use repository method instead of direct SQL
             let cache_result = state
                 .db
@@ -1214,7 +1252,7 @@ pub async fn get_github_stats_with_cache(
                 Some((data_json, cached_at, expires_at)) => {
                     let stats: GitHubStats = serde_json::from_str(&data_json)
                         .map_err(|e| format!("Failed to parse cached data: {}", e))?;
-                    
+
                     Ok(CachedResponse {
                         data: stats,
                         from_cache: true,
@@ -1232,7 +1270,7 @@ pub async fn get_github_stats_with_cache(
 }
 
 /// Get user stats with cache fallback
-/// 
+///
 /// Attempts to fetch user stats from database. If that fails,
 /// falls back to cached data if available.
 #[command]
@@ -1253,10 +1291,10 @@ pub async fn get_user_stats_with_cache(
             // Cache the stats
             let stats_json = serde_json::to_string(&stats)
                 .map_err(|e| format!("Failed to serialize stats: {}", e))?;
-            
+
             let now = chrono::Utc::now();
             let expires_at = now + chrono::Duration::minutes(60);
-            
+
             let _ = state
                 .db
                 .save_cache(user.id, cache_types::USER_STATS, &stats_json, expires_at)
@@ -1273,7 +1311,7 @@ pub async fn get_user_stats_with_cache(
         Err(e) => {
             // Database error - try cache fallback
             eprintln!("Database error, attempting cache fallback: {}", e);
-            
+
             // Use repository method instead of direct SQL
             let cache_result = state
                 .db
@@ -1286,7 +1324,7 @@ pub async fn get_user_stats_with_cache(
                 Some((data_json, cached_at, expires_at)) => {
                     let stats: UserStats = serde_json::from_str(&data_json)
                         .map_err(|e| format!("Failed to parse cached data: {}", e))?;
-                    
+
                     Ok(CachedResponse {
                         data: stats,
                         from_cache: true,
@@ -1299,7 +1337,6 @@ pub async fn get_user_stats_with_cache(
         }
     }
 }
-
 
 // ============================================================================
 // Cache Management Commands
@@ -1330,8 +1367,16 @@ pub async fn get_cache_stats(state: State<'_, AppState>) -> Result<CacheStats, S
         .ok_or("Not logged in")?;
 
     // Use repository methods instead of direct SQL
-    let total_size = state.db.get_user_cache_size(user.id).await.map_err(|e| e.to_string())?;
-    let (entry_count, expired_count) = state.db.get_cache_stats(user.id).await.map_err(|e| e.to_string())?;
+    let total_size = state
+        .db
+        .get_user_cache_size(user.id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let (entry_count, expired_count) = state
+        .db
+        .get_cache_stats(user.id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(CacheStats {
         total_size_bytes: total_size,
@@ -1352,24 +1397,31 @@ pub async fn clear_user_cache(state: State<'_, AppState>) -> Result<u64, String>
         .ok_or("Not logged in")?;
 
     // Use repository method instead of direct SQL
-    let deleted = state.db.delete_user_cache(user.id).await.map_err(|e| e.to_string())?;
+    let deleted = state
+        .db
+        .delete_user_cache(user.id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
     eprintln!("Cleared {} cache entries for user {}", deleted, user.id);
-    
+
     Ok(deleted)
 }
 
 /// Clear only expired cache entries (cleanup)
 #[command]
 pub async fn cleanup_expired_cache(state: State<'_, AppState>) -> Result<u64, String> {
-    let deleted = state.db.clear_expired_cache().await.map_err(|e| e.to_string())?;
-    
+    let deleted = state
+        .db
+        .clear_expired_cache()
+        .await
+        .map_err(|e| e.to_string())?;
+
     if deleted > 0 {
         // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
         eprintln!("Cleaned up {} expired cache entries", deleted);
     }
-    
+
     Ok(deleted)
 }
-

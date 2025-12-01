@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Generic cached response wrapper
-/// 
+///
 /// Wraps any data type with cache metadata to indicate whether the data
 /// came from a fresh API call or from local cache (e.g., when offline).
 #[derive(Debug, Clone, Serialize, Deserialize)]

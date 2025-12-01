@@ -396,17 +396,18 @@ mod tests {
         let pool = create_test_pool().await;
 
         // Run migrations twice
-        run_migrations(&pool).await.expect("First run should succeed");
+        run_migrations(&pool)
+            .await
+            .expect("First run should succeed");
         run_migrations(&pool)
             .await
             .expect("Second run should also succeed");
 
         // Check migration count
-        let count: i32 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-                .fetch_one(&pool)
-                .await
-                .expect("Should count migrations");
+        let count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
+            .fetch_one(&pool)
+            .await
+            .expect("Should count migrations");
 
         assert_eq!(
             count,
@@ -415,4 +416,3 @@ mod tests {
         );
     }
 }
-

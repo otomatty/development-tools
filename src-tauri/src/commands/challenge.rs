@@ -6,8 +6,8 @@ use chrono::Utc;
 use tauri::{command, State};
 
 use super::auth::AppState;
-use crate::database::models::Challenge;
 use crate::database::challenge;
+use crate::database::models::Challenge;
 
 /// Challenge info for frontend with additional computed fields
 #[derive(Debug, Clone, serde::Serialize)]
@@ -75,7 +75,9 @@ pub struct CreateChallengeRequest {
 
 /// Get all active challenges for current user
 #[command]
-pub async fn get_active_challenges(state: State<'_, AppState>) -> Result<Vec<ChallengeInfo>, String> {
+pub async fn get_active_challenges(
+    state: State<'_, AppState>,
+) -> Result<Vec<ChallengeInfo>, String> {
     let user = state
         .token_manager
         .get_current_user()
@@ -161,7 +163,9 @@ pub async fn create_challenge(
     // Validate target metric
     let valid_metrics = ["commits", "prs", "reviews", "issues"];
     if !valid_metrics.contains(&request.target_metric.as_str()) {
-        return Err("Invalid target metric. Must be one of: commits, prs, reviews, issues".to_string());
+        return Err(
+            "Invalid target metric. Must be one of: commits, prs, reviews, issues".to_string(),
+        );
     }
 
     // Check if there's already an active challenge of this type and metric
@@ -175,7 +179,8 @@ pub async fn create_challenge(
     }
 
     let now = Utc::now();
-    let (start_date, end_date) = challenge::calculate_challenge_period(&request.challenge_type, now);
+    let (start_date, end_date) =
+        challenge::calculate_challenge_period(&request.challenge_type, now);
 
     // Calculate reward XP if not provided
     let reward_xp = request.reward_xp.unwrap_or_else(|| {
@@ -201,10 +206,7 @@ pub async fn create_challenge(
 
 /// Delete a challenge
 #[command]
-pub async fn delete_challenge(
-    state: State<'_, AppState>,
-    challenge_id: i64,
-) -> Result<(), String> {
+pub async fn delete_challenge(state: State<'_, AppState>, challenge_id: i64) -> Result<(), String> {
     let user = state
         .token_manager
         .get_current_user()
@@ -347,7 +349,7 @@ mod tests {
     fn test_calculate_challenge_period_daily() {
         let now = Utc::now();
         let (start, end) = challenge::calculate_challenge_period("daily", now);
-        
+
         assert_eq!(start, now);
         assert!(end > now);
         assert!(end <= now + Duration::days(1));
@@ -357,7 +359,7 @@ mod tests {
     fn test_calculate_challenge_period_weekly() {
         let now = Utc::now();
         let (start, end) = challenge::calculate_challenge_period("weekly", now);
-        
+
         assert_eq!(start, now);
         assert!(end > now);
         assert!(end <= now + Duration::days(7));

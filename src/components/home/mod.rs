@@ -11,27 +11,31 @@ pub mod skeleton;
 pub mod stats_display;
 pub mod xp_notification;
 
-pub use login_card::{LoginCard, LoginState};
-pub use profile_card::ProfileCard;
-pub use stats_display::StatsDisplay;
-pub use contribution_graph::ContributionGraph;
 pub use badge_grid::BadgeGrid;
 pub use challenge_card::ChallengeCard;
+pub use contribution_graph::ContributionGraph;
+pub use login_card::{LoginCard, LoginState};
+pub use profile_card::ProfileCard;
 pub use skeleton::HomeSkeleton;
+pub use stats_display::StatsDisplay;
 pub use xp_notification::{LevelUpModal, MultipleBadgesNotification, XpNotification};
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use wasm_bindgen::JsCast;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use wasm_bindgen::JsCast;
 
 use crate::components::network_status::use_is_online;
 use crate::tauri_api;
-use crate::types::{AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo, NewBadgeInfo, NotificationMethod, StatsDiffResult, UserSettings, UserStats, SyncResult, XpGainedEvent};
+use crate::types::{
+    AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo,
+    NewBadgeInfo, NotificationMethod, StatsDiffResult, SyncResult, UserSettings, UserStats,
+    XpGainedEvent,
+};
 
 /// Handle sync result notifications
-/// 
+///
 /// Shows app-internal notifications based on sync result and notification settings.
 /// This function centralizes the notification logic to avoid duplication.
 fn handle_sync_result_notifications(
@@ -44,13 +48,14 @@ fn handle_sync_result_notifications(
     // Show notification if XP gained (check notification settings)
     // Use get_untracked() since this is called from event handlers (non-reactive context)
     if sync_result.xp_gained > 0 {
-        let should_show_app_notification = notification_settings.get_untracked()
+        let should_show_app_notification = notification_settings
+            .get_untracked()
             .map(|s| {
                 let method = NotificationMethod::from_str(&s.notification_method);
                 method != NotificationMethod::None && method != NotificationMethod::OsOnly
             })
             .unwrap_or(true); // Default to showing if settings not loaded
-        
+
         if should_show_app_notification {
             let event = XpGainedEvent {
                 xp_gained: sync_result.xp_gained,
@@ -61,25 +66,27 @@ fn handle_sync_result_notifications(
                 xp_breakdown: sync_result.xp_breakdown.clone(),
                 streak_bonus: sync_result.streak_bonus.clone(),
             };
-            
+
             if sync_result.level_up {
                 // Check if level up notifications are enabled
-                let should_show_level_up = notification_settings.get_untracked()
+                let should_show_level_up = notification_settings
+                    .get_untracked()
                     .map(|s| s.notify_level_up)
                     .unwrap_or(true);
-                
+
                 if should_show_level_up {
                     set_level_up_event.set(Some(event));
                 }
             } else {
                 // Check if XP gain notifications are enabled
-                let should_show_xp = notification_settings.get_untracked()
+                let should_show_xp = notification_settings
+                    .get_untracked()
                     .map(|s| s.notify_xp_gain)
                     .unwrap_or(true);
-                
+
                 if should_show_xp {
                     set_xp_event.set(Some(event));
-                    
+
                     // Auto-hide after 5 seconds
                     if let Some(window) = web_sys::window() {
                         let closure = wasm_bindgen::closure::Closure::once(move || {
@@ -95,16 +102,18 @@ fn handle_sync_result_notifications(
             }
         }
     }
-    
+
     // Show badge notifications if any (check notification settings)
     if !sync_result.new_badges.is_empty() {
-        let should_show_badge_notification = notification_settings.get_untracked()
+        let should_show_badge_notification = notification_settings
+            .get_untracked()
             .map(|s| {
                 let method = NotificationMethod::from_str(&s.notification_method);
-                (method != NotificationMethod::None && method != NotificationMethod::OsOnly) && s.notify_badge_earned
+                (method != NotificationMethod::None && method != NotificationMethod::OsOnly)
+                    && s.notify_badge_earned
             })
             .unwrap_or(true); // Default to showing if settings not loaded
-        
+
         if should_show_badge_notification {
             set_new_badges_event.set(sync_result.new_badges.clone());
         }
@@ -113,9 +122,7 @@ fn handle_sync_result_notifications(
 
 /// Home page component
 #[component]
-pub fn HomePage(
-    set_current_page: WriteSignal<AppPage>,
-) -> impl IntoView {
+pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
     // State
     let (auth_state, set_auth_state) = signal(AuthState::default());
     let (loading, set_loading) = signal(true);
@@ -125,24 +132,24 @@ pub fn HomePage(
     let (badges, set_badges) = signal(Vec::<Badge>::new());
     let (badge_definitions, set_badge_definitions) = signal(Vec::<BadgeDefinition>::new());
     let (error, set_error) = signal(Option::<String>::None);
-    
+
     // Stats diff for day-over-day comparison
     let (stats_diff, set_stats_diff) = signal(Option::<StatsDiffResult>::None);
-    
+
     // Cache status tracking
     let (data_from_cache, set_data_from_cache) = signal(false);
     let (cache_timestamp, set_cache_timestamp) = signal(Option::<String>::None);
-    
+
     // XP notification state
     let (xp_event, set_xp_event) = signal(Option::<XpGainedEvent>::None);
     let (level_up_event, set_level_up_event) = signal(Option::<XpGainedEvent>::None);
-    
+
     // Badge notification state
     let (new_badges_event, set_new_badges_event) = signal(Vec::<NewBadgeInfo>::new());
-    
+
     // Notification settings
     let (notification_settings, set_notification_settings) = signal(Option::<UserSettings>::None);
-    
+
     // Device Flow login state
     let (login_state, set_login_state) = signal(LoginState::default());
     let (polling_active, set_polling_active) = signal(false);
@@ -152,7 +159,7 @@ pub fn HomePage(
     let component_mounted = Arc::new(AtomicBool::new(true));
     let component_mounted_for_auto_sync = component_mounted.clone();
     let component_mounted_for_polling = component_mounted.clone();
-    
+
     // Cleanup when component unmounts
     on_cleanup({
         let component_mounted = component_mounted.clone();
@@ -172,7 +179,7 @@ pub fn HomePage(
         match tauri_api::get_auth_state().await {
             Ok(state) => {
                 set_auth_state.set(state.clone());
-                
+
                 // If logged in, load additional data and settings
                 if state.is_logged_in {
                     // Load notification/sync settings
@@ -180,17 +187,19 @@ pub fn HomePage(
                         Ok(settings) => {
                             // Check sync_on_startup setting
                             let should_sync_on_startup = settings.sync_on_startup;
-                            
+
                             set_notification_settings.set(Some(settings));
-                            
+
                             // Perform startup sync if enabled
                             if should_sync_on_startup {
-                                web_sys::console::log_1(&"Startup sync: Syncing GitHub stats...".into());
+                                web_sys::console::log_1(
+                                    &"Startup sync: Syncing GitHub stats...".into(),
+                                );
                                 match tauri_api::sync_github_stats().await {
                                     Ok(sync_result) => {
                                         set_user_stats.set(Some(sync_result.user_stats.clone()));
                                         set_stats_diff.set(sync_result.stats_diff.clone());
-                                        
+
                                         // Handle notifications to provide consistent UX with other syncs
                                         handle_sync_result_notifications(
                                             &sync_result,
@@ -199,21 +208,31 @@ pub fn HomePage(
                                             set_level_up_event,
                                             set_new_badges_event,
                                         );
-                                        
-                                        web_sys::console::log_1(&format!("Startup sync: Completed, XP gained: {}", sync_result.xp_gained).into());
+
+                                        web_sys::console::log_1(
+                                            &format!(
+                                                "Startup sync: Completed, XP gained: {}",
+                                                sync_result.xp_gained
+                                            )
+                                            .into(),
+                                        );
                                     }
                                     Err(e) => {
-                                        web_sys::console::error_1(&format!("Startup sync failed: {}", e).into());
+                                        web_sys::console::error_1(
+                                            &format!("Startup sync failed: {}", e).into(),
+                                        );
                                     }
                                 }
                             }
                         }
                         Err(e) => {
-                            web_sys::console::error_1(&format!("Failed to load settings: {}", e).into());
+                            web_sys::console::error_1(
+                                &format!("Failed to load settings: {}", e).into(),
+                            );
                             set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
                         }
                     }
-                    
+
                     load_user_data(
                         set_github_stats,
                         set_level_info,
@@ -222,7 +241,8 @@ pub fn HomePage(
                         set_error,
                         set_data_from_cache,
                         set_cache_timestamp,
-                    ).await;
+                    )
+                    .await;
                 }
             }
             Err(e) => {
@@ -230,12 +250,12 @@ pub fn HomePage(
                 set_error.set(Some(e));
             }
         }
-        
+
         // Load badge definitions (doesn't require auth)
         if let Ok(defs) = tauri_api::get_badge_definitions().await {
             set_badge_definitions.set(defs);
         }
-        
+
         set_loading.set(false);
     });
 
@@ -243,16 +263,18 @@ pub fn HomePage(
     // This is separate from the interval-based auto-sync
     {
         let is_online = use_is_online();
-        
+
         // Track previous online state to detect transition
         Effect::new(move |prev_online: Option<bool>| {
             let current_online = is_online.get();
-            
+
             // Check if we just came back online (was offline, now online)
             if let Some(was_online) = prev_online {
                 if !was_online && current_online {
-                    web_sys::console::log_1(&"Network: Online recovery detected, triggering sync...".into());
-                    
+                    web_sys::console::log_1(
+                        &"Network: Online recovery detected, triggering sync...".into(),
+                    );
+
                     // Check if user is logged in before syncing
                     let auth = auth_state.get_untracked();
                     if auth.is_logged_in {
@@ -261,11 +283,11 @@ pub fn HomePage(
                                 Ok(sync_result) => {
                                     set_user_stats.set(Some(sync_result.user_stats.clone()));
                                     set_stats_diff.set(sync_result.stats_diff.clone());
-                                    
+
                                     // Clear cache indicator - we have fresh data now
                                     set_data_from_cache.set(false);
                                     set_cache_timestamp.set(None);
-                                    
+
                                     // Handle notifications
                                     handle_sync_result_notifications(
                                         &sync_result,
@@ -274,18 +296,26 @@ pub fn HomePage(
                                         set_level_up_event,
                                         set_new_badges_event,
                                     );
-                                    
-                                    web_sys::console::log_1(&format!("Online recovery sync: Completed, XP gained: {}", sync_result.xp_gained).into());
+
+                                    web_sys::console::log_1(
+                                        &format!(
+                                            "Online recovery sync: Completed, XP gained: {}",
+                                            sync_result.xp_gained
+                                        )
+                                        .into(),
+                                    );
                                 }
                                 Err(e) => {
-                                    web_sys::console::error_1(&format!("Online recovery sync failed: {}", e).into());
+                                    web_sys::console::error_1(
+                                        &format!("Online recovery sync failed: {}", e).into(),
+                                    );
                                 }
                             }
                         });
                     }
                 }
             }
-            
+
             current_online
         });
     }
@@ -294,16 +324,18 @@ pub fn HomePage(
     {
         let auth_state = auth_state.clone();
         let component_mounted = component_mounted_for_auto_sync;
-        
+
         spawn_local(async move {
             // Poll for settings with timeout (max 5 seconds, check every 200ms)
             let max_wait_ms = 5000;
             let poll_interval_ms = 200;
             let mut waited = 0;
-            
+
             while notification_settings.get_untracked().is_none() && waited < max_wait_ms {
                 if !component_mounted.load(Ordering::SeqCst) {
-                    web_sys::console::log_1(&"Auto-sync: Component unmounted while waiting for settings".into());
+                    web_sys::console::log_1(
+                        &"Auto-sync: Component unmounted while waiting for settings".into(),
+                    );
                     return;
                 }
                 if let Some(window) = web_sys::window() {
@@ -319,60 +351,71 @@ pub fn HomePage(
                     break;
                 }
             }
-            
+
             web_sys::console::log_1(&"Auto-sync: Settings loaded, starting timer loop.".into());
-            
+
             // Auto-sync loop - runs based on user settings while component is mounted
             loop {
                 // Check if component is still mounted - exit if not
                 if !component_mounted.load(Ordering::SeqCst) {
-                    web_sys::console::log_1(&"Auto-sync: Component unmounted, stopping loop".into());
+                    web_sys::console::log_1(
+                        &"Auto-sync: Component unmounted, stopping loop".into(),
+                    );
                     break;
                 }
-                
+
                 // Get current sync interval from settings (use saturating_mul to avoid overflow)
-                let sync_interval_ms = notification_settings.get_untracked()
+                let sync_interval_ms = notification_settings
+                    .get_untracked()
                     .map(|s| {
                         if s.sync_interval_minutes == 0 {
                             0 // Manual only
                         } else {
-                            s.sync_interval_minutes.saturating_mul(60).saturating_mul(1000) // Convert minutes to ms safely
+                            s.sync_interval_minutes
+                                .saturating_mul(60)
+                                .saturating_mul(1000) // Convert minutes to ms safely
                         }
                     })
                     .unwrap_or(60 * 60 * 1000); // Default: 1 hour
-                
+
                 // If sync interval is 0 (manual only), wait a bit and check again
                 if sync_interval_ms == 0 {
                     if let Some(window) = web_sys::window() {
                         let promise = js_sys::Promise::new(&mut |resolve, _| {
                             let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                                &resolve,
-                                30000, // Check every 30 seconds if settings changed
+                                &resolve, 30000, // Check every 30 seconds if settings changed
                             );
                         });
                         let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                     }
                     continue;
                 }
-                
+
                 if let Some(window) = web_sys::window() {
                     // Use get_untracked() since we're in an async context outside reactive tracking
                     // This is intentional - we poll these values periodically, not reactively
                     let auth = auth_state.get_untracked();
-                    
+
                     // Check background_sync setting
-                    let background_sync_enabled = notification_settings.get_untracked()
+                    let background_sync_enabled = notification_settings
+                        .get_untracked()
                         .map(|s| s.background_sync)
                         .unwrap_or(true);
-                    
+
                     if auth.is_logged_in && background_sync_enabled {
-                        web_sys::console::log_1(&format!("Auto-sync: Syncing GitHub stats (interval: {}ms)...", sync_interval_ms).into());
-                        
+                        web_sys::console::log_1(
+                            &format!(
+                                "Auto-sync: Syncing GitHub stats (interval: {}ms)...",
+                                sync_interval_ms
+                            )
+                            .into(),
+                        );
+
                         match tauri_api::sync_github_stats().await {
                             Ok(sync_result) => {
                                 set_user_stats.set(Some(sync_result.user_stats.clone()));
                                 set_stats_diff.set(sync_result.stats_diff.clone());
-                                
+
                                 // Handle notifications based on sync result
                                 handle_sync_result_notifications(
                                     &sync_result,
@@ -381,7 +424,7 @@ pub fn HomePage(
                                     set_level_up_event,
                                     set_new_badges_event,
                                 );
-                                
+
                                 // Reload level info and badges
                                 if let Ok(info) = tauri_api::get_level_info().await {
                                     set_level_info.set(info);
@@ -389,21 +432,31 @@ pub fn HomePage(
                                 if let Ok(b) = tauri_api::get_badges().await {
                                     set_badges.set(b);
                                 }
-                                
-                                web_sys::console::log_1(&format!("Auto-sync: Completed, XP gained: {}", sync_result.xp_gained).into());
+
+                                web_sys::console::log_1(
+                                    &format!(
+                                        "Auto-sync: Completed, XP gained: {}",
+                                        sync_result.xp_gained
+                                    )
+                                    .into(),
+                                );
                             }
                             Err(e) => {
-                                web_sys::console::error_1(&format!("Auto-sync failed: {}", e).into());
+                                web_sys::console::error_1(
+                                    &format!("Auto-sync failed: {}", e).into(),
+                                );
                             }
                         }
                     }
-                    
+
                     // Check again before waiting
                     if !component_mounted.load(Ordering::SeqCst) {
-                        web_sys::console::log_1(&"Auto-sync: Component unmounted during operation, stopping".into());
+                        web_sys::console::log_1(
+                            &"Auto-sync: Component unmounted during operation, stopping".into(),
+                        );
                         break;
                     }
-                    
+
                     // Wait for next interval using a promise-based sleep
                     let promise = js_sys::Promise::new(&mut |resolve, _| {
                         let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
@@ -414,7 +467,9 @@ pub fn HomePage(
                     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
                 } else {
                     // No window available, exit loop
-                    web_sys::console::log_1(&"Auto-sync: No window available, stopping loop".into());
+                    web_sys::console::log_1(
+                        &"Auto-sync: No window available, stopping loop".into(),
+                    );
                     break;
                 }
             }
@@ -425,15 +480,17 @@ pub fn HomePage(
     let on_login = Callback::new(move |_: leptos::ev::MouseEvent| {
         spawn_local(async move {
             set_login_state.set(LoginState::Starting);
-            
+
             match tauri_api::start_device_flow().await {
                 Ok(device_response) => {
-                    web_sys::console::log_1(&format!(
-                        "Device Flow started. User code: {}, URL: {}",
-                        device_response.user_code,
-                        device_response.verification_uri
-                    ).into());
-                    
+                    web_sys::console::log_1(
+                        &format!(
+                            "Device Flow started. User code: {}, URL: {}",
+                            device_response.user_code, device_response.verification_uri
+                        )
+                        .into(),
+                    );
+
                     // Show the user code
                     set_login_state.set(LoginState::WaitingForCode {
                         user_code: device_response.user_code,
@@ -452,49 +509,59 @@ pub fn HomePage(
     let on_open_url = Callback::new(move |url: String| {
         let url_clone = url.clone();
         let component_mounted = component_mounted_for_polling.clone();
-        
+
         // Open URL in system browser using Tauri API
         spawn_local(async move {
             if let Err(e) = tauri_api::open_url(&url_clone).await {
                 web_sys::console::error_1(&format!("Failed to open URL: {}", e).into());
             }
         });
-        
+
         // Start polling for token
         set_login_state.set(LoginState::Polling);
         set_polling_active.set(true);
-        
+
         spawn_local(async move {
             // Polling interval (5 seconds as recommended by GitHub)
             const POLL_INTERVAL_MS: i32 = 5000;
-            
+
             loop {
                 // Check if component is still mounted
                 if !component_mounted.load(Ordering::SeqCst) {
-                    web_sys::console::log_1(&"Device Flow polling: Component unmounted, stopping".into());
+                    web_sys::console::log_1(
+                        &"Device Flow polling: Component unmounted, stopping".into(),
+                    );
                     break;
                 }
-                
+
                 // Check if polling is still active (user may have cancelled)
                 if !polling_active.get_untracked() {
-                    web_sys::console::log_1(&"Device Flow polling: Polling cancelled, stopping".into());
+                    web_sys::console::log_1(
+                        &"Device Flow polling: Polling cancelled, stopping".into(),
+                    );
                     break;
                 }
-                
+
                 match tauri_api::poll_device_token().await {
                     Ok(status) => {
                         match status {
                             DeviceTokenStatus::Pending => {
                                 // Still waiting - continue polling
-                                web_sys::console::log_1(&"Device Flow: Authorization pending...".into());
+                                web_sys::console::log_1(
+                                    &"Device Flow: Authorization pending...".into(),
+                                );
                             }
-                            DeviceTokenStatus::Success { auth_state: new_auth_state } => {
+                            DeviceTokenStatus::Success {
+                                auth_state: new_auth_state,
+                            } => {
                                 // Success! User is logged in
-                                web_sys::console::log_1(&"Device Flow: Authorization successful!".into());
+                                web_sys::console::log_1(
+                                    &"Device Flow: Authorization successful!".into(),
+                                );
                                 set_auth_state.set(new_auth_state);
                                 set_login_state.set(LoginState::Initial);
                                 set_polling_active.set(false);
-                                
+
                                 // Load user data
                                 load_user_data(
                                     set_github_stats,
@@ -504,7 +571,8 @@ pub fn HomePage(
                                     set_error,
                                     set_data_from_cache,
                                     set_cache_timestamp,
-                                ).await;
+                                )
+                                .await;
                                 break;
                             }
                             DeviceTokenStatus::Error { message } => {
@@ -521,12 +589,12 @@ pub fn HomePage(
                         break;
                     }
                 }
-                
+
                 // Check again before waiting
                 if !component_mounted.load(Ordering::SeqCst) || !polling_active.get_untracked() {
                     break;
                 }
-                
+
                 // Wait before next poll
                 if let Some(window) = web_sys::window() {
                     let promise = js_sys::Promise::new(&mut |resolve, _| {
@@ -548,7 +616,7 @@ pub fn HomePage(
     let on_cancel_login = Callback::new(move |_: leptos::ev::MouseEvent| {
         set_polling_active.set(false);
         set_login_state.set(LoginState::Initial);
-        
+
         // Cancel the device flow on backend
         spawn_local(async move {
             let _ = tauri_api::cancel_device_flow().await;
@@ -571,7 +639,7 @@ pub fn HomePage(
             set_loading.set(false);
         });
     });
-    
+
     // Callbacks for closing notifications
     let on_close_xp = move || set_xp_event.set(None);
     let on_close_level_up = move || set_level_up_event.set(None);
@@ -581,13 +649,13 @@ pub fn HomePage(
         <div class="flex-1 overflow-y-auto bg-gradient-to-br from-gm-bg-primary via-gm-bg-secondary to-gm-bg-primary min-h-full">
             // XP Notification
             <XpNotification event=xp_event on_close=on_close_xp />
-            
+
             // Level Up Modal
             <LevelUpModal event=level_up_event on_close=on_close_level_up />
-            
+
             // Badge Notification
             <MultipleBadgesNotification badges=new_badges_event on_close=on_close_badges />
-            
+
             <div class="max-w-6xl mx-auto p-6 space-y-6">
                 // Error display
                 <Show when=move || error.get().is_some()>
@@ -716,4 +784,3 @@ async fn load_user_data(
         set_badges.set(b);
     }
 }
-

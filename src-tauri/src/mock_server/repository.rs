@@ -38,22 +38,28 @@ pub async fn get_config(pool: &Pool<Sqlite>) -> DbResult<MockServerConfig> {
 
             // パース失敗時にはログを出力してNoneを返す
             let parsed_origins = cors_origins.and_then(|s| {
-                serde_json::from_str(&s).map_err(|e| {
-                    tracing::warn!("Failed to parse cors_origins: {}", e);
-                    e
-                }).ok()
+                serde_json::from_str(&s)
+                    .map_err(|e| {
+                        tracing::warn!("Failed to parse cors_origins: {}", e);
+                        e
+                    })
+                    .ok()
             });
             let parsed_methods = cors_methods.and_then(|s| {
-                serde_json::from_str(&s).map_err(|e| {
-                    tracing::warn!("Failed to parse cors_methods: {}", e);
-                    e
-                }).ok()
+                serde_json::from_str(&s)
+                    .map_err(|e| {
+                        tracing::warn!("Failed to parse cors_methods: {}", e);
+                        e
+                    })
+                    .ok()
             });
             let parsed_headers = cors_headers.and_then(|s| {
-                serde_json::from_str(&s).map_err(|e| {
-                    tracing::warn!("Failed to parse cors_headers: {}", e);
-                    e
-                }).ok()
+                serde_json::from_str(&s)
+                    .map_err(|e| {
+                        tracing::warn!("Failed to parse cors_headers: {}", e);
+                        e
+                    })
+                    .ok()
             });
 
             Ok(MockServerConfig {

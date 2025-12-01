@@ -84,10 +84,10 @@ pub struct AppInfo {
 }
 
 /// 通知方法の選択肢
-/// 
+///
 /// **IMPORTANT**: This enum must be kept in sync with the backend definition at:
 /// `src-tauri/src/database/models.rs::NotificationMethod`
-/// 
+///
 /// Both implementations use the same string values (app_only, os_only, both, none)
 /// for serialization to ensure compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -130,10 +130,10 @@ impl NotificationMethod {
 }
 
 /// 同期間隔の選択肢
-/// 
+///
 /// **IMPORTANT**: This constant must be kept in sync with the backend definition at:
 /// `src-tauri/src/database/models.rs::settings_defaults::SYNC_INTERVALS`
-/// 
+///
 /// Alternatively, use `tauri_api::get_sync_intervals()` to fetch the authoritative
 /// list from the backend, which is the recommended approach for dynamic UI.
 pub const SYNC_INTERVALS: &[(i32, &str)] = &[

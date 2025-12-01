@@ -127,13 +127,13 @@ mod tests {
     #[test]
     fn test_new_snapshot() {
         let snapshot = GitHubStatsSnapshot::new(
-            1,    // user_id
-            100,  // commits
-            20,   // prs
-            30,   // reviews
-            15,   // issues
-            50,   // stars
-            200,  // contributions
+            1,   // user_id
+            100, // commits
+            20,  // prs
+            30,  // reviews
+            15,  // issues
+            50,  // stars
+            200, // contributions
             "2025-11-30",
         );
 
@@ -165,12 +165,12 @@ mod tests {
 
         let current = GitHubStatsSnapshot::new(
             1,
-            100,  // +10 commits
-            20,   // +2 prs
-            30,   // +5 reviews
-            15,   // +3 issues
-            50,   // +5 stars
-            200,  // +20 contributions
+            100, // +10 commits
+            20,  // +2 prs
+            30,  // +5 reviews
+            15,  // +3 issues
+            50,  // +5 stars
+            200, // +20 contributions
             "2025-11-30",
         );
 
@@ -266,12 +266,12 @@ mod tests {
         // Stars decreased (e.g., repository deleted)
         let current = GitHubStatsSnapshot::new(
             1,
-            100,  // no change
-            20,   // no change
-            30,   // no change
-            15,   // no change
-            45,   // -5 stars
-            200,  // no change
+            100, // no change
+            20,  // no change
+            30,  // no change
+            15,  // no change
+            45,  // -5 stars
+            200, // no change
             "2025-11-30",
         );
 

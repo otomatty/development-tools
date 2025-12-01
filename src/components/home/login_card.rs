@@ -99,7 +99,7 @@ pub fn LoginCard(
 #[component]
 fn InitialView(on_login: Callback<ev::MouseEvent>) -> impl IntoView {
     let is_online = use_is_online();
-    
+
     view! {
         <>
             // Title
@@ -160,7 +160,7 @@ fn InitialView(on_login: Callback<ev::MouseEvent>) -> impl IntoView {
                     </svg>
                     "Connect with GitHub"
                 </button>
-                
+
                 // Offline tooltip
                 <Show when=move || !is_online.get()>
                     <div class="absolute -bottom-10 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-gm-bg-dark/95 text-gm-warning text-xs rounded-lg border border-gm-warning/30 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
@@ -205,15 +205,15 @@ fn WaitingForCodeView(
 ) -> impl IntoView {
     let verification_uri_clone = verification_uri.clone();
     let user_code_for_copy = user_code.clone();
-    
+
     // State for copy feedback
     let (copied, set_copied) = signal(false);
-    
+
     // Copy to clipboard function
     let copy_to_clipboard = move |_| {
         let code = user_code_for_copy.clone();
         let set_copied = set_copied.clone();
-        
+
         spawn_local(async move {
             if let Some(window) = web_sys::window() {
                 let clipboard = window.navigator().clipboard();
@@ -223,12 +223,13 @@ fn WaitingForCodeView(
                     // Reset after 2 seconds
                     gloo_timers::callback::Timeout::new(2000, move || {
                         set_copied.set(false);
-                    }).forget();
+                    })
+                    .forget();
                 }
             }
         });
     };
-    
+
     view! {
         <>
             <h2 class="text-2xl font-gaming font-bold text-white mb-4">
@@ -352,11 +353,11 @@ fn PollingView(on_cancel: Callback<ev::MouseEvent>) -> impl IntoView {
 #[component]
 fn ErrorView(message: String, on_retry: Callback<ev::MouseEvent>) -> impl IntoView {
     let is_online = use_is_online();
-    
+
     view! {
         <>
             <div class="text-gm-error text-5xl mb-4">"⚠️"</div>
-            
+
             <h2 class="text-2xl font-gaming font-bold text-white mb-4">
                 "Authentication Failed"
             </h2>
@@ -389,7 +390,7 @@ fn ErrorView(message: String, on_retry: Callback<ev::MouseEvent>) -> impl IntoVi
                 >
                     "Try Again"
                 </button>
-                
+
                 // Offline tooltip
                 <Show when=move || !is_online.get()>
                     <div class="absolute -bottom-10 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-gm-bg-dark/95 text-gm-warning text-xs rounded-lg border border-gm-warning/30 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">

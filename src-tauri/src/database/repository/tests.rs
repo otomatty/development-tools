@@ -1,10 +1,12 @@
 //! Repository tests
 
-use chrono::Utc;
 use crate::database::connection::Database;
+use chrono::Utc;
 
 async fn setup_test_db() -> Database {
-    Database::in_memory().await.expect("Failed to create test database")
+    Database::in_memory()
+        .await
+        .expect("Failed to create test database")
 }
 
 #[tokio::test]
@@ -12,7 +14,14 @@ async fn test_create_and_get_user() {
     let db = setup_test_db().await;
 
     let user = db
-        .create_user(12345, "testuser", Some("https://avatar.url"), "encrypted_token", None, None)
+        .create_user(
+            12345,
+            "testuser",
+            Some("https://avatar.url"),
+            "encrypted_token",
+            None,
+            None,
+        )
         .await
         .expect("Should create user");
 
@@ -176,9 +185,17 @@ async fn test_get_active_challenges() {
         .await
         .expect("Should create challenge 1");
 
-    db.create_challenge(user.id, "daily", "prs", 2, 50, start, start + chrono::Duration::days(1))
-        .await
-        .expect("Should create challenge 2");
+    db.create_challenge(
+        user.id,
+        "daily",
+        "prs",
+        2,
+        50,
+        start,
+        start + chrono::Duration::days(1),
+    )
+    .await
+    .expect("Should create challenge 2");
 
     let challenges = db
         .get_active_challenges(user.id)
@@ -344,7 +361,15 @@ async fn test_challenge_completion_count() {
         .expect("Should create challenge 1");
 
     let challenge2 = db
-        .create_challenge(user.id, "daily", "prs", 2, 50, start, start + chrono::Duration::days(1))
+        .create_challenge(
+            user.id,
+            "daily",
+            "prs",
+            2,
+            50,
+            start,
+            start + chrono::Duration::days(1),
+        )
         .await
         .expect("Should create challenge 2");
 

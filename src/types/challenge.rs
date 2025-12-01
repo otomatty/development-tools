@@ -71,7 +71,7 @@ impl ChallengeInfo {
         if self.remaining_time_hours <= 0 {
             return "終了".to_string();
         }
-        
+
         let hours = self.remaining_time_hours;
         if hours >= 24 {
             let days = hours / 24;
@@ -102,10 +102,7 @@ pub struct ChallengeStats {
 }
 
 /// チャレンジタイプの選択肢
-pub const CHALLENGE_TYPES: &[(&str, &str)] = &[
-    ("daily", "デイリー"),
-    ("weekly", "ウィークリー"),
-];
+pub const CHALLENGE_TYPES: &[(&str, &str)] = &[("daily", "デイリー"), ("weekly", "ウィークリー")];
 
 /// ターゲットメトリクスの選択肢
 pub const TARGET_METRICS: &[(&str, &str, &str)] = &[

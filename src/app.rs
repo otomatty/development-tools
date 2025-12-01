@@ -4,12 +4,15 @@ use leptos::task::spawn_local;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
-use crate::components::{AnimationContext, HomePage, LogViewer, NetworkStatusProvider, OfflineBanner, ResultView, Sidebar, ToolDetail};
 use crate::components::settings::SettingsPage;
+use crate::components::{
+    AnimationContext, HomePage, LogViewer, NetworkStatusProvider, OfflineBanner, ResultView,
+    Sidebar, ToolDetail,
+};
 use crate::tauri_api;
 use crate::types::{
-    AppPage, AuthState, LogEntry, LogEvent, OptionValues, ToolConfig, ToolInfo, 
-    ToolResult, ToolStatus, ToolStatusEvent,
+    AppPage, AuthState, LogEntry, LogEvent, OptionValues, ToolConfig, ToolInfo, ToolResult,
+    ToolStatus, ToolStatusEvent,
 };
 
 #[wasm_bindgen]
@@ -22,24 +25,22 @@ extern "C" {
 pub fn App() -> impl IntoView {
     // ページ状態
     let (current_page, set_current_page) = signal(AppPage::Home);
-    
+
     // 認証状態（SettingsPageで使用）
     let (auth_state, set_auth_state) = signal(AuthState::default());
-    
+
     // アニメーション状態（グローバル）
     let animation_context = AnimationContext::new(true);
     provide_context(animation_context);
-    
+
     // 認証状態とアニメーション設定を並列で初期化
     {
         let animation_ctx = animation_context;
         spawn_local(async move {
             // 認証状態と設定を並列で取得
-            let (auth_result, settings_result) = join!(
-                tauri_api::get_auth_state(),
-                tauri_api::get_settings()
-            );
-            
+            let (auth_result, settings_result) =
+                join!(tauri_api::get_auth_state(), tauri_api::get_settings());
+
             // 認証状態を処理
             match auth_result {
                 Ok(state) => {
@@ -49,7 +50,7 @@ pub fn App() -> impl IntoView {
                     web_sys::console::error_1(&format!("Failed to get auth state: {}", e).into());
                 }
             }
-            
+
             // 設定を処理してアニメーション状態を更新
             match settings_result {
                 Ok(settings) => {
@@ -57,12 +58,14 @@ pub fn App() -> impl IntoView {
                 }
                 Err(e) => {
                     // ログインしていない場合はエラーが出るが、デフォルト値を使用
-                    web_sys::console::log_1(&format!("Settings not loaded (may not be logged in): {}", e).into());
+                    web_sys::console::log_1(
+                        &format!("Settings not loaded (may not be logged in): {}", e).into(),
+                    );
                 }
             }
         });
     }
-    
+
     // ツール関連の状態管理
     let (tools, set_tools) = signal(Vec::<ToolInfo>::new());
     let (loading_tools, set_loading_tools) = signal(true);
@@ -112,9 +115,10 @@ pub fn App() -> impl IntoView {
         // ステータスイベントリスナー
         let status_closure = Closure::new(move |event: JsValue| {
             if let Ok(payload) = js_sys::Reflect::get(&event, &"payload".into()) {
-                if let Ok(status_event) = serde_wasm_bindgen::from_value::<ToolStatusEvent>(payload) {
+                if let Ok(status_event) = serde_wasm_bindgen::from_value::<ToolStatusEvent>(payload)
+                {
                     set_status.set(Some(status_event.status.clone()));
-                    
+
                     match status_event.status {
                         ToolStatus::Running => {
                             set_running.set(true);
@@ -140,12 +144,12 @@ pub fn App() -> impl IntoView {
     // ツール選択が変わったときにツール設定を読み込む
     Effect::new(move |prev_name: Option<Option<String>>| {
         let current_name = selected_tool_name.get();
-        
+
         // 前回と同じ場合はスキップ
         if prev_name.as_ref() == Some(&current_name) {
             return current_name;
         }
-        
+
         if let Some(name) = current_name.clone() {
             // 状態をリセット
             set_option_values.set(OptionValues::new());
@@ -172,29 +176,31 @@ pub fn App() -> impl IntoView {
                         set_tool_config.set(Some(config));
                     }
                     Err(e) => {
-                        web_sys::console::error_1(&format!("Failed to load tool config: {}", e).into());
+                        web_sys::console::error_1(
+                            &format!("Failed to load tool config: {}", e).into(),
+                        );
                     }
                 }
             });
         }
-        
+
         current_name
     });
 
     // 実行トリガーが変わったときにツールを実行
     Effect::new(move |prev_trigger: Option<u32>| {
         let current_trigger = trigger_run.get();
-        
+
         // 初回または前回と同じ場合はスキップ
         if prev_trigger.is_none() || prev_trigger == Some(current_trigger) {
             return current_trigger;
         }
-        
+
         if let Some(tool_name) = selected_tool_name.get_untracked() {
             set_logs.set(Vec::new());
             set_result.set(None);
             set_status.set(None);
-            
+
             let options = option_values.get_untracked();
             spawn_local(async move {
                 if let Err(e) = tauri_api::run_tool(&tool_name, &options).await {
@@ -204,7 +210,7 @@ pub fn App() -> impl IntoView {
                 }
             });
         }
-        
+
         current_trigger
     });
 
@@ -219,7 +225,7 @@ pub fn App() -> impl IntoView {
                 }
             }>
                 // サイドバー
-                <Sidebar 
+                <Sidebar
                     tools=tools
                     selected_tool=selected_tool_name
                     set_selected_tool=set_selected_tool_name
@@ -232,17 +238,17 @@ pub fn App() -> impl IntoView {
                 <main class="flex-1 flex flex-col overflow-hidden">
                     // オフラインバナー（オフライン時のみ表示）
                     <OfflineBanner />
-                    
+
                     // ページに応じてコンテンツを表示
                     {move || match current_page.get() {
                         AppPage::Home => view! {
                             <HomePage set_current_page=set_current_page />
                         }.into_any(),
-                        
+
                         AppPage::Tools => view! {
                             // 上部: ツール詳細・オプション
                             <div class="flex-1 overflow-y-auto">
-                                <ToolDetail 
+                                <ToolDetail
                                     config=tool_config
                                     option_values=option_values
                                     set_option_values=set_option_values
@@ -256,24 +262,24 @@ pub fn App() -> impl IntoView {
                             <Show when=move || result.get().is_some() || show_logs.get()>
                                 <div class="border-t border-slate-700/50 bg-dt-card p-4 max-h-[50vh] overflow-y-auto">
                                     // ログビューア
-                                    <LogViewer 
+                                    <LogViewer
                                         logs=logs
                                         visible=show_logs
                                     />
 
                                     // 結果表示
-                                    <ResultView 
+                                    <ResultView
                                         result=result
                                         schema=result_schema
                                     />
                                 </div>
                             </Show>
                         }.into_any(),
-                        
+
                         AppPage::MockServer => view! {
                             <crate::components::MockServerPage />
                         }.into_any(),
-                        
+
                         AppPage::Settings => view! {
                             <SettingsPage
                                 auth_state=auth_state

@@ -40,11 +40,7 @@ impl Database {
     }
 
     /// Get valid cache entry (not expired)
-    pub async fn get_valid_cache(
-        &self,
-        user_id: i64,
-        data_type: &str,
-    ) -> DbResult<Option<String>> {
+    pub async fn get_valid_cache(&self, user_id: i64, data_type: &str) -> DbResult<Option<String>> {
         let now = Utc::now().to_rfc3339();
 
         let result: Option<String> = sqlx::query_scalar(
@@ -78,11 +74,7 @@ impl Database {
 
     /// Save previous GitHub stats (for diff calculation)
     /// Uses activity_cache with a very long expiry to persist stats
-    pub async fn save_previous_github_stats(
-        &self,
-        user_id: i64,
-        stats_json: &str,
-    ) -> DbResult<()> {
+    pub async fn save_previous_github_stats(&self, user_id: i64, stats_json: &str) -> DbResult<()> {
         // Set expiry to 100 years in the future (effectively permanent)
         let expires = Utc::now() + chrono::Duration::days(36500);
         self.save_cache(user_id, "previous_github_stats", stats_json, expires)
@@ -109,7 +101,7 @@ impl Database {
     /// Get cache size for a user
     pub async fn get_user_cache_size(&self, user_id: i64) -> DbResult<u64> {
         let result: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(LENGTH(data_json)), 0) FROM activity_cache WHERE user_id = ?"
+            "SELECT COALESCE(SUM(LENGTH(data_json)), 0) FROM activity_cache WHERE user_id = ?",
         )
         .bind(user_id)
         .fetch_one(self.pool())
@@ -148,7 +140,7 @@ impl Database {
     /// Returns (entry_count, expired_count)
     pub async fn get_cache_stats(&self, user_id: i64) -> DbResult<(u64, u64)> {
         let now = Utc::now().to_rfc3339();
-        
+
         let (entry_count, expired_count): (i64, i64) = sqlx::query_as(
             r#"
             SELECT 

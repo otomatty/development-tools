@@ -411,7 +411,9 @@ pub mod badge {
             }
             BadgeCondition::Languages { count } => context.languages_count >= *count,
             BadgeCondition::Level { threshold } => context.current_level >= *threshold,
-            BadgeCondition::StarsReceived { threshold } => context.total_stars_received >= *threshold,
+            BadgeCondition::StarsReceived { threshold } => {
+                context.total_stars_received >= *threshold
+            }
         }
     }
 
@@ -449,7 +451,11 @@ pub mod badge {
     }
 
     /// Calculate progress for a badge condition
-    pub fn calculate_progress(badge_id: &str, condition: &BadgeCondition, context: &BadgeEvalContext) -> BadgeProgress {
+    pub fn calculate_progress(
+        badge_id: &str,
+        condition: &BadgeCondition,
+        context: &BadgeEvalContext,
+    ) -> BadgeProgress {
         match condition {
             BadgeCondition::Commits { threshold } => BadgeProgress {
                 badge_id: badge_id.to_string(),
@@ -619,9 +625,19 @@ pub mod badge {
 
         // Sort by progress descending (closest to completion first)
         results.sort_by(|a, b| {
-            let a_progress = a.progress.as_ref().map(|p| p.progress_percent).unwrap_or(0.0);
-            let b_progress = b.progress.as_ref().map(|p| p.progress_percent).unwrap_or(0.0);
-            b_progress.partial_cmp(&a_progress).unwrap_or(std::cmp::Ordering::Equal)
+            let a_progress = a
+                .progress
+                .as_ref()
+                .map(|p| p.progress_percent)
+                .unwrap_or(0.0);
+            let b_progress = b
+                .progress
+                .as_ref()
+                .map(|p| p.progress_percent)
+                .unwrap_or(0.0);
+            b_progress
+                .partial_cmp(&a_progress)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         results
@@ -744,7 +760,10 @@ pub mod badge {
                 total_commits: 100,
                 ..Default::default()
             };
-            let results = evaluate_badges(&context, &["first_blood".to_string(), "century".to_string()]);
+            let results = evaluate_badges(
+                &context,
+                &["first_blood".to_string(), "century".to_string()],
+            );
             assert!(!results.iter().any(|r| r.badge_id == "first_blood"));
             assert!(!results.iter().any(|r| r.badge_id == "century"));
         }
@@ -899,11 +918,8 @@ pub mod badge {
                 longest_streak: 10,
                 ..Default::default()
             };
-            let progress = calculate_progress(
-                "streak_30",
-                &BadgeCondition::Streak { days: 30 },
-                &context,
-            );
+            let progress =
+                calculate_progress("streak_30", &BadgeCondition::Streak { days: 30 }, &context);
             assert_eq!(progress.current_value, 10); // Uses longest_streak
             assert_eq!(progress.target_value, 30);
         }
@@ -917,11 +933,11 @@ pub mod badge {
             };
             let earned_badge_ids = vec!["first_blood".to_string()];
             let near_badges = get_near_completion_badges(&context, &earned_badge_ids, 50.0);
-            
+
             // Should include badges with >= 50% progress
             assert!(near_badges.iter().any(|b| b.id == "century"));
             assert!(near_badges.iter().any(|b| b.id == "level_5"));
-            
+
             // Should not include earned badges
             assert!(!near_badges.iter().any(|b| b.id == "first_blood"));
         }
@@ -934,13 +950,13 @@ pub mod badge {
             };
             let earned_badges = vec![("first_blood".to_string(), Some("2025-01-01".to_string()))];
             let badges = get_badges_with_progress(&context, &earned_badges);
-            
+
             // first_blood should be earned with no progress
             let first_blood = badges.iter().find(|b| b.id == "first_blood").unwrap();
             assert!(first_blood.earned);
             assert!(first_blood.earned_at.is_some());
             assert!(first_blood.progress.is_none());
-            
+
             // century should have progress
             let century = badges.iter().find(|b| b.id == "century").unwrap();
             assert!(!century.earned);
@@ -1038,7 +1054,7 @@ pub mod badge {
 
 // Re-export badge module types at the module level for backward compatibility
 pub use badge::{
-    BadgeCondition, BadgeDefinition, BadgeEvalContext, BadgeEvalResult, BadgeProgress,
-    BadgeWithProgress, calculate_progress, evaluate_badges, evaluate_condition,
-    get_all_badge_definitions, get_badges_with_progress, get_near_completion_badges,
+    calculate_progress, evaluate_badges, evaluate_condition, get_all_badge_definitions,
+    get_badges_with_progress, get_near_completion_badges, BadgeCondition, BadgeDefinition,
+    BadgeEvalContext, BadgeEvalResult, BadgeProgress, BadgeWithProgress,
 };

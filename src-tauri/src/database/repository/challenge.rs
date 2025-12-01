@@ -78,26 +78,28 @@ impl Database {
 
     /// Get start stats JSON for a challenge
     pub async fn get_challenge_start_stats(&self, challenge_id: i64) -> DbResult<Option<String>> {
-        let result: Option<String> = sqlx::query_scalar(
-            "SELECT start_stats_json FROM challenges WHERE id = ?"
-        )
-        .bind(challenge_id)
-        .fetch_one(self.pool())
-        .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        let result: Option<String> =
+            sqlx::query_scalar("SELECT start_stats_json FROM challenges WHERE id = ?")
+                .bind(challenge_id)
+                .fetch_one(self.pool())
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         Ok(result)
     }
 
     /// Get the most recent daily challenge date for a user
-    pub async fn get_last_daily_challenge_date(&self, user_id: i64) -> DbResult<Option<chrono::NaiveDate>> {
+    pub async fn get_last_daily_challenge_date(
+        &self,
+        user_id: i64,
+    ) -> DbResult<Option<chrono::NaiveDate>> {
         let result: Option<String> = sqlx::query_scalar(
             r#"
             SELECT DATE(start_date) FROM challenges 
             WHERE user_id = ? AND challenge_type = 'daily'
             ORDER BY start_date DESC
             LIMIT 1
-            "#
+            "#,
         )
         .bind(user_id)
         .fetch_optional(self.pool())
@@ -109,14 +111,17 @@ impl Database {
     }
 
     /// Get the most recent weekly challenge date for a user
-    pub async fn get_last_weekly_challenge_date(&self, user_id: i64) -> DbResult<Option<chrono::NaiveDate>> {
+    pub async fn get_last_weekly_challenge_date(
+        &self,
+        user_id: i64,
+    ) -> DbResult<Option<chrono::NaiveDate>> {
         let result: Option<String> = sqlx::query_scalar(
             r#"
             SELECT DATE(start_date) FROM challenges 
             WHERE user_id = ? AND challenge_type = 'weekly'
             ORDER BY start_date DESC
             LIMIT 1
-            "#
+            "#,
         )
         .bind(user_id)
         .fetch_optional(self.pool())
@@ -302,7 +307,7 @@ impl Database {
     }
 
     /// Update challenge progress
-    /// 
+    ///
     /// Caps progress at target_value and automatically completes the challenge
     /// when the target is reached.
     pub async fn update_challenge_progress(
@@ -312,10 +317,10 @@ impl Database {
     ) -> DbResult<Challenge> {
         // Get current challenge to check target
         let challenge = self.get_challenge_by_id(challenge_id).await?;
-        
+
         // Cap at target value
         let capped_value = current_value.min(challenge.target_value);
-        
+
         // Update progress
         sqlx::query(
             r#"
@@ -465,7 +470,7 @@ impl Database {
     /// Get challenge completion count for badge tracking
     pub async fn get_challenge_completion_count(&self, user_id: i64) -> DbResult<i32> {
         let count: i32 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM challenges WHERE user_id = ? AND status = 'completed'"
+            "SELECT COUNT(*) FROM challenges WHERE user_id = ? AND status = 'completed'",
         )
         .bind(user_id)
         .fetch_one(self.pool())
@@ -505,7 +510,7 @@ impl Database {
                     let completed_at_utc = completed_at.with_timezone(&Utc);
                     let iso_week = completed_at_utc.iso_week();
                     let week_tuple = (iso_week.year(), iso_week.week());
-                    
+
                     match last_week {
                         None => {
                             consecutive = 1;

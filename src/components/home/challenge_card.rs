@@ -26,7 +26,7 @@ use crate::types::ChallengeInfo;
 pub fn ChallengeCard() -> impl IntoView {
     // Network status
     let is_online = use_is_online();
-    
+
     // Signals for challenges
     let (challenges, set_challenges) = signal::<Vec<ChallengeInfo>>(Vec::new());
     let (loading, set_loading) = signal(true);
@@ -101,7 +101,7 @@ pub fn ChallengeCard() -> impl IntoView {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                     </button>
-                    
+
                     // Offline tooltip
                     <Show when=move || !is_online.get()>
                         <div class="absolute -bottom-10 right-0 px-3 py-1.5 bg-gm-bg-dark/95 text-gm-warning text-xs rounded-lg border border-gm-warning/30 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
@@ -166,13 +166,25 @@ fn ChallengeItem(challenge: ChallengeInfo) -> impl IntoView {
 
     // Determine colors based on status
     let (bg_color, border_color, progress_color) = if is_completed {
-        ("bg-gm-success/10", "border-gm-success/30", "bg-gradient-to-r from-gm-success to-gm-accent-cyan")
+        (
+            "bg-gm-success/10",
+            "border-gm-success/30",
+            "bg-gradient-to-r from-gm-success to-gm-accent-cyan",
+        )
     } else if is_expired {
         ("bg-gm-error/10", "border-gm-error/30", "bg-gm-error/50")
     } else if progress >= 75.0 {
-        ("bg-gm-accent-gold/10", "border-gm-accent-gold/30", "bg-gradient-to-r from-gm-accent-gold to-gm-accent-pink")
+        (
+            "bg-gm-accent-gold/10",
+            "border-gm-accent-gold/30",
+            "bg-gradient-to-r from-gm-accent-gold to-gm-accent-pink",
+        )
     } else {
-        ("bg-gm-bg-secondary/50", "border-gm-accent-purple/20", "bg-gradient-to-r from-gm-accent-purple to-gm-accent-cyan")
+        (
+            "bg-gm-bg-secondary/50",
+            "border-gm-accent-purple/20",
+            "bg-gradient-to-r from-gm-accent-purple to-gm-accent-cyan",
+        )
     };
 
     // Challenge type badge color

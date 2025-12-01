@@ -30,7 +30,8 @@ pub fn StatsDisplay(
     github_stats: ReadSignal<Option<GitHubStats>>,
     user_stats: ReadSignal<Option<UserStats>>,
     /// Optional day-over-day stats difference
-    #[prop(optional)] stats_diff: Option<ReadSignal<Option<StatsDiffResult>>>,
+    #[prop(optional)]
+    stats_diff: Option<ReadSignal<Option<StatsDiffResult>>>,
 ) -> impl IntoView {
     // Create unified diff signals - returns None when no stats_diff or when diff is None
     let get_diff = move |field: fn(&StatsDiffResult) -> i32| -> Option<i32> {
@@ -137,7 +138,7 @@ pub fn StatsDisplay(
 fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
     let current_streak = move || user_stats.get().map(|s| s.current_streak).unwrap_or(0);
     let longest_streak = move || user_stats.get().map(|s| s.longest_streak).unwrap_or(0);
-    
+
     // Create a signal for the streak value (used by AnimatedEmojiWithIntensity)
     let streak_signal = Signal::derive(current_streak);
 
@@ -181,7 +182,7 @@ fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
                         <span class="text-lg font-gaming-mono text-badge-gold">{move || longest_streak()}</span>
                         <span class="text-xs text-dt-text-sub">"Best"</span>
                     </div>
-                    
+
                     // Next milestone
                     <Show when=move || next_milestone_info().is_some()>
                         {move || {
@@ -212,11 +213,11 @@ fn StreakSection(user_stats: ReadSignal<Option<UserStats>>) -> impl IntoView {
                         } else {
                             0.0
                         };
-                        
+
                         view! {
                             <div class="mt-4">
                                 <div class="h-2 bg-slate-700/50 rounded-full overflow-hidden">
-                                    <div 
+                                    <div
                                         class="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all duration-500"
                                         style=format!("width: {}%", progress)
                                     />
@@ -240,7 +241,8 @@ fn StatCard(
     #[prop(into)] value: Signal<String>,
     color: &'static str,
     /// Day-over-day difference (None if no diff available)
-    #[prop(into)] diff: Signal<Option<i32>>,
+    #[prop(into)]
+    diff: Signal<Option<i32>>,
 ) -> impl IntoView {
     let color_class = match color {
         "cyan" => "text-gm-accent-cyan",
@@ -260,17 +262,20 @@ fn StatCard(
                 <span class="text-xs font-bold text-gm-success flex items-center gap-0.5">
                     "↑" {d}
                 </span>
-            }.into_any(),
+            }
+            .into_any(),
             Some(d) if d < 0 => view! {
                 <span class="text-xs font-bold text-gm-error flex items-center gap-0.5">
                     "↓" {d.abs()}
                 </span>
-            }.into_any(),
+            }
+            .into_any(),
             Some(_) => view! {
                 <span class="text-xs text-slate-500 flex items-center gap-0.5">
                     "→" "0"
                 </span>
-            }.into_any(),
+            }
+            .into_any(),
             None => view! {}.into_any(),
         }
     };
@@ -292,4 +297,3 @@ fn StatCard(
         </div>
     }
 }
-

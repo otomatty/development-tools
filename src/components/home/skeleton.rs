@@ -2,10 +2,10 @@
 //!
 //! Skeleton loading states for the dashboard/home page.
 
-use leptos::prelude::*;
 use crate::components::skeleton::{
-    Skeleton, SkeletonAvatar, SkeletonCard, SkeletonStat, SkeletonBadge, SkeletonGraph
+    Skeleton, SkeletonAvatar, SkeletonBadge, SkeletonCard, SkeletonGraph, SkeletonStat,
 };
+use leptos::prelude::*;
 
 /// Number of badge placeholders to show in skeleton
 const SKELETON_BADGE_COUNT: usize = 12;
@@ -17,16 +17,16 @@ pub fn HomeSkeleton() -> impl IntoView {
         <div class="space-y-6">
             // Profile Card Skeleton
             <ProfileCardSkeleton />
-            
+
             // Stats Grid
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 // Stats Display Skeleton
                 <StatsDisplaySkeleton />
-                
+
                 // Badge Grid Skeleton
                 <BadgeGridSkeleton />
             </div>
-            
+
             // Contribution Graph Skeleton
             <ContributionGraphSkeleton />
         </div>
@@ -53,7 +53,7 @@ pub fn ProfileCardSkeleton() -> impl IntoView {
                             />
                         </div>
                     </div>
-                    
+
                     // Username and XP
                     <div class="space-y-3">
                         // Username
@@ -62,7 +62,7 @@ pub fn ProfileCardSkeleton() -> impl IntoView {
                             height="1.75rem"
                             rounded="rounded"
                         />
-                        
+
                         // XP Progress
                         <div class="space-y-2">
                             <div class="flex items-center justify-between">
@@ -86,7 +86,7 @@ pub fn ProfileCardSkeleton() -> impl IntoView {
                         </div>
                     </div>
                 </div>
-                
+
                 // Stats quick view
                 <div class="flex items-center gap-6">
                     // Streak placeholder
@@ -109,7 +109,7 @@ pub fn ProfileCardSkeleton() -> impl IntoView {
                             rounded="rounded"
                         />
                     </div>
-                    
+
                     // Commits placeholder
                     <div class="text-center space-y-1">
                         <div class="flex items-center gap-2">
@@ -130,7 +130,7 @@ pub fn ProfileCardSkeleton() -> impl IntoView {
                             rounded="rounded"
                         />
                     </div>
-                    
+
                     // Action buttons placeholder
                     <div class="flex gap-2">
                         <Skeleton
@@ -157,7 +157,7 @@ pub fn StatsDisplaySkeleton() -> impl IntoView {
         <div class="space-y-6">
             // Streak Section Skeleton
             <StreakSectionSkeleton />
-            
+
             // Statistics Card
             <SkeletonCard class="border-gm-accent-purple/20">
                 // Title
@@ -173,7 +173,7 @@ pub fn StatsDisplaySkeleton() -> impl IntoView {
                         rounded="rounded"
                     />
                 </div>
-                
+
                 // Stats Grid
                 <div class="grid grid-cols-2 gap-4">
                     <SkeletonStat />
@@ -217,7 +217,7 @@ fn StreakSectionSkeleton() -> impl IntoView {
                         />
                     </div>
                 </div>
-                
+
                 // Right side: best streak and milestone
                 <div class="text-right space-y-2">
                     <Skeleton
@@ -232,7 +232,7 @@ fn StreakSectionSkeleton() -> impl IntoView {
                     />
                 </div>
             </div>
-            
+
             // Progress bar
             <div class="mt-4">
                 <Skeleton
@@ -263,7 +263,7 @@ pub fn BadgeGridSkeleton() -> impl IntoView {
                     rounded="rounded"
                 />
             </div>
-            
+
             // Badge count
             <div class="mb-4">
                 <Skeleton
@@ -272,7 +272,7 @@ pub fn BadgeGridSkeleton() -> impl IntoView {
                     rounded="rounded"
                 />
             </div>
-            
+
             // Badge grid
             <div class="grid grid-cols-4 gap-3">
                 {(0..SKELETON_BADGE_COUNT).map(|_| {
@@ -305,7 +305,7 @@ pub fn ContributionGraphSkeleton() -> impl IntoView {
                         rounded="rounded"
                     />
                 </div>
-                
+
                 // Contribution count
                 <Skeleton
                     width="10rem"
@@ -313,12 +313,12 @@ pub fn ContributionGraphSkeleton() -> impl IntoView {
                     rounded="rounded"
                 />
             </div>
-            
+
             // Graph
             <div class="overflow-x-auto">
                 <SkeletonGraph weeks=52 days=7 />
             </div>
-            
+
             // Legend
             <div class="flex items-center justify-end gap-2 mt-4">
                 <Skeleton

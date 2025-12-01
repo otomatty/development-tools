@@ -90,14 +90,10 @@ pub fn NetworkStatusProvider(children: Children) -> impl IntoView {
         });
 
         // イベントリスナーを登録
-        let _ = window.add_event_listener_with_callback(
-            "online",
-            on_online.as_ref().unchecked_ref(),
-        );
-        let _ = window.add_event_listener_with_callback(
-            "offline",
-            on_offline.as_ref().unchecked_ref(),
-        );
+        let _ =
+            window.add_event_listener_with_callback("online", on_online.as_ref().unchecked_ref());
+        let _ =
+            window.add_event_listener_with_callback("offline", on_offline.as_ref().unchecked_ref());
 
         // TODO: [BUG] イベントリスナーのメモリリーク（アプリルートでのみ使用のため影響軽微）
         // on_cleanupでremove_event_listenerを呼ぶべきだが、Closureのライフタイム管理が複雑
@@ -151,25 +147,25 @@ pub fn use_is_online() -> Signal<bool> {
 #[component]
 pub fn OfflineBanner() -> impl IntoView {
     let network_ctx = try_use_network_status();
-    
+
     view! {
         {move || {
             let ctx = network_ctx?;
             let state = ctx.state.get();
-            
+
             if state.is_online {
                 return None;
             }
-            
+
             let last_online = state.last_online_at
                 .as_ref()
                 .map(|t| format!("最終オンライン: {}", format_timestamp(t)))
                 .unwrap_or_default();
-            
+
             Some(view! {
                 <div class="bg-amber-500/90 text-amber-950 px-4 py-2 text-sm flex items-center justify-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                     <span>"⚠️ オフラインモード - キャッシュデータを表示中"</span>

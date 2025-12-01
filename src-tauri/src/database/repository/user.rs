@@ -179,12 +179,11 @@ impl Database {
     /// Returns None if no user exists or if the user has logged out (empty token)
     pub async fn get_current_user(&self) -> DbResult<Option<User>> {
         // Only return user if they have a non-empty token (logged in)
-        let row: Option<UserRow> = sqlx::query_as(
-            "SELECT * FROM users WHERE access_token_encrypted != '' LIMIT 1"
-        )
-        .fetch_optional(self.pool())
-        .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        let row: Option<UserRow> =
+            sqlx::query_as("SELECT * FROM users WHERE access_token_encrypted != '' LIMIT 1")
+                .fetch_optional(self.pool())
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         match row {
             Some(r) => Ok(Some(r.try_into()?)),
@@ -193,10 +192,10 @@ impl Database {
     }
 
     /// Get user by ID regardless of login state
-    /// 
+    ///
     /// Unlike `get_current_user()` which only returns logged-in users,
     /// this function returns the user even if they have logged out.
-    /// 
+    ///
     /// **Intended use cases:**
     /// - Data recovery scenarios
     /// - Admin/maintenance operations

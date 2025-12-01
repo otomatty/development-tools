@@ -95,7 +95,7 @@ pub async fn get_current_user(state: State<'_, AppState>) -> Result<Option<UserI
 }
 
 /// Validate current token (check if token is still valid)
-/// 
+///
 /// Note: GitHub Device Flow tokens don't expire, but users can revoke them manually.
 /// This command checks if the current token is still valid by making a test API call.
 /// Returns `Ok(false)` if the user is not logged in.

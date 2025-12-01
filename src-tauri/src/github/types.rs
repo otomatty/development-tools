@@ -323,4 +323,3 @@ pub struct GraphQLRateLimit {
     pub remaining: i32,
     pub reset_at: String,
 }
-

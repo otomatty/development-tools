@@ -6,7 +6,10 @@ use leptos::prelude::*;
 use std::collections::HashSet;
 
 use crate::components::icons::Icon;
-use crate::components::settings::{AccountSettings, AppearanceSettings, AppInfoSection, DataManagement, NotificationSettings, SettingsResetSection, SyncSettings};
+use crate::components::settings::{
+    AccountSettings, AppInfoSection, AppearanceSettings, DataManagement, NotificationSettings,
+    SettingsResetSection, SyncSettings,
+};
 use crate::types::{AppPage, AuthState};
 
 /// Settings section enum
@@ -29,15 +32,17 @@ fn AccordionSection(
     toggle: impl Fn() + 'static + Clone + Send + Sync,
     children: Children,
     #[prop(optional)] max_height: Option<&'static str>,
-) -> impl IntoView
-{
+) -> impl IntoView {
     let max_height = max_height.unwrap_or("500px");
-    let section_id = format!("accordion-section-{}", title.replace(" ", "-").to_lowercase());
+    let section_id = format!(
+        "accordion-section-{}",
+        title.replace(" ", "-").to_lowercase()
+    );
     let content_id = format!("{}-content", section_id);
-    
+
     let toggle_click = toggle.clone();
     let toggle_key = toggle.clone();
-    
+
     view! {
         <div class="bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-cyan/20 shadow-lg overflow-hidden transition-all duration-300 hover:border-gm-accent-cyan/40 hover:shadow-gm-accent-cyan/10">
             <button
@@ -62,7 +67,7 @@ fn AccordionSection(
                         {title}
                     </span>
                 </div>
-                <span 
+                <span
                     class="text-gm-accent-cyan transition-transform duration-300 ease-in-out"
                     style:transform=move || if is_expanded.get() { "rotate(180deg)" } else { "rotate(0deg)" }
                     aria-hidden="true"
@@ -70,7 +75,7 @@ fn AccordionSection(
                     <Icon name="chevron-down" class="w-5 h-5".to_string() />
                 </span>
             </button>
-            <div 
+            <div
                 id=content_id
                 role="region"
                 aria-labelledby=section_id
@@ -92,8 +97,7 @@ pub fn SettingsPage(
     auth_state: ReadSignal<AuthState>,
     set_auth_state: WriteSignal<AuthState>,
     set_current_page: WriteSignal<AppPage>,
-) -> impl IntoView
-{
+) -> impl IntoView {
     let (expanded_sections, set_expanded_sections) = signal({
         let mut set = HashSet::new();
         set.insert(SettingsSection::Account);
@@ -111,12 +115,27 @@ pub fn SettingsPage(
     };
 
     // Create signals for each section's expanded state
-    let account_expanded = Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::Account));
-    let notification_expanded = Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::Notification));
-    let sync_expanded = Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::Sync));
-    let appearance_expanded = Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::Appearance));
-    let data_management_expanded = Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::DataManagement));
-    let app_info_expanded = Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::AppInfo));
+    let account_expanded =
+        Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::Account));
+    let notification_expanded = Memo::new(move |_| {
+        expanded_sections
+            .get()
+            .contains(&SettingsSection::Notification)
+    });
+    let sync_expanded =
+        Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::Sync));
+    let appearance_expanded = Memo::new(move |_| {
+        expanded_sections
+            .get()
+            .contains(&SettingsSection::Appearance)
+    });
+    let data_management_expanded = Memo::new(move |_| {
+        expanded_sections
+            .get()
+            .contains(&SettingsSection::DataManagement)
+    });
+    let app_info_expanded =
+        Memo::new(move |_| expanded_sections.get().contains(&SettingsSection::AppInfo));
 
     view! {
         <div class="flex-1 overflow-y-auto p-6">

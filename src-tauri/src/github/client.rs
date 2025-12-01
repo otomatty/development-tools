@@ -109,9 +109,7 @@ impl GitHubClient {
                 Ok(body)
             }
             reqwest::StatusCode::UNAUTHORIZED => Err(GitHubError::Unauthorized),
-            reqwest::StatusCode::NOT_FOUND => {
-                Err(GitHubError::NotFound(endpoint.to_string()))
-            }
+            reqwest::StatusCode::NOT_FOUND => Err(GitHubError::NotFound(endpoint.to_string())),
             status => {
                 let error_text = response.text().await.unwrap_or_default();
                 Err(GitHubError::ApiError(format!(
@@ -166,7 +164,11 @@ impl GitHubClient {
     }
 
     /// Get the authenticated user's repositories
-    pub async fn get_repositories(&self, per_page: i32, page: i32) -> GitHubResult<Vec<Repository>> {
+    pub async fn get_repositories(
+        &self,
+        per_page: i32,
+        page: i32,
+    ) -> GitHubResult<Vec<Repository>> {
         self.get(&format!(
             "/user/repos?sort=updated&per_page={}&page={}",
             per_page, page
@@ -245,8 +247,7 @@ impl GitHubClient {
         "#;
 
         let variables = serde_json::json!({ "login": username });
-        let response: ContributionCollectionResponse =
-            self.graphql(query, Some(variables)).await?;
+        let response: ContributionCollectionResponse = self.graphql(query, Some(variables)).await?;
 
         response
             .user
@@ -255,7 +256,7 @@ impl GitHubClient {
     }
 
     /// Get count of merged PRs for the user
-    /// 
+    ///
     /// Note: This uses GitHub's Search API which has stricter rate limits
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
@@ -272,7 +273,7 @@ impl GitHubClient {
     }
 
     /// Get count of closed issues for the user
-    /// 
+    ///
     /// Note: This uses GitHub's Search API which has stricter rate limits
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
@@ -292,23 +293,18 @@ impl GitHubClient {
     /// Get unique programming languages used across user's repositories
     pub async fn get_languages_count(&self, username: &str) -> GitHubResult<i32> {
         let repos = self.get_repositories(100, 1).await?;
-        let languages: std::collections::HashSet<&str> = repos
-            .iter()
-            .filter_map(|r| r.language.as_deref())
-            .collect();
+        let languages: std::collections::HashSet<&str> =
+            repos.iter().filter_map(|r| r.language.as_deref()).collect();
         Ok(languages.len() as i32)
     }
 
     /// Get count of all PRs (open + closed) for the user
-    /// 
+    ///
     /// Note: This uses GitHub's Search API which has stricter rate limits
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
     pub async fn get_total_prs_count(&self, username: &str) -> GitHubResult<i32> {
-        let query = format!(
-            "/search/issues?q=type:pr+author:{}&per_page=1",
-            username
-        );
+        let query = format!("/search/issues?q=type:pr+author:{}&per_page=1", username);
         let response: serde_json::Value = self.get(&query).await?;
         Ok(response
             .get("total_count")
@@ -323,7 +319,7 @@ impl GitHubClient {
     }
 
     /// Calculate streak from contribution calendar
-    /// 
+    ///
     /// Returns StreakInfo containing:
     /// - current_streak: consecutive days with contributions up to today/yesterday
     /// - longest_streak: longest consecutive days with contributions ever
@@ -379,7 +375,7 @@ impl GitHubClient {
     }
 
     /// Calculate streak from contribution calendar (legacy tuple return)
-    /// 
+    ///
     /// This is kept for backward compatibility. Use calculate_streak for new code.
     #[deprecated(note = "Use calculate_streak which returns StreakInfo")]
     pub fn calculate_streak_tuple(calendar: &ContributionCalendar) -> (i32, i32) {
@@ -388,27 +384,27 @@ impl GitHubClient {
     }
 
     /// Calculate weekly and monthly streaks from contribution calendar
-    /// 
+    ///
     /// Returns (weekly_streak, monthly_streak) where:
     /// - weekly_streak: consecutive weeks with at least one contribution
     /// - monthly_streak: consecutive months with at least one contribution
-    /// 
+    ///
     /// Grace period: If current week/month has no contributions, streak calculation
     /// starts from the previous week/month (similar to daily streak behavior).
     pub fn calculate_weekly_monthly_streak(calendar: &ContributionCalendar) -> (i32, i32) {
         use std::collections::HashSet;
-        
+
         // Collect all contribution days
         let all_days: Vec<_> = calendar
             .weeks
             .iter()
             .flat_map(|w| w.contribution_days.iter())
             .collect();
-        
+
         // Group contributions by week (year-week) and month (year-month)
         let mut weeks_with_contributions: HashSet<String> = HashSet::new();
         let mut months_with_contributions: HashSet<String> = HashSet::new();
-        
+
         for day in &all_days {
             if day.contribution_count > 0 {
                 // Parse date string YYYY-MM-DD
@@ -425,7 +421,7 @@ impl GitHubClient {
                             let iso_week = date.iso_week();
                             let week_key = format!("{}-W{:02}", iso_week.year(), iso_week.week());
                             weeks_with_contributions.insert(week_key);
-                            
+
                             let month_key = format!("{}-{:02}", year, month);
                             months_with_contributions.insert(month_key);
                         }
@@ -434,18 +430,18 @@ impl GitHubClient {
                 }
             }
         }
-        
+
         // Calculate current weekly streak with grace period
         let now = Utc::now();
         let current_iso = now.iso_week();
         let mut weekly_streak = 0;
         let mut check_year = current_iso.year();
         let mut check_week = current_iso.week();
-        
+
         // Check if current week has contributions
         let current_week_key = format!("{}-W{:02}", check_year, check_week);
         let has_current_week = weeks_with_contributions.contains(&current_week_key);
-        
+
         // If no contributions this week, start checking from previous week (grace period)
         if !has_current_week {
             if check_week == 1 {
@@ -457,12 +453,12 @@ impl GitHubClient {
                 check_week -= 1;
             }
         }
-        
+
         loop {
             let week_key = format!("{}-W{:02}", check_year, check_week);
             if weeks_with_contributions.contains(&week_key) {
                 weekly_streak += 1;
-                
+
                 // Move to previous week
                 if check_week == 1 {
                     check_year -= 1;
@@ -477,16 +473,16 @@ impl GitHubClient {
                 break;
             }
         }
-        
+
         // Calculate current monthly streak with grace period
         let mut monthly_streak = 0;
         let mut check_month = now.month();
         let mut check_year_m = now.year();
-        
+
         // Check if current month has contributions
         let current_month_key = format!("{}-{:02}", check_year_m, check_month);
         let has_current_month = months_with_contributions.contains(&current_month_key);
-        
+
         // If no contributions this month, start checking from previous month (grace period)
         if !has_current_month {
             if check_month == 1 {
@@ -496,12 +492,12 @@ impl GitHubClient {
                 check_month -= 1;
             }
         }
-        
+
         loop {
             let month_key = format!("{}-{:02}", check_year_m, check_month);
             if months_with_contributions.contains(&month_key) {
                 monthly_streak += 1;
-                
+
                 // Move to previous month
                 if check_month == 1 {
                     check_year_m -= 1;
@@ -513,12 +509,12 @@ impl GitHubClient {
                 break;
             }
         }
-        
+
         (weekly_streak, monthly_streak)
     }
 
     /// Get aggregated user stats
-    /// 
+    ///
     /// This method fetches stats from multiple API endpoints, including the
     /// Search API which has stricter rate limits. If rate limits are hit,
     /// fallback values from GraphQL/REST endpoints are used.
@@ -530,15 +526,13 @@ impl GitHubClient {
         // Get total stars received and languages count (uses REST API)
         let repos = self.get_repositories(100, 1).await?;
         let total_stars: i32 = repos.iter().map(|r| r.stargazers_count).sum();
-        let languages: std::collections::HashSet<&str> = repos
-            .iter()
-            .filter_map(|r| r.language.as_deref())
-            .collect();
+        let languages: std::collections::HashSet<&str> =
+            repos.iter().filter_map(|r| r.language.as_deref()).collect();
 
         // Get detailed PR and issue counts using Search API
         // IMPORTANT: Search API has stricter rate limits (30 req/min authenticated)
         // We call these sequentially and use fallback values if rate limited
-        
+
         // Total PRs - fallback to GraphQL contributions if rate limited
         let total_prs = match self.get_total_prs_count(username).await {
             Ok(count) => count,
@@ -588,7 +582,7 @@ impl GitHubClient {
         };
 
         // Calculate weekly and monthly streaks
-        let (weekly_streak, monthly_streak) = 
+        let (weekly_streak, monthly_streak) =
             Self::calculate_weekly_monthly_streak(&contributions.contribution_calendar);
 
         Ok(GitHubStats {
@@ -615,15 +609,15 @@ impl GitHubClient {
     // ========================================================================
 
     /// Get code statistics (additions/deletions) for user's repositories
-    /// 
+    ///
     /// Uses a GraphQL batch query to fetch commit history with additions/deletions
     /// from the user's most recently pushed repositories.
-    /// 
+    ///
     /// # Arguments
     /// * `username` - GitHub username
     /// * `since` - ISO 8601 timestamp (e.g., "2025-01-01T00:00:00Z")
     /// * `max_repos` - Maximum number of repositories to query (default: 100)
-    /// 
+    ///
     /// # Returns
     /// HashMap of date -> DailyCodeStatsAggregated
     pub async fn get_code_stats(
@@ -681,38 +675,39 @@ impl GitHubClient {
         let response: CodeStatsQueryResponse = self.graphql(query, Some(variables)).await?;
 
         // Aggregate commits by date across all repositories
-        let mut daily_stats: std::collections::HashMap<String, DailyCodeStatsAggregated> = 
+        let mut daily_stats: std::collections::HashMap<String, DailyCodeStatsAggregated> =
             std::collections::HashMap::new();
 
         if let Some(user) = response.user {
             for repo in user.repositories.nodes {
                 let repo_name = repo.name_with_owner.clone();
-                
+
                 if let Some(branch_ref) = repo.default_branch_ref {
                     if let Some(target) = branch_ref.target {
                         if let Some(history) = target.history {
                             for commit in history.nodes {
                                 // Parse the date (take YYYY-MM-DD part)
-                                let date = commit.committed_date
+                                let date = commit
+                                    .committed_date
                                     .split('T')
                                     .next()
                                     .unwrap_or(&commit.committed_date)
                                     .to_string();
-                                
-                                let entry = daily_stats
-                                    .entry(date.clone())
-                                    .or_insert_with(|| DailyCodeStatsAggregated {
+
+                                let entry = daily_stats.entry(date.clone()).or_insert_with(|| {
+                                    DailyCodeStatsAggregated {
                                         date: date.clone(),
                                         additions: 0,
                                         deletions: 0,
                                         commits_count: 0,
                                         repositories: vec![],
-                                    });
-                                
+                                    }
+                                });
+
                                 entry.additions += commit.additions;
                                 entry.deletions += commit.deletions;
                                 entry.commits_count += 1;
-                                
+
                                 if !entry.repositories.contains(&repo_name) {
                                     entry.repositories.push(repo_name.clone());
                                 }
@@ -726,7 +721,7 @@ impl GitHubClient {
         // Convert to sorted vector
         let mut result: Vec<DailyCodeStatsAggregated> = daily_stats.into_values().collect();
         result.sort_by(|a, b| b.date.cmp(&a.date)); // Sort by date descending
-        
+
         Ok(result)
     }
 
@@ -747,12 +742,20 @@ impl GitHubClient {
             }
         "#;
 
-        let graphql_response: GraphQLRateLimitResponse = 
-            self.graphql(graphql_query, None).await?;
+        let graphql_response: GraphQLRateLimitResponse = self.graphql(graphql_query, None).await?;
 
-        let graphql_limit = graphql_response.rate_limit.as_ref().map(|r| r.limit).unwrap_or(0);
-        let graphql_remaining = graphql_response.rate_limit.as_ref().map(|r| r.remaining).unwrap_or(0);
-        let graphql_reset = graphql_response.rate_limit
+        let graphql_limit = graphql_response
+            .rate_limit
+            .as_ref()
+            .map(|r| r.limit)
+            .unwrap_or(0);
+        let graphql_remaining = graphql_response
+            .rate_limit
+            .as_ref()
+            .map(|r| r.remaining)
+            .unwrap_or(0);
+        let graphql_reset = graphql_response
+            .rate_limit
             .as_ref()
             .and_then(|r| chrono::DateTime::parse_from_rfc3339(&r.reset_at).ok())
             .map(|dt| dt.timestamp())
@@ -781,13 +784,13 @@ impl GitHubClient {
 
     /// Check if rate limit is critical (below 20% remaining)
     pub fn is_rate_limit_critical(rate_limit: &RateLimitDetailed) -> bool {
-        let core_critical = rate_limit.core.limit > 0 
+        let core_critical = rate_limit.core.limit > 0
             && (rate_limit.core.remaining as f32 / rate_limit.core.limit as f32) < 0.2;
-        let graphql_critical = rate_limit.graphql.limit > 0 
+        let graphql_critical = rate_limit.graphql.limit > 0
             && (rate_limit.graphql.remaining as f32 / rate_limit.graphql.limit as f32) < 0.2;
-        let search_critical = rate_limit.search.limit > 0 
+        let search_critical = rate_limit.search.limit > 0
             && (rate_limit.search.remaining as f32 / rate_limit.search.limit as f32) < 0.2;
-        
+
         core_critical || graphql_critical || search_critical
     }
 }
@@ -841,7 +844,10 @@ mod tests {
 
         let streak_info = GitHubClient::calculate_streak(&calendar);
         assert_eq!(streak_info.longest_streak, 2); // 2 consecutive days at the start
-        assert_eq!(streak_info.last_activity_date, Some("2024-01-04".to_string()));
+        assert_eq!(
+            streak_info.last_activity_date,
+            Some("2024-01-04".to_string())
+        );
     }
 
     // ============================================================
@@ -867,23 +873,27 @@ mod tests {
         let now = chrono::Utc::now();
         let current_week = now.iso_week().week();
         let current_year = now.iso_week().year();
-        
+
         // Build contribution days for current week and previous weeks
         let mut weeks = Vec::new();
-        
+
         // Add contributions for current week and 2 previous weeks (3 consecutive weeks)
         for week_offset in 0..3 {
             let mut check_year = current_year;
             let mut check_week = current_week as i32 - week_offset;
-            
+
             // Handle year boundary
             if check_week <= 0 {
                 check_year -= 1;
                 check_week = 52 + check_week; // Approximate
             }
-            
+
             // Find a date in that week
-            if let Some(date) = chrono::NaiveDate::from_isoywd_opt(check_year, check_week as u32, chrono::Weekday::Mon) {
+            if let Some(date) = chrono::NaiveDate::from_isoywd_opt(
+                check_year,
+                check_week as u32,
+                chrono::Weekday::Mon,
+            ) {
                 weeks.push(ContributionWeek {
                     contribution_days: vec![ContributionDay {
                         contribution_count: 1,
@@ -893,14 +903,18 @@ mod tests {
                 });
             }
         }
-        
+
         let calendar = ContributionCalendar {
             total_contributions: 3,
             weeks,
         };
 
         let (weekly, _monthly) = GitHubClient::calculate_weekly_monthly_streak(&calendar);
-        assert!(weekly >= 3, "Expected at least 3 consecutive weeks, got {}", weekly);
+        assert!(
+            weekly >= 3,
+            "Expected at least 3 consecutive weeks, got {}",
+            weekly
+        );
     }
 
     #[test]
@@ -909,11 +923,13 @@ mod tests {
         let now = chrono::Utc::now();
         let current_week = now.iso_week().week();
         let current_year = now.iso_week().year();
-        
+
         let mut weeks = Vec::new();
-        
+
         // Current week
-        if let Some(date) = chrono::NaiveDate::from_isoywd_opt(current_year, current_week, chrono::Weekday::Mon) {
+        if let Some(date) =
+            chrono::NaiveDate::from_isoywd_opt(current_year, current_week, chrono::Weekday::Mon)
+        {
             weeks.push(ContributionWeek {
                 contribution_days: vec![ContributionDay {
                     contribution_count: 1,
@@ -922,7 +938,7 @@ mod tests {
                 }],
             });
         }
-        
+
         // Skip one week (week_offset = 1), add week_offset = 2
         let week_offset = 2i32;
         let mut check_year = current_year;
@@ -931,8 +947,10 @@ mod tests {
             check_year -= 1;
             check_week = 52 + check_week;
         }
-        
-        if let Some(date) = chrono::NaiveDate::from_isoywd_opt(check_year, check_week as u32, chrono::Weekday::Mon) {
+
+        if let Some(date) =
+            chrono::NaiveDate::from_isoywd_opt(check_year, check_week as u32, chrono::Weekday::Mon)
+        {
             weeks.push(ContributionWeek {
                 contribution_days: vec![ContributionDay {
                     contribution_count: 1,
@@ -941,7 +959,7 @@ mod tests {
                 }],
             });
         }
-        
+
         let calendar = ContributionCalendar {
             total_contributions: 2,
             weeks,
@@ -990,7 +1008,7 @@ mod tests {
         let now = chrono::Utc::now();
         let current_week = now.iso_week().week();
         let current_year = now.iso_week().year();
-        
+
         // Only add contributions for previous week (not current week)
         let mut check_year = current_year;
         let mut check_week = current_week as i32 - 1;
@@ -998,9 +1016,9 @@ mod tests {
             check_year -= 1;
             check_week = 52;
         }
-        
+
         let mut weeks = Vec::new();
-        
+
         // Add 2 consecutive weeks starting from previous week
         for offset in 0..2 {
             let mut y = check_year;
@@ -1009,8 +1027,10 @@ mod tests {
                 y -= 1;
                 w = 52 + w;
             }
-            
-            if let Some(date) = chrono::NaiveDate::from_isoywd_opt(y, w as u32, chrono::Weekday::Mon) {
+
+            if let Some(date) =
+                chrono::NaiveDate::from_isoywd_opt(y, w as u32, chrono::Weekday::Mon)
+            {
                 weeks.push(ContributionWeek {
                     contribution_days: vec![ContributionDay {
                         contribution_count: 1,
@@ -1020,7 +1040,7 @@ mod tests {
                 });
             }
         }
-        
+
         let calendar = ContributionCalendar {
             total_contributions: 2,
             weeks,
@@ -1028,7 +1048,10 @@ mod tests {
 
         let (weekly, _monthly) = GitHubClient::calculate_weekly_monthly_streak(&calendar);
         // With grace period, should count the streak from previous weeks
-        assert!(weekly >= 2, "Expected streak of at least 2 with grace period, got {}", weekly);
+        assert!(
+            weekly >= 2,
+            "Expected streak of at least 2 with grace period, got {}",
+            weekly
+        );
     }
 }
-

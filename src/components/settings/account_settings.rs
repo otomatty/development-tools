@@ -15,8 +15,7 @@ pub fn AccountSettings(
     auth_state: ReadSignal<AuthState>,
     set_auth_state: WriteSignal<AuthState>,
     set_current_page: WriteSignal<AppPage>,
-) -> impl IntoView
-{
+) -> impl IntoView {
     let (show_logout_dialog, set_show_logout_dialog) = signal(false);
     let (loading, set_loading) = signal(false);
     let (error, set_error) = signal(None::<String>);

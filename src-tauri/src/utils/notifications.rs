@@ -54,7 +54,7 @@ mod tests {
     fn test_notification_method_os_only() {
         let mut settings = UserSettings::default();
         settings.notification_method = NotificationMethod::OsOnly;
-        
+
         // This test would require a mock AppHandle, which is complex to set up
         // In a real scenario, we would use a test framework that can mock Tauri
         // For now, we just verify the enum values are correct
@@ -82,4 +82,3 @@ mod tests {
         assert_eq!(settings.notification_method, NotificationMethod::None);
     }
 }
-

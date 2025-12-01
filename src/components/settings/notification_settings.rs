@@ -6,9 +6,9 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
+use super::toggle_switch::ToggleSwitch;
 use crate::tauri_api;
 use crate::types::{NotificationMethod, UpdateSettingsRequest, UserSettings};
-use super::toggle_switch::ToggleSwitch;
 
 /// Notification settings component
 #[component]
@@ -17,7 +17,7 @@ pub fn NotificationSettings() -> impl IntoView {
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(None::<String>);
     let (success_message, set_success_message) = signal(None::<String>);
-    
+
     // Track initial load to avoid triggering auto-save on first load
     let (initial_load_complete, set_initial_load_complete) = signal(false);
 
@@ -27,7 +27,7 @@ pub fn NotificationSettings() -> impl IntoView {
         if initial_load_complete.get() {
             return;
         }
-        
+
         spawn_local(async move {
             match tauri_api::get_settings().await {
                 Ok(loaded_settings) => {
@@ -56,9 +56,16 @@ pub fn NotificationSettings() -> impl IntoView {
             match field {
                 "xp_gain" => current_settings.notify_xp_gain = !current_settings.notify_xp_gain,
                 "level_up" => current_settings.notify_level_up = !current_settings.notify_level_up,
-                "badge_earned" => current_settings.notify_badge_earned = !current_settings.notify_badge_earned,
-                "streak_update" => current_settings.notify_streak_update = !current_settings.notify_streak_update,
-                "streak_milestone" => current_settings.notify_streak_milestone = !current_settings.notify_streak_milestone,
+                "badge_earned" => {
+                    current_settings.notify_badge_earned = !current_settings.notify_badge_earned
+                }
+                "streak_update" => {
+                    current_settings.notify_streak_update = !current_settings.notify_streak_update
+                }
+                "streak_milestone" => {
+                    current_settings.notify_streak_milestone =
+                        !current_settings.notify_streak_milestone
+                }
                 _ => {}
             }
             set_settings.set(Some(current_settings));
@@ -91,7 +98,7 @@ pub fn NotificationSettings() -> impl IntoView {
 
     // Store timeout handle for debouncing
     let (timeout_id, set_timeout_id) = signal(None::<i32>);
-    
+
     // Helper to clear timeout (uses untrack to avoid Effect dependency)
     let clear_timeout_untracked = move || {
         leptos::prelude::untrack(|| {
@@ -103,24 +110,24 @@ pub fn NotificationSettings() -> impl IntoView {
             }
         });
     };
-    
+
     // Auto-save when settings change with debouncing
     Effect::new(move |_| {
         let current_settings = settings.get();
         let is_loading = loading.get();
         let is_initial_load_complete = initial_load_complete.get();
-        
+
         // Skip if settings are not loaded or initial load is not complete
         if current_settings.is_none() || is_loading || !is_initial_load_complete {
             return;
         }
-        
+
         // Capture settings value for closure
         let settings_to_save = current_settings.unwrap();
-        
+
         // Clear previous timeout if exists (untracked to avoid dependency loop)
         clear_timeout_untracked();
-            
+
         // Debounce: save after 500ms of no changes (untracked to avoid dependency loop)
         leptos::prelude::untrack(|| {
             if let Some(window) = web_sys::window() {
@@ -129,10 +136,14 @@ pub fn NotificationSettings() -> impl IntoView {
                     spawn_local(async move {
                         match tauri_api::update_settings(&update_request).await {
                             Ok(_) => {
-                                web_sys::console::log_1(&"Notification settings saved successfully".into());
+                                web_sys::console::log_1(
+                                    &"Notification settings saved successfully".into(),
+                                );
                             }
                             Err(e) => {
-                                web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
+                                web_sys::console::error_1(
+                                    &format!("Failed to save settings: {}", e).into(),
+                                );
                                 set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
                             }
                         }
@@ -140,7 +151,10 @@ pub fn NotificationSettings() -> impl IntoView {
                     set_timeout_id.set(None);
                 });
                 if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                    closure
+                        .as_ref()
+                        .dyn_ref::<js_sys::Function>()
+                        .expect("Closure should be a function"),
                     500,
                 ) {
                     set_timeout_id.set(Some(id));
@@ -149,7 +163,7 @@ pub fn NotificationSettings() -> impl IntoView {
             }
         });
     });
-    
+
     // Cleanup timeout on component unmount
     on_cleanup(move || {
         clear_timeout_untracked();
@@ -201,7 +215,7 @@ pub fn NotificationSettings() -> impl IntoView {
                                         let is_selected = current_method == method;
                                         let method_clone = method;
                                         let update_method = update_notification_method.clone();
-                                        
+
                                         view! {
                                             <label
                                                 class=move || format!(
@@ -263,7 +277,7 @@ pub fn NotificationSettings() -> impl IntoView {
                                     ].into_iter().map(move |(field, label, enabled)| {
                                         let field_str = field;
                                         let toggle_fn = toggle_notification.clone();
-                                        
+
                                         view! {
                                             <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
                                                 <span class="text-white font-gaming">
@@ -285,4 +299,3 @@ pub fn NotificationSettings() -> impl IntoView {
         </div>
     }
 }
-

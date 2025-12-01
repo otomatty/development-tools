@@ -6,10 +6,10 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
+use super::toggle_switch::ToggleSwitch;
 use crate::components::use_animation_context;
 use crate::tauri_api;
 use crate::types::{UpdateSettingsRequest, UserSettings};
-use super::toggle_switch::ToggleSwitch;
 
 /// Appearance settings component
 #[component]
@@ -30,7 +30,7 @@ pub fn AppearanceSettings() -> impl IntoView {
         if initial_load_complete.get() {
             return;
         }
-        
+
         spawn_local(async move {
             match tauri_api::get_settings().await {
                 Ok(loaded_settings) => {
@@ -52,12 +52,12 @@ pub fn AppearanceSettings() -> impl IntoView {
     let toggle_animations = move || {
         if let Some(mut current_settings) = settings.get() {
             current_settings.animations_enabled = !current_settings.animations_enabled;
-            
+
             // Update global animation context immediately
             if let Some(ctx) = animation_context {
                 ctx.set_enabled.set(current_settings.animations_enabled);
             }
-            
+
             set_settings.set(Some(current_settings));
         }
     };
@@ -99,7 +99,9 @@ pub fn AppearanceSettings() -> impl IntoView {
                     spawn_local(async move {
                         match tauri_api::update_settings(&update_request).await {
                             Ok(_) => {
-                                web_sys::console::log_1(&"Appearance settings saved successfully".into());
+                                web_sys::console::log_1(
+                                    &"Appearance settings saved successfully".into(),
+                                );
                             }
                             Err(e) => {
                                 web_sys::console::error_1(
@@ -199,4 +201,3 @@ pub fn AppearanceSettings() -> impl IntoView {
         </div>
     }
 }
-

@@ -53,9 +53,11 @@ impl Database {
         // Fetch the upserted record
         self.get_daily_code_stats(user_id, date)
             .await?
-            .ok_or_else(|| crate::database::connection::DatabaseError::Query(
-                "Record not found after upsert".to_string()
-            ))
+            .ok_or_else(|| {
+                crate::database::connection::DatabaseError::Query(
+                    "Record not found after upsert".to_string(),
+                )
+            })
     }
 
     /// Get daily code statistics for a specific date
@@ -141,24 +143,34 @@ impl Database {
     ) -> DbResult<CodeStatsResponse> {
         let today = Utc::now().date_naive();
         let period_days = period.days() as i64;
-        
+
         // Calculate date ranges
         let start_date = today - chrono::Duration::days(period_days);
         let week_start = today - chrono::Duration::days(7);
         let month_start = today - chrono::Duration::days(30);
-        
+
         let week_start_str = week_start.format("%Y-%m-%d").to_string();
         let month_start_str = month_start.format("%Y-%m-%d").to_string();
 
         // Get all daily stats for the period
-        let daily = self.get_daily_code_stats_range(user_id, start_date, today).await?;
+        let daily = self
+            .get_daily_code_stats_range(user_id, start_date, today)
+            .await?;
 
         // Calculate weekly summary
-        let weekly_stats: Vec<_> = daily.iter().filter(|s| s.date >= week_start_str).cloned().collect();
+        let weekly_stats: Vec<_> = daily
+            .iter()
+            .filter(|s| s.date >= week_start_str)
+            .cloned()
+            .collect();
         let weekly_total = CodeStatsSummary::from_daily_stats(&weekly_stats);
 
         // Calculate monthly summary
-        let monthly_stats: Vec<_> = daily.iter().filter(|s| s.date >= month_start_str).cloned().collect();
+        let monthly_stats: Vec<_> = daily
+            .iter()
+            .filter(|s| s.date >= month_start_str)
+            .cloned()
+            .collect();
         let monthly_total = CodeStatsSummary::from_daily_stats(&monthly_stats);
 
         Ok(CodeStatsResponse {
@@ -199,9 +211,11 @@ impl Database {
 
         self.get_sync_metadata(user_id, sync_type)
             .await?
-            .ok_or_else(|| crate::database::connection::DatabaseError::Query(
-                "Record not found after insert".to_string()
-            ))
+            .ok_or_else(|| {
+                crate::database::connection::DatabaseError::Query(
+                    "Record not found after insert".to_string(),
+                )
+            })
     }
 
     /// Get sync metadata
@@ -281,7 +295,7 @@ impl Database {
         cache_duration_hours: i64,
     ) -> DbResult<bool> {
         use chrono::DateTime;
-        
+
         let metadata = self.get_sync_metadata(user_id, sync_type).await?;
 
         match metadata {
@@ -319,7 +333,7 @@ impl Database {
         .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
 
         let today = Utc::now().date_naive();
-        
+
         if let Some(r) = row {
             if let Some(last_date_str) = r.get::<Option<String>, _>("last_date") {
                 // Parse the date string and sync from last known date (with some overlap)

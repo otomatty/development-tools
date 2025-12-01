@@ -4,10 +4,7 @@ use crate::types::{LogEntry, LogStream};
 
 /// ログビューアコンポーネント
 #[component]
-pub fn LogViewer(
-    logs: ReadSignal<Vec<LogEntry>>,
-    visible: ReadSignal<bool>,
-) -> impl IntoView {
+pub fn LogViewer(logs: ReadSignal<Vec<LogEntry>>, visible: ReadSignal<bool>) -> impl IntoView {
     view! {
         <Show when=move || visible.get()>
             <div class="card p-4 mt-4">
@@ -19,7 +16,7 @@ pub fn LogViewer(
                         {move || format!("{} lines", logs.get().len())}
                     </span>
                 </div>
-                
+
                 <div class="bg-slate-900 rounded-lg p-3 h-48 overflow-y-auto font-mono text-sm">
                     <Show
                         when=move || !logs.get().is_empty()
@@ -50,4 +47,3 @@ pub fn LogViewer(
         </Show>
     }
 }
-

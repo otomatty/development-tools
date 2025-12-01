@@ -29,7 +29,7 @@ pub fn ToolDetail(
                 {move || {
                     let cfg = config.get().unwrap();
                     let icon = cfg.icon.clone().unwrap_or_else(|| "terminal".to_string());
-                    
+
                     view! {
                         <div class="space-y-6">
                             // ヘッダー
@@ -62,7 +62,7 @@ pub fn ToolDetail(
                                 <h3 class="text-sm font-medium text-dt-text-sub uppercase tracking-wider mb-4">
                                     "Options"
                                 </h3>
-                                <OptionForm 
+                                <OptionForm
                                     options=cfg.options.clone()
                                     values=option_values
                                     set_values=set_option_values
@@ -115,4 +115,3 @@ pub fn ToolDetail(
         </div>
     }
 }
-

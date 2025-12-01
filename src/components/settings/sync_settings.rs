@@ -6,13 +6,16 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::tauri_api;
-use crate::types::{UpdateSettingsRequest, UserSettings, SyncIntervalOption};
 use super::toast::{InlineToast, ToastType};
 use super::toggle_switch::ToggleSwitch;
+use crate::tauri_api;
+use crate::types::{SyncIntervalOption, UpdateSettingsRequest, UserSettings};
 
 /// Helper to clear a timeout handle stored in a signal (uses untrack to avoid Effect dependency)
-fn clear_timeout_signal_untracked(handle_signal: ReadSignal<Option<i32>>, set_handle_signal: WriteSignal<Option<i32>>) {
+fn clear_timeout_signal_untracked(
+    handle_signal: ReadSignal<Option<i32>>,
+    set_handle_signal: WriteSignal<Option<i32>>,
+) {
     leptos::prelude::untrack(|| {
         if let Some(id) = handle_signal.get() {
             if let Some(window) = web_sys::window() {
@@ -33,10 +36,10 @@ pub fn SyncSettings() -> impl IntoView {
     let (error, set_error) = signal(None::<String>);
     let (success_message, set_success_message) = signal(None::<String>);
     let (last_sync_time, set_last_sync_time) = signal(None::<String>);
-    
+
     // Track initial load to avoid triggering auto-save on first load
     let (initial_load_complete, set_initial_load_complete) = signal(false);
-    
+
     // Store timeout handles for cleanup (using signals for timeout IDs)
     let (debounce_handle, set_debounce_handle) = signal(Option::<i32>::None);
     let (success_msg_handle, set_success_msg_handle) = signal(Option::<i32>::None);
@@ -47,7 +50,7 @@ pub fn SyncSettings() -> impl IntoView {
         if initial_load_complete.get() {
             return;
         }
-        
+
         spawn_local(async move {
             // Load sync intervals from backend
             match tauri_api::get_sync_intervals().await {
@@ -55,15 +58,35 @@ pub fn SyncSettings() -> impl IntoView {
                     set_sync_intervals.set(intervals);
                 }
                 Err(e) => {
-                    web_sys::console::error_1(&format!("Failed to load sync intervals: {}", e).into());
+                    web_sys::console::error_1(
+                        &format!("Failed to load sync intervals: {}", e).into(),
+                    );
                     // Use fallback intervals
                     set_sync_intervals.set(vec![
-                        SyncIntervalOption { value: 5, label: "5分".to_string() },
-                        SyncIntervalOption { value: 15, label: "15分".to_string() },
-                        SyncIntervalOption { value: 30, label: "30分".to_string() },
-                        SyncIntervalOption { value: 60, label: "1時間".to_string() },
-                        SyncIntervalOption { value: 180, label: "3時間".to_string() },
-                        SyncIntervalOption { value: 0, label: "手動のみ".to_string() },
+                        SyncIntervalOption {
+                            value: 5,
+                            label: "5分".to_string(),
+                        },
+                        SyncIntervalOption {
+                            value: 15,
+                            label: "15分".to_string(),
+                        },
+                        SyncIntervalOption {
+                            value: 30,
+                            label: "30分".to_string(),
+                        },
+                        SyncIntervalOption {
+                            value: 60,
+                            label: "1時間".to_string(),
+                        },
+                        SyncIntervalOption {
+                            value: 180,
+                            label: "3時間".to_string(),
+                        },
+                        SyncIntervalOption {
+                            value: 0,
+                            label: "手動のみ".to_string(),
+                        },
                     ]);
                 }
             }
@@ -111,7 +134,7 @@ pub fn SyncSettings() -> impl IntoView {
         set_syncing.set(true);
         set_error.set(None);
         set_success_message.set(None);
-        
+
         // Clear any existing success message timeout
         clear_timeout_signal_untracked(success_msg_handle, set_success_msg_handle);
 
@@ -130,24 +153,29 @@ pub fn SyncSettings() -> impl IntoView {
                         now.get_seconds()
                     );
                     set_last_sync_time.set(Some(time_str));
-                    
+
                     let xp_msg = if sync_result.xp_gained > 0 {
                         format!(" (+{} XP)", sync_result.xp_gained)
                     } else {
                         String::new()
                     };
                     set_success_message.set(Some(format!("同期が完了しました{}", xp_msg)));
-                    
+
                     // Auto-hide success message after 3 seconds
                     if let Some(window) = web_sys::window() {
                         let closure = wasm_bindgen::closure::Closure::once(move || {
                             set_success_message.set(None);
                             set_success_msg_handle.set(None);
                         });
-                        if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                            closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
-                            3000,
-                        ) {
+                        if let Ok(id) = window
+                            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                                closure
+                                    .as_ref()
+                                    .dyn_ref::<js_sys::Function>()
+                                    .expect("Closure should be a function"),
+                                3000,
+                            )
+                        {
                             set_success_msg_handle.set(Some(id));
                         }
                         closure.forget();
@@ -167,18 +195,18 @@ pub fn SyncSettings() -> impl IntoView {
         let current_settings = settings.get();
         let is_loading = loading.get();
         let is_initial_load_complete = initial_load_complete.get();
-        
+
         // Skip if settings are not loaded or initial load is not complete
         if current_settings.is_none() || is_loading || !is_initial_load_complete {
             return;
         }
-        
+
         // Capture settings value for closure
         let settings_to_save = current_settings.unwrap();
-        
+
         // Clear previous timeout if exists (untracked to avoid dependency loop)
         clear_timeout_signal_untracked(debounce_handle, set_debounce_handle);
-        
+
         // Debounce: save after 500ms of no changes (untracked to avoid dependency loop)
         leptos::prelude::untrack(|| {
             if let Some(window) = web_sys::window() {
@@ -190,7 +218,9 @@ pub fn SyncSettings() -> impl IntoView {
                                 web_sys::console::log_1(&"Settings saved successfully".into());
                             }
                             Err(e) => {
-                                web_sys::console::error_1(&format!("Failed to save settings: {}", e).into());
+                                web_sys::console::error_1(
+                                    &format!("Failed to save settings: {}", e).into(),
+                                );
                                 set_error.set(Some(format!("設定の保存に失敗しました: {}", e)));
                             }
                         }
@@ -198,7 +228,10 @@ pub fn SyncSettings() -> impl IntoView {
                     set_debounce_handle.set(None);
                 });
                 if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                    closure
+                        .as_ref()
+                        .dyn_ref::<js_sys::Function>()
+                        .expect("Closure should be a function"),
                     500,
                 ) {
                     set_debounce_handle.set(Some(id));
@@ -207,7 +240,7 @@ pub fn SyncSettings() -> impl IntoView {
             }
         });
     });
-    
+
     // Cleanup timeouts on component unmount
     on_cleanup(move || {
         clear_timeout_signal_untracked(debounce_handle, set_debounce_handle);
@@ -217,7 +250,7 @@ pub fn SyncSettings() -> impl IntoView {
     // Create derived signals for toast messages
     let error_message_signal = Signal::derive(move || error.get().unwrap_or_default());
     let success_message_signal = Signal::derive(move || success_message.get().unwrap_or_default());
-    
+
     view! {
         <div class="space-y-6">
             // Loading state
@@ -382,4 +415,3 @@ pub fn SyncSettings() -> impl IntoView {
         </div>
     }
 }
-

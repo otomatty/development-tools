@@ -17,37 +17,37 @@ fn SettingsResetDialog(
 ) -> impl IntoView {
     view! {
         <Show when=move || visible.get()>
-            <div 
+            <div
                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="settings-reset-dialog-title"
             >
-                <div 
+                <div
                     class="bg-gm-bg-card rounded-2xl border border-gm-accent-cyan/30 shadow-lg p-6 max-w-md w-full mx-4"
                 >
                     <div class="flex items-center gap-3 mb-4">
                         <span class="text-3xl">{"\u{2699}\u{FE0F}"}</span>
-                        <h3 
+                        <h3
                             id="settings-reset-dialog-title"
                             class="text-xl font-gaming font-bold text-white"
                         >
                             "設定をリセットしますか？"
                         </h3>
                     </div>
-                    
+
                     <div class="space-y-4 mb-6">
                         <p class="text-dt-text-sub">
                             "全ての設定がデフォルト値に戻ります。"
                         </p>
-                        
+
                         <div class="p-3 bg-gm-accent-cyan/10 border border-gm-accent-cyan/30 rounded-lg">
                             <p class="text-gm-accent-cyan text-sm">
                                 {"\u{2139}\u{FE0F}"}" XP・バッジ・統計データは削除されません"
                             </p>
                         </div>
                     </div>
-                    
+
                     <div class="flex justify-end gap-3">
                         <button
                             class="px-4 py-2 rounded-lg border border-gm-accent-cyan/30 text-white hover:bg-gm-accent-cyan/10 transition-colors"
@@ -102,7 +102,10 @@ pub fn SettingsResetSection() -> impl IntoView {
                             set_success_message.set(None);
                         });
                         let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                            closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                            closure
+                                .as_ref()
+                                .dyn_ref::<js_sys::Function>()
+                                .expect("Closure should be a function"),
                             3000,
                         );
                         closure.forget();

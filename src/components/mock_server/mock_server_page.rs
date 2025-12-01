@@ -487,7 +487,7 @@ pub fn MockServerPage() -> impl IntoView {
                                         let mapping_clone = mapping.clone();
                                         let mapping_for_browse = mapping.clone();
                                         let enabled = mapping.enabled;
-                                        
+
                                         view! {
                                             <div class=move || format!(
                                                 "flex items-center gap-4 p-3 rounded-lg border transition-colors {}",
@@ -518,19 +518,19 @@ pub fn MockServerPage() -> impl IntoView {
                                                         }
                                                     )/>
                                                 </button>
-                                                
+
                                                 // Virtual path
                                                 <div class="w-32">
                                                     <code class="text-gm-accent-cyan">{mapping.virtual_path.clone()}</code>
                                                 </div>
-                                                
+
                                                 <Icon name="arrow-right".to_string() class="w-4 h-4 text-slate-500".to_string() />
-                                                
+
                                                 // Local path
                                                 <div class="flex-1 truncate text-dt-text-sub">
                                                     {mapping.local_path.clone()}
                                                 </div>
-                                                
+
                                                 // Actions
                                                 <div class="flex items-center gap-2">
                                                     <button
@@ -624,7 +624,7 @@ pub fn MockServerPage() -> impl IntoView {
                                         } else {
                                             "text-red-400"
                                         };
-                                        
+
                                         // Clone values to avoid borrowing issues
                                         let time_str = log.timestamp.split('T').last().unwrap_or("").split('.').next().unwrap_or("").to_string();
                                         let method = log.method.clone();
@@ -632,7 +632,7 @@ pub fn MockServerPage() -> impl IntoView {
                                         let status_code = log.status_code;
                                         let response_size_str = log.response_size.map(|s| format_size(s)).unwrap_or("-".to_string());
                                         let response_time_str = format!("{}ms", log.response_time_ms);
-                                        
+
                                         view! {
                                             <div class="flex items-center gap-4 py-1 px-2 hover:bg-slate-700/50 rounded">
                                                 <span class="text-slate-500 w-20">{time_str}</span>
@@ -675,7 +675,7 @@ pub fn MockServerPage() -> impl IntoView {
                                     files.get().into_iter().map(|file| {
                                         let file_path = file.path.clone();
                                         let is_dir = file.is_directory;
-                                        
+
                                         view! {
                                             <div
                                                 class=move || format!(
@@ -688,7 +688,7 @@ pub fn MockServerPage() -> impl IntoView {
                                                     }
                                                 }
                                             >
-                                                <Icon 
+                                                <Icon
                                                     name=if file.is_directory { "folder".to_string() } else { "file".to_string() }
                                                     class=if file.is_directory { "w-5 h-5 text-yellow-400".to_string() } else { "w-5 h-5 text-slate-400".to_string() }
                                                 />
