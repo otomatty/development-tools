@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::use_animation_context_or_default;
+use crate::components::{AnimatedEmoji, EmojiType, use_animation_context_or_default};
 use crate::types::{NewBadgeInfo, XpGainedEvent};
 
 /// XP notification component
@@ -33,7 +33,10 @@ where
                                 // Header
                                 <div class="flex items-center justify-between mb-3">
                                     <div class="flex items-center gap-2">
-                                        <span class=move || format!("text-2xl {}", animation_ctx.get_animation_class("animate-bounce"))>"✨"</span>
+                                        <AnimatedEmoji
+                                            emoji=EmojiType::Sparkles
+                                            size="text-2xl"
+                                        />
                                         <span class="text-gm-accent-cyan font-gaming font-bold">
                                             "XP Gained!"
                                         </span>
