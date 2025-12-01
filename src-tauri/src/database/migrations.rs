@@ -267,6 +267,59 @@ CREATE INDEX IF NOT EXISTS idx_github_stats_snapshots_user_date
     ON github_stats_snapshots(user_id, snapshot_date DESC);
 "#,
     },
+    Migration {
+        version: 7,
+        name: "add_issue_management_tables",
+        sql: r#"
+-- Projects table: 1 project = 1 repository
+-- Related Issue: GitHub Issue #59 - GitHub Issue管理機能（Linear風カンバン）
+CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    -- Repository info (1:1 mapping)
+    github_repo_id INTEGER,
+    repo_owner TEXT,
+    repo_name TEXT,
+    repo_full_name TEXT,
+    is_actions_setup INTEGER DEFAULT 0,
+    last_synced_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, github_repo_id)
+);
+
+-- Cached Issues table: local cache of GitHub issues
+CREATE TABLE IF NOT EXISTS cached_issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    github_issue_id INTEGER NOT NULL,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    state TEXT NOT NULL DEFAULT 'open',
+    status TEXT NOT NULL DEFAULT 'backlog',
+    priority TEXT,
+    assignee_login TEXT,
+    assignee_avatar_url TEXT,
+    labels_json TEXT,
+    html_url TEXT,
+    github_created_at DATETIME,
+    github_updated_at DATETIME,
+    cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id, github_issue_id)
+);
+
+-- Create indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
+CREATE INDEX IF NOT EXISTS idx_cached_issues_project ON cached_issues(project_id);
+CREATE INDEX IF NOT EXISTS idx_cached_issues_status ON cached_issues(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_cached_issues_number ON cached_issues(project_id, number);
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

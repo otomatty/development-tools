@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g., v0.1.0)'
+        description: "Release tag (e.g., v0.1.0)"
         required: true
         type: string
 
@@ -121,22 +121,22 @@ jobs:
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ needs.get-version.outputs.version }}
-          releaseName: 'Development Tools ${{ needs.get-version.outputs.version }}'
+          releaseName: "Development Tools ${{ needs.get-version.outputs.version }}"
           releaseBody: |
             ## What's Changed
-            
+
             See the [CHANGELOG](https://github.com/otomatty/development-tools/blob/main/CHANGELOG.md) for details.
-            
+
             ## Installation
-            
+
             ### macOS
             - **Apple Silicon (M1/M2/M3)**: Download `Development-Tools_*_aarch64.dmg`
             - **Intel**: Download `Development-Tools_*_x64.dmg`
-            
+
             ### Windows
             - **Installer (recommended)**: Download `Development-Tools_*_x64-setup.exe`
             - **MSI**: Download `Development-Tools_*_x64_en-US.msi`
-            
+
             ### Linux
             - **Debian/Ubuntu**: Download `development-tools_*_amd64.deb`
             - **AppImage**: Download `Development-Tools_*_amd64.AppImage`

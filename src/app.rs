@@ -6,8 +6,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::components::settings::SettingsPage;
 use crate::components::{
-    AnimationContext, HomePage, LogViewer, NetworkStatusProvider, OfflineBanner, ResultView,
-    Sidebar, ToolDetail,
+    AnimationContext, HomePage, LogViewer, NetworkStatusProvider, OfflineBanner, ProjectDashboard,
+    ProjectsPage, ResultView, Sidebar, ToolDetail,
 };
 use crate::tauri_api;
 use crate::types::{
@@ -243,6 +243,14 @@ pub fn App() -> impl IntoView {
                     {move || match current_page.get() {
                         AppPage::Home => view! {
                             <HomePage set_current_page=set_current_page />
+                        }.into_any(),
+
+                        AppPage::Projects => view! {
+                            <ProjectsPage set_current_page=set_current_page />
+                        }.into_any(),
+
+                        AppPage::ProjectDetail(project_id) => view! {
+                            <ProjectDashboard project_id=project_id set_current_page=set_current_page />
                         }.into_any(),
 
                         AppPage::Tools => view! {

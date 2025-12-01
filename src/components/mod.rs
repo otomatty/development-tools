@@ -4,6 +4,7 @@ pub mod confirm_dialog;
 pub mod dropdown_menu;
 pub mod home;
 pub mod icons;
+pub mod issues;
 pub mod log_viewer;
 pub mod mock_server;
 pub mod network_status;
@@ -23,6 +24,7 @@ pub use animation_context::{
 pub use confirm_dialog::ConfirmDialog;
 pub use dropdown_menu::{DropdownMenu, DropdownMenuDivider, DropdownMenuItem};
 pub use home::HomePage;
+pub use issues::{ProjectDashboard, ProjectsPage};
 pub use log_viewer::LogViewer;
 pub use mock_server::MockServerPage;
 pub use network_status::{
