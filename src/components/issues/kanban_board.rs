@@ -114,7 +114,7 @@ pub fn KanbanBoard(
     });
 
     view! {
-        <div class="flex-1 overflow-x-auto p-4 select-none relative">
+        <div class="flex-1 h-full overflow-x-auto p-4 select-none relative">
             <div class="flex gap-4 h-full min-w-max">
                 {IssueStatus::visible()
                     .into_iter()
@@ -218,7 +218,7 @@ fn KanbanColumn(
                 let hovered = is_hovered();
 
                 format!(
-                    "flex flex-col w-72 rounded-lg border-2 transition-all duration-200 {}",
+                    "flex flex-col w-72 h-full rounded-lg border-2 transition-all duration-200 {}",
                     if dragging_active && valid_target && hovered {
                         // Actively hovering over a valid drop target - inner glow effect
                         "bg-gm-accent-cyan/20 border-gm-accent-cyan shadow-[inset_0_0_20px_rgba(0,255,255,0.3)] ring-2 ring-gm-accent-cyan/50 ring-inset"
