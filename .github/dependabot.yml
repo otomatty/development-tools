@@ -35,23 +35,6 @@ updates:
           - "tower*"
           - "tower-http*"
 
-  # Rust (Cargo) dependencies for src-tauri
-  - package-ecosystem: "cargo"
-    directory: "/src-tauri"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      timezone: "Asia/Tokyo"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "deps(tauri)"
-    labels:
-      - "dependencies"
-      - "rust"
-      - "tauri"
-    reviewers:
-      - "otomatty"
-
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
