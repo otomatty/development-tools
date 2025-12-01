@@ -22,7 +22,7 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -38,7 +38,7 @@ jobs:
     name: License Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -55,7 +55,7 @@ jobs:
     name: Check Outdated Dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
