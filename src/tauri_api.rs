@@ -928,27 +928,21 @@ pub async fn get_user_repositories() -> Result<Vec<RepositoryInfo>, String> {
 /// Link a repository to a project
 pub async fn link_repository(
     project_id: i64,
-    repo_id: i64,
     owner: &str,
-    name: &str,
-    full_name: &str,
+    repo: &str,
 ) -> Result<Project, String> {
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
     struct Args<'a> {
         project_id: i64,
-        repo_id: i64,
         owner: &'a str,
-        name: &'a str,
-        full_name: &'a str,
+        repo: &'a str,
     }
 
     let args = serde_wasm_bindgen::to_value(&Args {
         project_id,
-        repo_id,
         owner,
-        name,
-        full_name,
+        repo,
     })
     .unwrap();
     let result = invoke("link_repository", args).await;

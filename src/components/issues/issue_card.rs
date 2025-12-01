@@ -2,6 +2,7 @@
  * Issue Card Component
  *
  * Individual issue card displayed in the Kanban board
+ * Supports drag and drop for status changes
  *
  * DEPENDENCY MAP:
  *
@@ -22,14 +23,30 @@ pub struct StatusChangeEvent {
     pub new_status: String,
 }
 
-/// Issue card with status dropdown
-/// Uses a WriteSignal to report status changes back to parent
+/// Issue click event data
+#[derive(Clone, Debug)]
+pub struct IssueClickEvent {
+    pub issue: CachedIssue,
+}
+
+/// Drag start event data
+#[derive(Clone, Debug)]
+pub struct DragStartEvent {
+    pub issue_number: i32,
+    pub current_status: String,
+}
+
+/// Issue card with status dropdown and drag support
+/// Uses WriteSignals to report status changes and clicks back to parent
 #[component]
 pub fn IssueCard(
     issue: CachedIssue,
-    status_change_signal: WriteSignal<Option<StatusChangeEvent>>,
+    #[prop(optional)] status_change_signal: Option<WriteSignal<Option<StatusChangeEvent>>>,
+    issue_click_signal: WriteSignal<Option<IssueClickEvent>>,
+    #[prop(optional)] drag_signal: Option<WriteSignal<Option<DragStartEvent>>>,
 ) -> impl IntoView {
     let (show_dropdown, set_show_dropdown) = signal(false);
+    let issue_clone = issue.clone();
     
     let statuses = vec![
         ("backlog", "Backlog", "bg-gray-500"),
@@ -59,7 +76,51 @@ pub fn IssueCard(
     };
     
     view! {
-        <div class="bg-gray-800 rounded-lg p-3 shadow-md hover:shadow-lg transition-shadow border border-gray-700 cursor-pointer">
+        <div 
+            class="bg-gray-800 rounded-lg p-3 shadow-md hover:shadow-lg transition-all border cursor-grab border-gray-700 hover:border-gm-accent-cyan/50"
+            draggable="true"
+            on:dragstart={
+                let issue_number_for_drag = issue_number;
+                let current_status_for_drag = issue.status.clone();
+                move |e: web_sys::DragEvent| {
+                    leptos::logging::log!("🚀 dragstart fired for issue #{}", issue_number_for_drag);
+                    
+                    // CRITICAL: Must set data on DataTransfer for drop to work!
+                    // Without this, browsers won't allow drops
+                    if let Some(dt) = e.data_transfer() {
+                        // Set some data - the actual value doesn't matter since we use signals
+                        let _ = dt.set_data("text/plain", &issue_number_for_drag.to_string());
+                        dt.set_effect_allowed("move");
+                        leptos::logging::log!("📋 DataTransfer set: {}", issue_number_for_drag);
+                    } else {
+                        leptos::logging::log!("❌ No DataTransfer available!");
+                    }
+                    
+                    // Notify parent about drag start via signal
+                    if let Some(signal) = drag_signal {
+                        signal.set(Some(DragStartEvent {
+                            issue_number: issue_number_for_drag,
+                            current_status: current_status_for_drag.clone(),
+                        }));
+                    }
+                }
+            }
+            on:dragend=move |_| {
+                leptos::logging::log!("🏁 dragend fired");
+                // Clear drag state in parent
+                if let Some(signal) = drag_signal {
+                    signal.set(None);
+                }
+            }
+            on:click={
+                let issue_for_click = issue_clone.clone();
+                move |_| {
+                    issue_click_signal.set(Some(IssueClickEvent {
+                        issue: issue_for_click.clone(),
+                    }));
+                }
+            }
+        >
             // Header with issue number and GitHub link
             <div class="flex items-center justify-between mb-2">
                 <span class="text-xs text-gray-400 font-mono">
@@ -121,10 +182,12 @@ pub fn IssueCard(
                                             let value = value.clone();
                                             move |e| {
                                                 e.stop_propagation();
-                                                status_change_signal.set(Some(StatusChangeEvent {
-                                                    issue_number,
-                                                    new_status: value.clone(),
-                                                }));
+                                                if let Some(signal) = status_change_signal {
+                                                    Set::set(&signal, Some(StatusChangeEvent {
+                                                        issue_number,
+                                                        new_status: value.clone(),
+                                                    }));
+                                                }
                                                 set_show_dropdown.set(false);
                                             }
                                         }

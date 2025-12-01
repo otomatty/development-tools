@@ -132,10 +132,8 @@ pub fn LinkRepositoryModal(
                                     }.into_any()
                                 } else {
                                     repos.into_iter().map(|repo| {
-                                        let repo_id = repo.id;
                                         let repo_owner = repo.owner.clone();
                                         let repo_name = repo.name.clone();
-                                        let repo_full_name = repo.full_name.clone();
                                         let repo_display_name = repo.full_name.clone();
                                         let repo_description = repo.description.clone();
                                         let repo_private = repo.private;
@@ -149,15 +147,12 @@ pub fn LinkRepositoryModal(
                                                     set_linking.set(true);
                                                     let owner = repo_owner.clone();
                                                     let name = repo_name.clone();
-                                                    let full_name = repo_full_name.clone();
                                                     
                                                     spawn_local(async move {
                                                         match tauri_api::link_repository(
                                                             project_id,
-                                                            repo_id,
                                                             &owner,
                                                             &name,
-                                                            &full_name,
                                                         ).await {
                                                             Ok(project) => {
                                                                 set_linked_project.set(Some(project));

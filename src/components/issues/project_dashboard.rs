@@ -16,7 +16,10 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::components::icons::Icon;
-use crate::components::issues::{CreateIssueModal, KanbanBoard, LinkRepositoryModal, StatusChangeEvent};
+use crate::components::issues::{
+    CreateIssueModal, IssueClickEvent, IssueDetailModal, IssueDetailStatusChange, KanbanBoard,
+    LinkRepositoryModal, StatusChangeEvent,
+};
 use crate::tauri_api;
 use crate::types::{
     issue::{CachedIssue, KanbanBoard as KanbanBoardType, Project},
@@ -35,6 +38,7 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
     let (show_create_issue_modal, set_show_create_issue_modal) = signal(false);
     let (actions_yaml, set_actions_yaml) = signal(Option::<String>::None);
     let (show_actions_modal, set_show_actions_modal) = signal(false);
+    let (selected_issue, set_selected_issue) = signal(Option::<CachedIssue>::None);
 
     // Load project and issues on mount
     {
@@ -128,6 +132,15 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
 
     // Handle status change - using signal-based approach for Leptos thread safety
     let (status_change_event, set_status_change_event) = signal(Option::<StatusChangeEvent>::None);
+    let (issue_click_event, set_issue_click_event) = signal(Option::<IssueClickEvent>::None);
+
+    // React to issue click events
+    Effect::new(move |_| {
+        if let Some(event) = issue_click_event.get() {
+            set_selected_issue.set(Some(event.issue));
+            set_issue_click_event.set(None);
+        }
+    });
     
     // React to status change events
     Effect::new(move |_| {
@@ -290,6 +303,7 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
                     <KanbanBoard 
                         board=kanban 
                         status_change_signal=set_status_change_event
+                        issue_click_signal=set_issue_click_event
                     />
                 </Show>
             </div>
@@ -369,6 +383,43 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
                         </div>
                     </div>
                 </div>
+            </Show>
+
+            // Issue Detail Modal
+            <Show when=move || selected_issue.get().is_some()>
+                {move || {
+                    let issue = selected_issue.get().unwrap();
+                    let (close_modal_trigger, set_close_modal_trigger) = signal(false);
+                    let (detail_status_change, set_detail_status_change) = signal(Option::<IssueDetailStatusChange>::None);
+                    
+                    // Watch for close trigger
+                    Effect::new(move |_| {
+                        if close_modal_trigger.get() {
+                            set_selected_issue.set(None);
+                        }
+                    });
+                    
+                    // Watch for status change from detail modal
+                    Effect::new(move |_| {
+                        if let Some(event) = detail_status_change.get() {
+                            // Trigger status change via the existing signal
+                            set_status_change_event.set(Some(StatusChangeEvent {
+                                issue_number: event.issue_number,
+                                new_status: event.new_status,
+                            }));
+                            // Close the modal after status change
+                            set_selected_issue.set(None);
+                        }
+                    });
+                    
+                    view! {
+                        <IssueDetailModal
+                            issue=issue
+                            on_close_signal=set_close_modal_trigger
+                            status_change_signal=set_detail_status_change
+                        />
+                    }
+                }}
             </Show>
         </div>
     }
