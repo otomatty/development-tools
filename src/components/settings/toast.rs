@@ -92,7 +92,7 @@ pub fn InlineToast<F>(
     /// The type of toast (success, error, info, warning)
     #[prop(default = ToastType::Success)]
     toast_type: ToastType,
-) -> impl IntoView 
+) -> impl IntoView
 where
     F: Fn() -> bool + Copy + Send + Sync + 'static,
 {
@@ -103,12 +103,7 @@ where
             "border-green-500/50",
             "text-green-200",
         ),
-        ToastType::Error => (
-            "✗",
-            "bg-red-900/30",
-            "border-red-500/50",
-            "text-red-200",
-        ),
+        ToastType::Error => ("✗", "bg-red-900/30", "border-red-500/50", "text-red-200"),
         ToastType::Info => (
             "ℹ",
             "bg-gm-accent-cyan/10",

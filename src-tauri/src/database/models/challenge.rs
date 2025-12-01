@@ -53,7 +53,7 @@ pub struct Challenge {
     pub reward_xp: i32,
     pub start_date: DateTime<Utc>,
     pub end_date: DateTime<Utc>,
-    pub status: String,  // "active", "completed", "failed"
+    pub status: String, // "active", "completed", "failed"
     pub completed_at: Option<DateTime<Utc>>,
 }
 

@@ -14,8 +14,8 @@ pub mod repository;
 pub use challenge::{
     calculate_challenge_period, calculate_recommended_targets, calculate_reward_xp,
     generate_daily_challenges, generate_weekly_challenges, should_generate_daily_challenges,
-    should_generate_weekly_challenges, ChallengeGeneratorConfig, ChallengeStats,
-    ChallengeTemplate, HistoricalStats, RecommendedTargets,
+    should_generate_weekly_challenges, ChallengeGeneratorConfig, ChallengeStats, ChallengeTemplate,
+    HistoricalStats, RecommendedTargets,
 };
 pub use connection::{Database, DatabaseError, DbResult};
 pub use models::*;
@@ -26,4 +26,3 @@ pub use models::badge::badge;
 pub use models::level::level;
 pub use models::streak::streak;
 pub use models::xp::xp;
-

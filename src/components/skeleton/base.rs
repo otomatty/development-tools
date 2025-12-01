@@ -2,11 +2,11 @@
 //!
 //! Provides the fundamental skeleton building block with pulse animation.
 
-use leptos::prelude::*;
 use crate::components::use_animation_context_or_default;
+use leptos::prelude::*;
 
 /// Base skeleton component with pulse effect
-/// 
+///
 /// # Props
 /// - `width`: CSS width value (e.g., "100%", "200px", "20rem")
 /// - `height`: CSS height value (e.g., "1rem", "40px")
@@ -28,7 +28,7 @@ pub fn Skeleton(
     class: &'static str,
 ) -> impl IntoView {
     let animation_ctx = use_animation_context_or_default();
-    
+
     let animation_class = move || {
         if animation_ctx.enabled.get() {
             "animate-pulse"

@@ -38,13 +38,12 @@ impl Database {
 
     /// Check if XP was already recorded for a GitHub event
     pub async fn is_xp_recorded_for_event(&self, github_event_id: &str) -> DbResult<bool> {
-        let count: i32 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM xp_history WHERE github_event_id = ?"
-        )
-        .bind(github_event_id)
-        .fetch_one(self.pool())
-        .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        let count: i32 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM xp_history WHERE github_event_id = ?")
+                .bind(github_event_id)
+                .fetch_one(self.pool())
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         Ok(count > 0)
     }

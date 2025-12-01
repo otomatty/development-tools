@@ -16,7 +16,10 @@ async fn refresh_database_info(context: &str) -> Result<DatabaseInfo, String> {
     tauri_api::get_database_info().await.map_err(|e| {
         let error_msg = format!("Failed to refresh database info after {}: {}", context, e);
         web_sys::console::error_1(&error_msg.clone().into());
-        format!("{}は完了しましたが、情報のリフレッシュに失敗しました: {}", context, e)
+        format!(
+            "{}は完了しましたが、情報のリフレッシュに失敗しました: {}",
+            context, e
+        )
     })
 }
 
@@ -45,45 +48,45 @@ fn ResetConfirmDialog(
     on_cancel: impl Fn() + 'static + Clone + Send + Sync,
 ) -> impl IntoView {
     let (input_value, set_input_value) = signal(String::new());
-    
+
     // Check if input matches "RESET"
     let is_confirm_enabled = Memo::new(move |_| input_value.get() == "RESET");
-    
+
     // Clear input when dialog closes
     Effect::new(move |_| {
         if !visible.get() {
             set_input_value.set(String::new());
         }
     });
-    
+
     view! {
         <Show when=move || visible.get()>
-            <div 
+            <div
                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fadeIn"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="reset-dialog-title"
             >
-                <div 
+                <div
                     class="bg-gm-bg-card rounded-2xl border-2 border-red-500/50 shadow-[0_0_30px_rgba(239,68,68,0.3)] p-6 max-w-md w-full mx-4 animate-scaleIn"
                 >
                     <div class="flex items-center gap-3 mb-4">
                         <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30">
                             <span class="text-2xl">"⚠️"</span>
                         </div>
-                        <h3 
+                        <h3
                             id="reset-dialog-title"
                             class="text-xl font-gaming font-bold text-red-400"
                         >
                             "データリセットの確認"
                         </h3>
                     </div>
-                    
+
                     <div class="space-y-4 mb-6">
                         <p class="text-dt-text-sub">
                             "この操作により以下のデータが" <span class="text-red-400 font-bold">"完全に削除"</span> "されます："
                         </p>
-                        
+
                         <ul class="list-none space-y-2 pl-2">
                             <li class="flex items-center gap-2 text-dt-text-sub">
                                 <span class="text-red-400">"✗"</span>"経験値（XP）"
@@ -104,14 +107,14 @@ fn ResetConfirmDialog(
                                 <span class="text-red-400">"✗"</span>"キャッシュデータ"
                             </li>
                         </ul>
-                        
+
                         <div class="p-4 bg-red-900/30 border border-red-500/40 rounded-xl">
                             <p class="text-red-200 text-sm font-bold flex items-center gap-2">
                                 <span>"🚫"</span>
                                 "この操作は取り消せません"
                             </p>
                         </div>
-                        
+
                         <div class="space-y-2">
                             <label for="reset-confirm-input" class="text-white text-sm font-gaming">
                                 "続行するには「"<span class="text-red-400 font-bold">"RESET"</span>"」と入力してください："
@@ -128,7 +131,7 @@ fn ResetConfirmDialog(
                             />
                         </div>
                     </div>
-                    
+
                     <div class="flex gap-3 justify-end">
                         <button
                             class="px-5 py-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all duration-200 font-medium border border-slate-600"
@@ -176,13 +179,13 @@ pub fn DataManagement() -> impl IntoView {
     let (exporting, set_exporting) = signal(false);
     let (resetting, set_resetting) = signal(false);
     let (show_reset_dialog, set_show_reset_dialog) = signal(false);
-    
+
     // Network status for offline detection
     let is_online = use_is_online();
-    
+
     // Store timeout handle for success message cleanup
     let (success_msg_handle, set_success_msg_handle) = signal(Option::<i32>::None);
-    
+
     // Helper to clear success message timeout
     let clear_success_timeout = move || {
         if let Some(id) = success_msg_handle.get() {
@@ -192,19 +195,22 @@ pub fn DataManagement() -> impl IntoView {
             set_success_msg_handle.set(None);
         }
     };
-    
+
     // Helper to show success message with auto-hide
     let show_success = move |message: String| {
         clear_success_timeout();
         set_success_message.set(Some(message));
-        
+
         if let Some(window) = web_sys::window() {
             let closure = wasm_bindgen::closure::Closure::once(move || {
                 set_success_message.set(None);
                 set_success_msg_handle.set(None);
             });
             if let Ok(id) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                closure.as_ref().dyn_ref::<js_sys::Function>().expect("Closure should be a function"),
+                closure
+                    .as_ref()
+                    .dyn_ref::<js_sys::Function>()
+                    .expect("Closure should be a function"),
                 3000,
             ) {
                 set_success_msg_handle.set(Some(id));
@@ -212,25 +218,25 @@ pub fn DataManagement() -> impl IntoView {
             closure.forget();
         }
     };
-    
+
     // Track initial load to avoid re-fetching on re-render
     let (initial_load_complete, set_initial_load_complete) = signal(false);
-    
+
     // Load database info on mount (only once)
     Effect::new(move |_| {
         // Only load once
         if initial_load_complete.get() {
             return;
         }
-        
+
         set_loading.set(true);
         set_error.set(None);
-        
+
         spawn_local(async move {
             // Fetch both database info and cache stats in parallel
             let db_result = tauri_api::get_database_info().await;
             let cache_result = tauri_api::get_cache_stats().await;
-            
+
             match db_result {
                 Ok(info) => {
                     set_db_info.set(Some(info));
@@ -239,22 +245,22 @@ pub fn DataManagement() -> impl IntoView {
                     set_error.set(Some(format!("データベース情報の取得に失敗しました: {}", e)));
                 }
             }
-            
+
             // Cache stats - don't show error if not logged in
             if let Ok(stats) = cache_result {
                 set_cache_stats.set(Some(stats));
             }
-            
+
             set_loading.set(false);
             set_initial_load_complete.set(true);
         });
     });
-    
+
     // Clear cache handler
     let on_clear_cache = move |_| {
         set_clearing_cache.set(true);
         set_error.set(None);
-        
+
         spawn_local(async move {
             match tauri_api::clear_cache().await {
                 Ok(result) => {
@@ -263,13 +269,13 @@ pub fn DataManagement() -> impl IntoView {
                         result.cleared_entries,
                         format_bytes(result.freed_bytes)
                     ));
-                    
+
                     // Refresh database info using helper function
                     match refresh_database_info("キャッシュクリア").await {
                         Ok(info) => set_db_info.set(Some(info)),
                         Err(e) => set_error.set(Some(e)),
                     }
-                    
+
                     // Also refresh cache stats
                     if let Ok(stats) = tauri_api::get_cache_stats().await {
                         set_cache_stats.set(Some(stats));
@@ -282,12 +288,12 @@ pub fn DataManagement() -> impl IntoView {
             set_clearing_cache.set(false);
         });
     };
-    
+
     // Cleanup expired cache handler
     let on_cleanup_expired = move |_| {
         set_cleaning_expired.set(true);
         set_error.set(None);
-        
+
         spawn_local(async move {
             match tauri_api::cleanup_expired_cache().await {
                 Ok(deleted_count) => {
@@ -299,13 +305,13 @@ pub fn DataManagement() -> impl IntoView {
                     } else {
                         show_success("期限切れのキャッシュはありませんでした".to_string());
                     }
-                    
+
                     // Refresh database info
                     match refresh_database_info("キャッシュクリーンアップ").await {
                         Ok(info) => set_db_info.set(Some(info)),
                         Err(e) => set_error.set(Some(e)),
                     }
-                    
+
                     // Also refresh cache stats
                     if let Ok(stats) = tauri_api::get_cache_stats().await {
                         set_cache_stats.set(Some(stats));
@@ -318,31 +324,35 @@ pub fn DataManagement() -> impl IntoView {
             set_cleaning_expired.set(false);
         });
     };
-    
+
     // Export data handler
     let on_export_data = move |_| {
         set_exporting.set(true);
         set_error.set(None);
-        
+
         spawn_local(async move {
             match tauri_api::export_data().await {
                 Ok(json_data) => {
                     // Create a downloadable file using data URL
                     let download_result = (|| -> Result<(), String> {
-                        let window = web_sys::window()
-                            .ok_or("windowオブジェクトの取得に失敗しました")?;
-                        let document = window.document()
+                        let window =
+                            web_sys::window().ok_or("windowオブジェクトの取得に失敗しました")?;
+                        let document = window
+                            .document()
                             .ok_or("documentオブジェクトの取得に失敗しました")?;
-                        let element = document.create_element("a")
+                        let element = document
+                            .create_element("a")
                             .map_err(|_| "ダウンロードリンクの作成に失敗しました")?;
-                        let a: web_sys::HtmlAnchorElement = element.dyn_into()
+                        let a: web_sys::HtmlAnchorElement = element
+                            .dyn_into()
                             .map_err(|_| "ダウンロードリンクの型変換に失敗しました")?;
-                        
+
                         // Use data URL for the JSON content
                         let encoded_data = js_sys::encode_uri_component(&json_data);
-                        let data_url = format!("data:application/json;charset=utf-8,{}", encoded_data);
+                        let data_url =
+                            format!("data:application/json;charset=utf-8,{}", encoded_data);
                         a.set_href(&data_url);
-                        
+
                         // Generate filename with timestamp
                         let now = js_sys::Date::new_0();
                         let filename = format!(
@@ -355,12 +365,12 @@ pub fn DataManagement() -> impl IntoView {
                             now.get_seconds()
                         );
                         a.set_download(&filename);
-                        
+
                         // Trigger download
                         a.click();
                         Ok(())
                     })();
-                    
+
                     match download_result {
                         Ok(()) => show_success("データをエクスポートしました".to_string()),
                         Err(e) => set_error.set(Some(e)),
@@ -373,18 +383,18 @@ pub fn DataManagement() -> impl IntoView {
             set_exporting.set(false);
         });
     };
-    
+
     // Reset all data handler
     let on_reset_confirmed = move || {
         set_show_reset_dialog.set(false);
         set_resetting.set(true);
         set_error.set(None);
-        
+
         spawn_local(async move {
             match tauri_api::reset_all_data().await {
                 Ok(_) => {
                     show_success("全てのデータをリセットしました".to_string());
-                    
+
                     // Refresh database info using helper function
                     match refresh_database_info("データリセット").await {
                         Ok(info) => set_db_info.set(Some(info)),
@@ -398,16 +408,16 @@ pub fn DataManagement() -> impl IntoView {
             set_resetting.set(false);
         });
     };
-    
+
     let on_reset_cancel = move || {
         set_show_reset_dialog.set(false);
     };
-    
+
     // Cleanup timeout on unmount
     on_cleanup(move || {
         clear_success_timeout();
     });
-    
+
     view! {
         <div class="space-y-6">
             // Reset confirmation dialog
@@ -416,28 +426,28 @@ pub fn DataManagement() -> impl IntoView {
                 on_confirm=on_reset_confirmed
                 on_cancel=on_reset_cancel
             />
-            
+
             // Loading state
             <Show when=move || loading.get()>
                 <div class="text-center py-8 text-dt-text-sub">
                     "データ情報を読み込み中..."
                 </div>
             </Show>
-            
+
             // Error message
             <Show when=move || error.get().is_some()>
                 <div class="p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 text-sm">
                     {move || error.get().unwrap_or_default()}
                 </div>
             </Show>
-            
+
             // Success message
             <Show when=move || success_message.get().is_some()>
                 <div class="p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-green-200 text-sm">
                     {move || success_message.get().unwrap_or_default()}
                 </div>
             </Show>
-            
+
             <Show when=move || !loading.get()>
                 // Cache section
                 <div class="space-y-3">
@@ -450,7 +460,7 @@ pub fn DataManagement() -> impl IntoView {
                             </span>
                         </Show>
                     </h3>
-                    
+
                     // Cache statistics card
                     <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
                         // Statistics grid
@@ -462,7 +472,7 @@ pub fn DataManagement() -> impl IntoView {
                                     {move || cache_stats.get().map(|s| format_bytes(s.total_size_bytes)).unwrap_or_else(|| db_info.get().map(|i| format_bytes(i.cache_size_bytes)).unwrap_or_else(|| "--".to_string()))}
                                 </div>
                             </div>
-                            
+
                             // Entry count
                             <div class="p-3 bg-gm-bg-primary/50 rounded-lg border border-gm-accent-cyan/10">
                                 <div class="text-dt-text-sub text-xs mb-1">"エントリ数"</div>
@@ -470,7 +480,7 @@ pub fn DataManagement() -> impl IntoView {
                                     {move || cache_stats.get().map(|s| format!("{}", s.entry_count)).unwrap_or_else(|| "--".to_string())}
                                 </div>
                             </div>
-                            
+
                             // Expired count
                             <div class="p-3 bg-gm-bg-primary/50 rounded-lg border border-gm-accent-cyan/10">
                                 <div class="text-dt-text-sub text-xs mb-1">"期限切れ"</div>
@@ -485,7 +495,7 @@ pub fn DataManagement() -> impl IntoView {
                                     {move || cache_stats.get().map(|s| format!("{}", s.expired_count)).unwrap_or_else(|| "--".to_string())}
                                 </div>
                             </div>
-                            
+
                             // Status indicator
                             <div class="p-3 bg-gm-bg-primary/50 rounded-lg border border-gm-accent-cyan/10">
                                 <div class="text-dt-text-sub text-xs mb-1">"ステータス"</div>
@@ -506,7 +516,7 @@ pub fn DataManagement() -> impl IntoView {
                                 </div>
                             </div>
                         </div>
-                        
+
                         // Action buttons
                         <div class="space-y-2">
                             // Cleanup expired cache button
@@ -539,7 +549,7 @@ pub fn DataManagement() -> impl IntoView {
                                     }
                                 }}
                             </button>
-                            
+
                             // Clear all cache button
                             <button
                                 class="w-full px-4 py-3 bg-amber-600/80 hover:bg-amber-500 rounded-lg text-white font-gaming font-bold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-amber-500/30 hover:shadow-[0_0_15px_rgba(251,191,36,0.3)]"
@@ -553,7 +563,7 @@ pub fn DataManagement() -> impl IntoView {
                                 {move || if clearing_cache.get() { "クリア中..." } else { "すべてのキャッシュをクリア" }}
                             </button>
                         </div>
-                        
+
                         <p class="mt-3 text-xs text-dt-text-sub">
                             "キャッシュはオフライン時にデータを表示するために使用されます。"
                             <br/>
@@ -561,10 +571,10 @@ pub fn DataManagement() -> impl IntoView {
                         </p>
                     </div>
                 </div>
-                
+
                 // Divider
                 <div class="border-t border-gm-accent-cyan/20"></div>
-                
+
                 // Data export section
                 <div class="space-y-3">
                     <h3 class="text-lg font-gaming font-bold text-white">
@@ -588,10 +598,10 @@ pub fn DataManagement() -> impl IntoView {
                         </button>
                     </div>
                 </div>
-                
+
                 // Divider
                 <div class="border-t border-gm-accent-cyan/20"></div>
-                
+
                 // Data reset section
                 <div class="space-y-3">
                     <h3 class="text-lg font-gaming font-bold text-red-400 flex items-center gap-2">
@@ -631,10 +641,10 @@ pub fn DataManagement() -> impl IntoView {
                         </button>
                     </div>
                 </div>
-                
+
                 // Divider
                 <div class="border-t border-gm-accent-cyan/20"></div>
-                
+
                 // Database info section
                 <div class="space-y-3">
                     <h3 class="text-lg font-gaming font-bold text-white">
@@ -673,4 +683,3 @@ pub fn DataManagement() -> impl IntoView {
         </div>
     }
 }
-

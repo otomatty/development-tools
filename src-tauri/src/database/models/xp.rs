@@ -158,18 +158,23 @@ impl XpBreakdown {
         let issues_closed_xp = issues_closed * 10;
         let reviews_xp = reviews * 15;
         let stars_xp = stars * 5;
-        
-        let base_total = commits_xp + prs_created_xp + prs_merged_xp 
-            + issues_created_xp + issues_closed_xp + reviews_xp + stars_xp;
-        
+
+        let base_total = commits_xp
+            + prs_created_xp
+            + prs_merged_xp
+            + issues_created_xp
+            + issues_closed_xp
+            + reviews_xp
+            + stars_xp;
+
         let streak_bonus_xp = if streak > 0 {
             (base_total * streak.min(10)) / 100
         } else {
             0
         };
-        
+
         let total_xp = base_total + streak_bonus_xp;
-        
+
         Self {
             commits_xp,
             prs_created_xp,
@@ -187,9 +192,8 @@ impl XpBreakdown {
 /// XP values module (for backward compatibility)
 pub mod xp {
     pub use super::{
-        calculate_activity_xp, with_streak_bonus, XpActionType, XpBreakdown,
-        COMMIT_XP, DAILY_LOGIN_XP, ISSUE_XP, MAX_STREAK_BONUS_PERCENT, PR_XP,
-        REVIEW_XP, STREAK_BONUS_PERCENT,
+        calculate_activity_xp, with_streak_bonus, XpActionType, XpBreakdown, COMMIT_XP,
+        DAILY_LOGIN_XP, ISSUE_XP, MAX_STREAK_BONUS_PERCENT, PR_XP, REVIEW_XP, STREAK_BONUS_PERCENT,
     };
 }
 

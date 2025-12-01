@@ -4,15 +4,12 @@
 
 use leptos::prelude::*;
 
-use crate::components::{AnimatedEmoji, EmojiType, use_animation_context_or_default};
+use crate::components::{use_animation_context_or_default, AnimatedEmoji, EmojiType};
 use crate::types::{NewBadgeInfo, XpGainedEvent};
 
 /// XP notification component
 #[component]
-pub fn XpNotification<F>(
-    event: ReadSignal<Option<XpGainedEvent>>,
-    on_close: F,
-) -> impl IntoView 
+pub fn XpNotification<F>(event: ReadSignal<Option<XpGainedEvent>>, on_close: F) -> impl IntoView
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
@@ -26,7 +23,7 @@ where
                 move || {
                     let e = event.get().unwrap();
                     let on_close_inner = on_close.clone();
-                    
+
                     view! {
                         <div class=move || format!("fixed top-4 right-4 z-50 {}", animation_ctx.get_animation_class("animate-slide-in"))>
                             <div class="p-4 bg-gm-bg-card/95 backdrop-blur-sm rounded-xl border border-gm-accent-cyan/30 shadow-neon-cyan min-w-80">
@@ -48,14 +45,14 @@ where
                                         "✕"
                                     </button>
                                 </div>
-                                
+
                                 // XP amount
                                 <div class="text-center mb-3">
                                     <span class=move || format!("text-4xl font-gaming-mono font-bold text-gm-success {}", animation_ctx.get_animation_class("animate-pulse"))>
                                         "+" {e.xp_gained} " XP"
                                     </span>
                                 </div>
-                                
+
                                 // Breakdown (if non-zero)
                                 {
                                     let breakdown = e.xp_breakdown.clone();
@@ -174,10 +171,7 @@ where
 
 /// Level up modal component
 #[component]
-pub fn LevelUpModal<F>(
-    event: ReadSignal<Option<XpGainedEvent>>,
-    on_close: F,
-) -> impl IntoView 
+pub fn LevelUpModal<F>(event: ReadSignal<Option<XpGainedEvent>>, on_close: F) -> impl IntoView
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
@@ -192,15 +186,15 @@ where
                     let e = event.get().unwrap();
                     let on_close_overlay = on_close.clone();
                     let on_close_button = on_close.clone();
-                    
+
                     view! {
                         // Overlay
-                        <div 
+                        <div
                             class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
-                            <div 
+                            <div
                                 class=move || format!("relative p-8 bg-gm-bg-card rounded-2xl border-2 border-gm-accent-purple shadow-neon-purple max-w-md w-full mx-4 {}", animation_ctx.get_animation_class("animate-scale-in"))
                                 on:click=|ev| ev.stop_propagation()
                             >
@@ -214,19 +208,19 @@ where
                                         <div class="particle particle-5"/>
                                     </div>
                                 </Show>
-                                
+
                                 // Content
                                 <div class="relative text-center space-y-6">
                                     // Trophy icon with glow
                                     <div class=move || format!("text-8xl {}", animation_ctx.get_animation_class("animate-bounce-slow"))>
                                         "🏆"
                                     </div>
-                                    
+
                                     // Title
                                     <h2 class=move || format!("text-3xl font-gaming font-bold bg-gradient-to-r from-gm-accent-cyan via-gm-accent-purple to-gm-accent-pink bg-clip-text text-transparent {}", animation_ctx.get_animation_class("animate-pulse"))>
                                         "LEVEL UP!"
                                     </h2>
-                                    
+
                                     // Level display
                                     <div class="flex items-center justify-center gap-4">
                                         <span class="text-4xl font-gaming-mono text-dt-text-sub">
@@ -237,7 +231,7 @@ where
                                             "Lv." {e.new_level}
                                         </span>
                                     </div>
-                                    
+
                                     // Total XP
                                     <div class="text-lg text-dt-text-sub">
                                         "Total XP: "
@@ -245,7 +239,7 @@ where
                                             {e.total_xp}
                                         </span>
                                     </div>
-                                    
+
                                     // Close button
                                     <button
                                         class="px-8 py-3 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-lg text-white font-gaming font-bold hover:shadow-neon-cyan transition-all duration-200"
@@ -265,10 +259,7 @@ where
 
 /// Badge earned notification component
 #[component]
-pub fn BadgeNotification<F>(
-    badge: ReadSignal<Option<NewBadgeInfo>>,
-    on_close: F,
-) -> impl IntoView 
+pub fn BadgeNotification<F>(badge: ReadSignal<Option<NewBadgeInfo>>, on_close: F) -> impl IntoView
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
@@ -277,14 +268,16 @@ where
 
     // Get rarity styling
     let rarity_styles = move || {
-        badge.get().map(|b| {
-            match b.rarity.as_str() {
-                "bronze" => ("border-badge-bronze", "text-badge-bronze", "shadow-bronze"),
-                "silver" => ("border-badge-silver", "text-badge-silver", "shadow-silver"),
-                "gold" => ("border-badge-gold", "text-badge-gold", "shadow-neon-cyan"),
-                "platinum" => ("border-badge-platinum", "text-badge-platinum", "shadow-neon-purple"),
-                _ => ("border-slate-600", "text-slate-400", ""),
-            }
+        badge.get().map(|b| match b.rarity.as_str() {
+            "bronze" => ("border-badge-bronze", "text-badge-bronze", "shadow-bronze"),
+            "silver" => ("border-badge-silver", "text-badge-silver", "shadow-silver"),
+            "gold" => ("border-badge-gold", "text-badge-gold", "shadow-neon-cyan"),
+            "platinum" => (
+                "border-badge-platinum",
+                "text-badge-platinum",
+                "shadow-neon-purple",
+            ),
+            _ => ("border-slate-600", "text-slate-400", ""),
         })
     };
 
@@ -300,15 +293,15 @@ where
                     let border_class = styles.0;
                     let text_class = styles.1;
                     let shadow_class = styles.2;
-                    
+
                     view! {
                         // Overlay
-                        <div 
+                        <div
                             class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
-                            <div 
+                            <div
                                 class=move || format!(
                                     "relative p-8 bg-gm-bg-card rounded-2xl border-2 {} {} max-w-md w-full mx-4 {}",
                                     border_class, shadow_class, animation_ctx.get_animation_class("animate-scale-in")
@@ -323,38 +316,38 @@ where
                                         <div class="sparkle sparkle-3"/>
                                     </div>
                                 </Show>
-                                
+
                                 // Content
                                 <div class="relative text-center space-y-4">
                                     // Title
                                     <h2 class="text-2xl font-gaming font-bold text-gm-accent-purple">
                                         "🏅 Badge Unlocked!"
                                     </h2>
-                                    
+
                                     // Badge icon with glow
                                     <div class="py-4">
                                         <span class=move || format!("text-8xl {}", animation_ctx.get_animation_class("animate-bounce-slow"))>
                                             {b.icon.clone()}
                                         </span>
                                     </div>
-                                    
+
                                     // Badge name
                                     <h3 class=format!("text-3xl font-gaming font-bold {}", text_class)>
                                         {b.name.clone()}
                                     </h3>
-                                    
+
                                     // Description
                                     <p class="text-dt-text-sub">
                                         {b.description.clone()}
                                     </p>
-                                    
+
                                     // Rarity badge
                                     <div class="inline-block px-4 py-1 rounded-full bg-slate-800/50">
                                         <span class=format!("text-sm font-bold uppercase {}", text_class)>
                                             {b.rarity.clone()}
                                         </span>
                                     </div>
-                                    
+
                                     // Close button
                                     <div class="pt-4">
                                         <button
@@ -382,7 +375,7 @@ where
 pub fn MultipleBadgesNotification<F>(
     badges: ReadSignal<Vec<NewBadgeInfo>>,
     on_close: F,
-) -> impl IntoView 
+) -> impl IntoView
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
@@ -397,15 +390,15 @@ where
                     let badge_list = badges.get();
                     let on_close_overlay = on_close.clone();
                     let on_close_button = on_close.clone();
-                    
+
                     view! {
                         // Overlay
-                        <div 
+                        <div
                             class=move || format!("fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center {}", animation_ctx.get_animation_class("animate-fade-in"))
                             on:click=move |_| on_close_overlay()
                         >
                             // Modal content
-                            <div 
+                            <div
                                 class=move || format!("relative p-8 bg-gm-bg-card rounded-2xl border-2 border-gm-accent-purple shadow-neon-purple max-w-lg w-full mx-4 {}", animation_ctx.get_animation_class("animate-scale-in"))
                                 on:click=|ev| ev.stop_propagation()
                             >
@@ -415,7 +408,7 @@ where
                                     <h2 class="text-2xl font-gaming font-bold text-gm-accent-purple">
                                         "🎉 " {badge_list.len()} " Badges Unlocked!"
                                     </h2>
-                                    
+
                                     // Badge grid
                                     <div class="flex flex-wrap justify-center gap-4 py-4">
                                         {badge_list.iter().map(|b| {
@@ -426,7 +419,7 @@ where
                                                 "platinum" => "border-badge-platinum text-badge-platinum",
                                                 _ => "border-slate-600 text-slate-400",
                                             };
-                                            
+
                                             view! {
                                                 <div class=format!(
                                                     "p-4 rounded-xl border-2 {} bg-gm-bg-secondary/50 text-center",
@@ -438,7 +431,7 @@ where
                                             }
                                         }).collect_view()}
                                     </div>
-                                    
+
                                     // Close button
                                     <button
                                         class="px-8 py-3 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-lg text-white font-gaming font-bold hover:shadow-neon-cyan transition-all duration-200"
@@ -455,4 +448,3 @@ where
         </Show>
     }
 }
-

@@ -4,34 +4,32 @@
 //! showing daily code statistics (additions/deletions).
 
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 use leptos::tachys::view::any_view::AnyView;
+use leptos::task::spawn_local;
 
 use crate::tauri_api;
 use crate::types::{CodeStatsResponse, DailyCodeStats, GitHubStats, RateLimitInfo};
 
 /// Contribution graph component (GitHub草グラフ)
 #[component]
-pub fn ContributionGraph(
-    github_stats: ReadSignal<Option<GitHubStats>>,
-) -> impl IntoView {
+pub fn ContributionGraph(github_stats: ReadSignal<Option<GitHubStats>>) -> impl IntoView {
     // コード統計データ
     let (code_stats, set_code_stats) = signal::<Option<CodeStatsResponse>>(None);
     let (is_loading_stats, set_is_loading_stats) = signal(false);
     let (is_syncing, set_is_syncing) = signal(false);
     let (rate_limit, set_rate_limit) = signal::<Option<RateLimitInfo>>(None);
     let (sync_error, set_sync_error) = signal::<Option<String>>(None);
-    
+
     // ホバー状態
     let (hovered_date, set_hovered_date) = signal::<Option<String>>(None);
     let (hover_position, set_hover_position) = signal::<(i32, i32)>((0, 0));
-    
+
     // 表示モード（コントリビューション or コード行数）
     let (show_code_lines, set_show_code_lines) = signal(false);
-    
+
     // 自動同期中フラグ
     let (is_auto_syncing, set_is_auto_syncing) = signal(false);
-    
+
     // 初回読み込み時にコード統計を取得
     Effect::new(move |_| {
         if github_stats.get().is_some() && code_stats.get().is_none() && !is_loading_stats.get() {
@@ -55,7 +53,7 @@ pub fn ContributionGraph(
             });
         }
     });
-    
+
     // 自動同期（キャッシュがない場合またはキャッシュが古い場合）
     Effect::new(move |_| {
         // キャッシュがなく、自動同期が必要な場合
@@ -89,21 +87,24 @@ pub fn ContributionGraph(
             }
         }
     });
-    
+
     // コード統計を同期
     let on_sync_stats = move |_: leptos::ev::MouseEvent| {
         if is_syncing.get() {
             return;
         }
-        
+
         // レート制限チェック - クリティカルな場合は警告を表示
         if let Some(info) = rate_limit.get() {
             if info.is_critical {
-                set_sync_error.set(Some("⚠️ APIレート制限が残りわずかです。時間をおいてから再度お試しください。".to_string()));
+                set_sync_error.set(Some(
+                    "⚠️ APIレート制限が残りわずかです。時間をおいてから再度お試しください。"
+                        .to_string(),
+                ));
                 return;
             }
         }
-        
+
         set_is_syncing.set(true);
         set_sync_error.set(None);
         spawn_local(async move {
@@ -119,7 +120,8 @@ pub fn ContributionGraph(
                 Err(e) => {
                     // エラーメッセージを解析してユーザーフレンドリーに変換
                     let error_msg = if e.contains("rate limit") || e.contains("API rate") {
-                        "⚠️ GitHub APIのレート制限に達しました。1時間後にお試しください。".to_string()
+                        "⚠️ GitHub APIのレート制限に達しました。1時間後にお試しください。"
+                            .to_string()
                     } else if e.contains("Not logged in") || e.contains("token") {
                         "🔑 GitHubにログインしてください。".to_string()
                     } else if e.contains("network") || e.contains("connection") {
@@ -137,21 +139,21 @@ pub fn ContributionGraph(
             set_is_syncing.set(false);
         });
     };
-    
+
     // 日付でコード統計を検索
     let find_code_stats = move |date: &str| -> Option<DailyCodeStats> {
-        code_stats.get().and_then(|stats| {
-            stats.daily.iter().find(|d| d.date == date).cloned()
-        })
+        code_stats
+            .get()
+            .and_then(|stats| stats.daily.iter().find(|d| d.date == date).cloned())
     };
-    
+
     view! {
         <div class="p-6 bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-success/20 relative">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-gaming font-bold text-gm-success">
                     "📈 Contribution Graph"
                 </h3>
-                
+
                 <div class="flex items-center gap-4">
                     // 表示切替ボタン
                     {move || {
@@ -190,7 +192,7 @@ pub fn ContributionGraph(
                             view! { <span></span> }.into_any()
                         }
                     }}
-                    
+
                     // 同期ボタン
                     <button
                         class=move || {
@@ -206,8 +208,8 @@ pub fn ContributionGraph(
                         }
                         on:click=on_sync_stats
                         disabled=move || {
-                            is_syncing.get() 
-                                || is_loading_stats.get() 
+                            is_syncing.get()
+                                || is_loading_stats.get()
                                 || rate_limit.get().map(|r| r.is_critical).unwrap_or(false)
                         }
                         title=move || {
@@ -221,7 +223,7 @@ pub fn ContributionGraph(
                         <span class=move || if is_syncing.get() { "animate-spin" } else { "" }>"🔄"</span>
                         {move || if is_syncing.get() { "同期中..." } else { "同期" }}
                     </button>
-                    
+
                     // 年間合計表示
                     {move || {
                         github_stats.get().map(|stats| view! {
@@ -233,14 +235,14 @@ pub fn ContributionGraph(
                     }}
                 </div>
             </div>
-            
+
             // 同期エラー表示
             <Show when=move || sync_error.get().is_some()>
                 <div class="mb-4 p-2 bg-gm-error/20 border border-gm-error/50 rounded-lg text-gm-error text-sm">
                     {move || sync_error.get().unwrap_or_default()}
                 </div>
             </Show>
-            
+
             // レート制限情報表示
             {move || {
                 rate_limit.get().map(|info| {
@@ -249,12 +251,12 @@ pub fn ContributionGraph(
                     let is_warning = rest_percent > 80.0 || graphql_percent > 80.0;
                     let rest_class = if rest_percent > 80.0 { "font-bold" } else { "" };
                     let graphql_class = if graphql_percent > 80.0 { "font-bold" } else { "" };
-                    let container_class = if is_warning { 
+                    let container_class = if is_warning {
                         "mb-4 p-2 rounded-lg text-xs flex items-center gap-4 bg-gm-warning/20 text-gm-warning"
-                    } else { 
+                    } else {
                         "mb-4 p-2 rounded-lg text-xs flex items-center gap-4 bg-gm-bg-secondary text-dt-text-sub"
                     };
-                    
+
                     view! {
                         <div class=container_class>
                             <span class="flex items-center gap-1">
@@ -286,7 +288,7 @@ pub fn ContributionGraph(
                 if let Some(stats) = github_stats.get() {
                     if let Some(calendar) = stats.contribution_calendar {
                         let weeks = calendar.weeks.clone();
-                        
+
                         // Take only last 52 weeks (1 year)
                         let weeks_len = weeks.len();
                         let display_weeks: Vec<_> = if weeks_len > 52 {
@@ -325,7 +327,7 @@ pub fn ContributionGraph(
                                                             {week.contribution_days.into_iter().map(|day| {
                                                                 let date = day.date.clone();
                                                                 let date_for_hover = date.clone();
-                                                                
+
                                                                 // コントリビューションモード
                                                                 let intensity = get_intensity(day.contribution_count);
                                                                 let bg_class = match intensity {
@@ -335,9 +337,9 @@ pub fn ContributionGraph(
                                                                     3 => "bg-gm-success/60",
                                                                     _ => "bg-gm-success",
                                                                 };
-                                                                
+
                                                                 let contribution_count = day.contribution_count;
-                                                                
+
                                                                 view! {
                                                                     <div
                                                                         class=format!("w-3 h-3 rounded-sm {} hover:ring-2 hover:ring-gm-accent-cyan transition-all cursor-pointer", bg_class)
@@ -361,7 +363,7 @@ pub fn ContributionGraph(
                                         }.into_any()
                                     }
                                 }}
-                                
+
                                 // Legend
                                 <div class="flex items-center justify-between mt-4">
                                     // コード統計サマリー（コード行数モード時）
@@ -390,7 +392,7 @@ pub fn ContributionGraph(
                                             view! { <span></span> }.into_any()
                                         }
                                     }}
-                                    
+
                                     // カラーレジェンド（草グラフモードのみ）
                                     {move || {
                                         if !show_code_lines.get() {
@@ -441,13 +443,13 @@ pub fn ContributionGraph(
                     }.into_any()
                 }
             }}
-            
+
             // ホバーカード
             {move || {
                 if let Some(date) = hovered_date.get() {
                     let (x, y) = hover_position.get();
                     let code_stat = find_code_stats(&date);
-                    
+
                     // GitHub統計から該当日のコントリビューション数を取得
                     let contribution_count = github_stats.get()
                         .and_then(|s| s.contribution_calendar)
@@ -458,7 +460,7 @@ pub fn ContributionGraph(
                                 .map(|d| d.contribution_count)
                         })
                         .unwrap_or(0);
-                    
+
                     view! {
                         <HoverCard
                             date=date
@@ -491,10 +493,10 @@ fn HoverCard(
         x + 6, // セルの中心
         y
     );
-    
+
     // 日付をフォーマット
     let formatted_date = format_date(&date);
-    
+
     view! {
         <div
             class="bg-gm-bg-secondary/95 backdrop-blur-md border border-gm-success/30 rounded-lg shadow-xl p-3 min-w-48 pointer-events-none"
@@ -504,13 +506,13 @@ fn HoverCard(
             <div class="text-sm font-medium text-gm-success mb-2 border-b border-gm-success/20 pb-1">
                 {formatted_date}
             </div>
-            
+
             // コントリビューション数
             <div class="flex items-center justify-between text-xs mb-1">
                 <span class="text-dt-text-sub">"📊 コントリビューション"</span>
                 <span class="font-bold text-gm-success">{format_number(contribution_count)}</span>
             </div>
-            
+
             // コード統計（あれば表示）
             {move || {
                 if let Some(ref stats) = code_stats {
@@ -521,7 +523,7 @@ fn HoverCard(
                     let deletions_formatted = format_number(stats.deletions);
                     let net_formatted = format_number(net.abs());
                     let commits_formatted = format_number(stats.commits_count);
-                    
+
                     view! {
                         <>
                             <div class="flex items-center justify-between text-xs mb-1">
@@ -552,7 +554,7 @@ fn HoverCard(
                     }.into_any()
                 }
             }}
-            
+
             // 下向き矢印
             <div class="absolute left-1/2 bottom-0 transform -translate-x-1/2 translate-y-full">
                 <div class="w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gm-success/30"/>
@@ -612,21 +614,19 @@ fn code_lines_chart_view(
     set_hover_position: WriteSignal<(i32, i32)>,
 ) -> AnyView {
     // 過去30日分のデータを取得（新しい順から古い順に並べ替え）
-    let mut daily_data: Vec<_> = code_stats.daily.iter()
-        .take(30)
-        .cloned()
-        .collect();
+    let mut daily_data: Vec<_> = code_stats.daily.iter().take(30).cloned().collect();
     daily_data.reverse(); // 古い順に並べ替え
-    
+
     let data_len = daily_data.len();
     if data_len == 0 {
         return view! {
             <div class="h-32 flex items-center justify-center text-dt-text-sub text-sm">
                 "データがありません"
             </div>
-        }.into_any();
+        }
+        .into_any();
     }
-    
+
     // グラフのサイズ
     let chart_width = 700.0_f64;
     let chart_height = 120.0_f64;
@@ -634,60 +634,81 @@ fn code_lines_chart_view(
     let padding_right = 20.0_f64;
     let padding_top = 10.0_f64;
     let padding_bottom = 25.0_f64;
-    
+
     let inner_width = chart_width - padding_left - padding_right;
     let inner_height = chart_height - padding_top - padding_bottom;
-    
+
     // 最大値を計算
-    let max_additions = daily_data.iter().map(|d| d.additions).max().unwrap_or(1).max(1);
-    let max_deletions = daily_data.iter().map(|d| d.deletions).max().unwrap_or(1).max(1);
+    let max_additions = daily_data
+        .iter()
+        .map(|d| d.additions)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let max_deletions = daily_data
+        .iter()
+        .map(|d| d.deletions)
+        .max()
+        .unwrap_or(1)
+        .max(1);
     let max_value = max_additions.max(max_deletions) as f64;
-    
+
     // スケーリング関数
     let x_scale = |i: usize| -> f64 {
         padding_left + (i as f64 / (data_len - 1).max(1) as f64) * inner_width
     };
-    
-    let y_scale = |v: i32| -> f64 {
-        padding_top + inner_height - (v as f64 / max_value) * inner_height
-    };
-    
+
+    let y_scale =
+        |v: i32| -> f64 { padding_top + inner_height - (v as f64 / max_value) * inner_height };
+
     // 追加行のパスを生成（滑らかなベジェ曲線）
     let additions_path = generate_smooth_path(&daily_data, |d| d.additions, &x_scale, &y_scale);
-    
+
     // 削除行のパスを生成（滑らかなベジェ曲線）
     let deletions_path = generate_smooth_path(&daily_data, |d| d.deletions, &x_scale, &y_scale);
-    
+
     // グリッドライン
-    let grid_lines: Vec<_> = (0..=4).map(|i| {
-        let y = padding_top + (i as f64 / 4.0) * inner_height;
-        let value = ((4 - i) as f64 / 4.0 * max_value) as i32;
-        (y, value)
-    }).collect();
-    
+    let grid_lines: Vec<_> = (0..=4)
+        .map(|i| {
+            let y = padding_top + (i as f64 / 4.0) * inner_height;
+            let value = ((4 - i) as f64 / 4.0 * max_value) as i32;
+            (y, value)
+        })
+        .collect();
+
     // X軸ラベル（日付）
-    let x_labels: Vec<_> = daily_data.iter().enumerate()
+    let x_labels: Vec<_> = daily_data
+        .iter()
+        .enumerate()
         .filter(|(i, _)| i % 5 == 0 || *i == data_len - 1)
         .map(|(i, d)| {
             let x = x_scale(i);
             let date_parts: Vec<&str> = d.date.split('-').collect();
             let label = if date_parts.len() == 3 {
-                format!("{}/{}", date_parts[1].trim_start_matches('0'), date_parts[2].trim_start_matches('0'))
+                format!(
+                    "{}/{}",
+                    date_parts[1].trim_start_matches('0'),
+                    date_parts[2].trim_start_matches('0')
+                )
             } else {
                 d.date.clone()
             };
             (x, label)
         })
         .collect();
-    
+
     // データポイント（ホバー用）
-    let data_points: Vec<_> = daily_data.iter().enumerate().map(|(i, d)| {
-        let x = x_scale(i);
-        let add_y = y_scale(d.additions);
-        let del_y = y_scale(d.deletions);
-        (x, add_y, del_y, d.date.clone(), d.additions, d.deletions)
-    }).collect();
-    
+    let data_points: Vec<_> = daily_data
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let x = x_scale(i);
+            let add_y = y_scale(d.additions);
+            let del_y = y_scale(d.deletions);
+            (x, add_y, del_y, d.date.clone(), d.additions, d.deletions)
+        })
+        .collect();
+
     view! {
         <div class="relative">
             <svg
@@ -726,7 +747,7 @@ fn code_lines_chart_view(
                         </g>
                     }
                 }).collect_view()}
-                
+
                 // X軸ラベル
                 {x_labels.iter().map(|(x, label)| {
                     let x_str = format!("{}", x);
@@ -745,7 +766,7 @@ fn code_lines_chart_view(
                         </text>
                     }
                 }).collect_view()}
-                
+
                 // 追加行の線（グラデーション付き）
                 <defs>
                     <linearGradient id="additionsGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -757,7 +778,7 @@ fn code_lines_chart_view(
                         <stop offset="100%" stop-color="#f87171" stop-opacity="0.05"/>
                     </linearGradient>
                 </defs>
-                
+
                 // 追加行の線
                 <path
                     d=additions_path.clone()
@@ -767,7 +788,7 @@ fn code_lines_chart_view(
                     stroke-linecap="round"
                     stroke-linejoin="round"
                 />
-                
+
                 // 削除行の線
                 <path
                     d=deletions_path.clone()
@@ -777,7 +798,7 @@ fn code_lines_chart_view(
                     stroke-linecap="round"
                     stroke-linejoin="round"
                 />
-                
+
                 // 各日のデータポイント（常に表示）
                 {data_points.iter().map(|(x, add_y, del_y, date, additions, deletions)| {
                     let x_str = format!("{}", x);
@@ -787,7 +808,7 @@ fn code_lines_chart_view(
                     let date_clone2 = date.clone();
                     let additions_val = *additions;
                     let deletions_val = *deletions;
-                    
+
                     view! {
                         <g>
                             // 追加行のポイント（常に表示、ホバーで拡大）
@@ -839,7 +860,8 @@ fn code_lines_chart_view(
                 }).collect_view()}
             </svg>
         </div>
-    }.into_any()
+    }
+    .into_any()
 }
 
 /// 滑らかなベジェ曲線パスを生成
@@ -855,35 +877,42 @@ where
     if data.is_empty() {
         return String::new();
     }
-    
-    let points: Vec<(f64, f64)> = data.iter()
+
+    let points: Vec<(f64, f64)> = data
+        .iter()
         .enumerate()
         .map(|(i, d)| (x_scale(i), y_scale(value_fn(d))))
         .collect();
-    
+
     if points.len() == 1 {
         return format!("M {} {}", points[0].0, points[0].1);
     }
-    
+
     let mut path = format!("M {} {}", points[0].0, points[0].1);
-    
+
     // カットムル・ロム スプラインからベジェ曲線への変換
     for i in 0..points.len() - 1 {
         let p0 = if i > 0 { points[i - 1] } else { points[i] };
         let p1 = points[i];
         let p2 = points[i + 1];
-        let p3 = if i + 2 < points.len() { points[i + 2] } else { points[i + 1] };
-        
+        let p3 = if i + 2 < points.len() {
+            points[i + 2]
+        } else {
+            points[i + 1]
+        };
+
         // コントロールポイントを計算（張力 = 0.5）
         let tension = 0.5;
         let cp1x = p1.0 + (p2.0 - p0.0) * tension / 3.0;
         let cp1y = p1.1 + (p2.1 - p0.1) * tension / 3.0;
         let cp2x = p2.0 - (p3.0 - p1.0) * tension / 3.0;
         let cp2y = p2.1 - (p3.1 - p1.1) * tension / 3.0;
-        
-        path.push_str(&format!(" C {} {} {} {} {} {}", cp1x, cp1y, cp2x, cp2y, p2.0, p2.1));
+
+        path.push_str(&format!(
+            " C {} {} {} {} {} {}",
+            cp1x, cp1y, cp2x, cp2y, p2.0, p2.1
+        ));
     }
-    
+
     path
 }
-

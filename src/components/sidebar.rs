@@ -110,7 +110,7 @@ pub fn Sidebar(
                                 let tool_name_for_click = tool.name.clone();
                                 let tool_display_name = tool.display_name.clone();
                                 let tool_icon = tool.icon.clone().unwrap_or_else(|| "terminal".to_string());
-                                
+
                                 let is_selected = move || {
                                     selected_tool.get().as_ref() == Some(&tool_name)
                                 };
@@ -182,4 +182,3 @@ pub fn Sidebar(
         </aside>
     }
 }
-

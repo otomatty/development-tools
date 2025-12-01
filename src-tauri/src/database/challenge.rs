@@ -138,8 +138,7 @@ pub fn calculate_recommended_targets(
             .max(config.min_commits),
         weekly_commits: ((weekly_commits * config.weekly_target_multiplier).ceil() as i32)
             .max(config.min_commits),
-        daily_prs: ((daily_prs * config.daily_target_multiplier).ceil() as i32)
-            .max(config.min_prs),
+        daily_prs: ((daily_prs * config.daily_target_multiplier).ceil() as i32).max(config.min_prs),
         weekly_prs: ((weekly_prs * config.weekly_target_multiplier).ceil() as i32)
             .max(config.min_prs),
         daily_reviews: ((daily_reviews * config.daily_target_multiplier).ceil() as i32)
@@ -411,10 +410,22 @@ mod tests {
             total_issues: 6,
         };
 
-        assert_eq!(calculate_progress_for_metric("commits", &prev, &current, None), 5);
-        assert_eq!(calculate_progress_for_metric("prs", &prev, &current, None), 2);
-        assert_eq!(calculate_progress_for_metric("reviews", &prev, &current, None), 3);
-        assert_eq!(calculate_progress_for_metric("issues", &prev, &current, None), 1);
+        assert_eq!(
+            calculate_progress_for_metric("commits", &prev, &current, None),
+            5
+        );
+        assert_eq!(
+            calculate_progress_for_metric("prs", &prev, &current, None),
+            2
+        );
+        assert_eq!(
+            calculate_progress_for_metric("reviews", &prev, &current, None),
+            3
+        );
+        assert_eq!(
+            calculate_progress_for_metric("issues", &prev, &current, None),
+            1
+        );
     }
 
     #[test]
@@ -437,7 +448,7 @@ mod tests {
     fn test_should_generate_weekly_challenges() {
         let now = Utc::now();
         let today = now.date_naive();
-        
+
         // No previous challenge - should generate
         assert!(should_generate_weekly_challenges(None, now));
 
@@ -474,7 +485,7 @@ mod tests {
         };
 
         let challenges = generate_daily_challenges(&targets);
-        
+
         assert!(!challenges.is_empty());
         assert!(challenges.iter().all(|c| c.challenge_type == "daily"));
     }
@@ -493,7 +504,7 @@ mod tests {
         };
 
         let challenges = generate_weekly_challenges(&targets);
-        
+
         assert!(!challenges.is_empty());
         assert!(challenges.iter().all(|c| c.challenge_type == "weekly"));
     }
@@ -502,7 +513,7 @@ mod tests {
     fn test_challenge_stats_serialization() {
         let stats = ChallengeStats::new(100, 20, 15, 5);
         let json = serde_json::to_string(&stats).expect("Should serialize");
-        
+
         let deserialized: ChallengeStats = serde_json::from_str(&json).expect("Should deserialize");
         assert_eq!(deserialized.commits, 100);
         assert_eq!(deserialized.prs, 20);

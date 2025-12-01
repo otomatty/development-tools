@@ -11,4 +11,3 @@ pub use oauth::{
     AuthToken, DeviceCodeResponse, DeviceFlow, DeviceFlowConfig, DeviceTokenStatus, OAuthError,
 };
 pub use token::{AuthState, TokenManager, UserInfo};
-

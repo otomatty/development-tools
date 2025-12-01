@@ -226,10 +226,7 @@ pub async fn list_mock_server_directory(path: String) -> Result<Vec<FileInfo>, S
 pub async fn select_mock_server_directory(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
-    let result = app
-        .dialog()
-        .file()
-        .blocking_pick_folder();
+    let result = app.dialog().file().blocking_pick_folder();
 
     Ok(result.map(|p| p.to_string()))
 }

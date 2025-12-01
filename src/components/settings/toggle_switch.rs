@@ -47,19 +47,22 @@ pub fn ToggleSwitch(
     /// Callback when toggle is clicked
     on_toggle: impl Fn() + 'static + Clone + Send + Sync,
     /// Optional label for accessibility
-    #[prop(optional)] label_id: Option<&'static str>,
+    #[prop(optional)]
+    label_id: Option<&'static str>,
     /// Size of the toggle
-    #[prop(default = ToggleSwitchSize::Medium)] size: ToggleSwitchSize,
+    #[prop(default = ToggleSwitchSize::Medium)]
+    size: ToggleSwitchSize,
     /// Whether the toggle is disabled
-    #[prop(default = false)] disabled: bool,
+    #[prop(default = false)]
+    disabled: bool,
 ) -> impl IntoView {
     let on_toggle_click = on_toggle.clone();
     let on_toggle_key = on_toggle.clone();
-    
+
     let button_size = size.button_class();
     let knob_size = size.knob_class();
     let translate = size.translate_class();
-    
+
     view! {
         <button
             class=move || format!(
@@ -97,7 +100,7 @@ pub fn ToggleSwitch(
                     if enabled { translate } else { "translate-x-0" }
                 )
             ></span>
-            
+
             // Glow effect when enabled
             <Show when=move || enabled>
                 <span class="absolute inset-0 rounded-full bg-gm-accent-cyan/20 animate-pulse"></span>
@@ -112,23 +115,26 @@ pub fn LabeledToggle(
     /// The label text
     label: String,
     /// Optional description text
-    #[prop(optional)] description: Option<String>,
+    #[prop(optional)]
+    description: Option<String>,
     /// Whether the toggle is on
     enabled: bool,
     /// Callback when toggle is clicked
     on_toggle: impl Fn() + 'static + Clone + Send + Sync,
     /// Size of the toggle
-    #[prop(default = ToggleSwitchSize::Medium)] size: ToggleSwitchSize,
+    #[prop(default = ToggleSwitchSize::Medium)]
+    size: ToggleSwitchSize,
     /// Whether the toggle is disabled
-    #[prop(default = false)] disabled: bool,
+    #[prop(default = false)]
+    disabled: bool,
 ) -> impl IntoView {
     let label_id = format!("toggle-label-{}", label.replace(" ", "-").to_lowercase());
-    
+
     view! {
         <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
             <div class="flex-1">
-                <span 
-                    class="text-white block font-gaming" 
+                <span
+                    class="text-white block font-gaming"
                     id=label_id.clone()
                 >
                     {label}

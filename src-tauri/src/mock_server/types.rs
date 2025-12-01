@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn test_mock_server_config_default() {
         let config = MockServerConfig::default();
-        
+
         assert_eq!(config.id, 1);
         assert_eq!(config.port, 9876);
         assert_eq!(config.cors_mode, CorsMode::Simple);
@@ -196,8 +196,9 @@ mod tests {
         assert!(json.contains("\"port\":8080"));
         assert!(json.contains("\"corsMode\":\"advanced\""));
         assert!(json.contains("\"showDirectoryListing\":true"));
-        
-        let deserialized: MockServerConfig = serde_json::from_str(&json).expect("Should deserialize");
+
+        let deserialized: MockServerConfig =
+            serde_json::from_str(&json).expect("Should deserialize");
         assert_eq!(deserialized.port, 8080);
         assert_eq!(deserialized.cors_mode, CorsMode::Advanced);
         assert!(deserialized.show_directory_listing);
@@ -216,8 +217,9 @@ mod tests {
         assert!(json.contains("\"virtualPath\":\"/api\""));
         assert!(json.contains("\"localPath\":\"/tmp/api\""));
         assert!(json.contains("\"enabled\":true"));
-        
-        let deserialized: DirectoryMapping = serde_json::from_str(&json).expect("Should deserialize");
+
+        let deserialized: DirectoryMapping =
+            serde_json::from_str(&json).expect("Should deserialize");
         assert_eq!(deserialized.virtual_path, "/api");
         assert_eq!(deserialized.local_path, "/tmp/api");
         assert!(deserialized.enabled);
@@ -231,8 +233,9 @@ mod tests {
         };
 
         let json = serde_json::to_string(&request).expect("Should serialize");
-        let deserialized: CreateMappingRequest = serde_json::from_str(&json).expect("Should deserialize");
-        
+        let deserialized: CreateMappingRequest =
+            serde_json::from_str(&json).expect("Should deserialize");
+
         assert_eq!(deserialized.virtual_path, "/static");
         assert_eq!(deserialized.local_path, "/var/www/static");
     }
@@ -247,8 +250,9 @@ mod tests {
         };
 
         let json = serde_json::to_string(&request).expect("Should serialize");
-        let deserialized: UpdateMappingRequest = serde_json::from_str(&json).expect("Should deserialize");
-        
+        let deserialized: UpdateMappingRequest =
+            serde_json::from_str(&json).expect("Should deserialize");
+
         assert_eq!(deserialized.id, 1);
         assert_eq!(deserialized.virtual_path, Some("/new-path".to_string()));
         assert!(deserialized.local_path.is_none());
@@ -268,8 +272,9 @@ mod tests {
         };
 
         let json = serde_json::to_string(&request).expect("Should serialize");
-        let deserialized: UpdateConfigRequest = serde_json::from_str(&json).expect("Should deserialize");
-        
+        let deserialized: UpdateConfigRequest =
+            serde_json::from_str(&json).expect("Should deserialize");
+
         assert_eq!(deserialized.port, Some(3000));
         assert_eq!(deserialized.cors_mode, Some(CorsMode::Advanced));
         assert!(deserialized.cors_methods.is_none());

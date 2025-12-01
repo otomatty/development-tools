@@ -2,8 +2,8 @@
 //!
 //! Provides specialized skeleton components for common UI patterns.
 
-use leptos::prelude::*;
 use super::Skeleton;
+use leptos::prelude::*;
 
 /// Skeleton for avatar/rounded elements
 #[component]

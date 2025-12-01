@@ -41,7 +41,7 @@ impl NotificationMethod {
 pub struct UserSettings {
     pub id: i64,
     pub user_id: i64,
-    
+
     // Notification settings
     pub notification_method: NotificationMethod,
     pub notify_xp_gain: bool,
@@ -49,15 +49,15 @@ pub struct UserSettings {
     pub notify_badge_earned: bool,
     pub notify_streak_update: bool,
     pub notify_streak_milestone: bool,
-    
+
     // Sync settings
     pub sync_interval_minutes: i32,
     pub background_sync: bool,
     pub sync_on_startup: bool,
-    
+
     // Appearance settings
     pub animations_enabled: bool,
-    
+
     // Metadata
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

@@ -23,27 +23,27 @@ where
     let message = message.clone();
     let confirm_label = confirm_label.clone();
     let cancel_label = cancel_label.clone();
-    
+
     view! {
         <Show when=move || visible.get()>
-            <div 
+            <div
                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="confirm-dialog-title"
                 aria-describedby="confirm-dialog-message"
             >
-                <div 
+                <div
                     id="confirm-dialog"
                     class="bg-gm-bg-card rounded-2xl border border-gm-accent-cyan/20 shadow-lg p-6 max-w-md w-full mx-4"
                 >
-                    <h3 
+                    <h3
                         id="confirm-dialog-title"
                         class="text-xl font-gaming font-bold text-white mb-4"
                     >
                         {title.clone()}
                     </h3>
-                    <p 
+                    <p
                         id="confirm-dialog-message"
                         class="text-dt-text-sub mb-6"
                     >

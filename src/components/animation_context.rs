@@ -103,4 +103,3 @@ pub fn get_body_animation_class(enabled: bool) -> &'static str {
         "no-animation"
     }
 }
-

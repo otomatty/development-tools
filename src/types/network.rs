@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 fn get_current_timestamp() -> String {
     #[cfg(target_arch = "wasm32")]
     {
-        js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default()
+        js_sys::Date::new_0()
+            .to_iso_string()
+            .as_string()
+            .unwrap_or_default()
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -26,7 +29,10 @@ fn get_current_timestamp() -> String {
         let seconds = time_of_day % 60;
         // 1970-01-01からの日数を年月日に変換（簡易計算）
         let years = 1970 + (days_since_epoch / 365);
-        format!("{:04}-01-01T{:02}:{:02}:{:02}Z", years, hours, minutes, seconds)
+        format!(
+            "{:04}-01-01T{:02}:{:02}:{:02}Z",
+            years, hours, minutes, seconds
+        )
     }
 }
 
@@ -107,9 +113,9 @@ mod tests {
     fn test_set_offline() {
         let mut state = NetworkState::new(true);
         let original_online_at = state.last_online_at.clone();
-        
+
         state.set_offline();
-        
+
         assert!(!state.is_online);
         assert!(state.last_checked_at.is_some());
         // last_online_at は保持される
@@ -121,9 +127,9 @@ mod tests {
     fn test_set_online() {
         let mut state = NetworkState::new(false);
         assert!(state.last_online_at.is_none());
-        
+
         state.set_online();
-        
+
         assert!(state.is_online);
         assert!(state.last_checked_at.is_some());
         assert!(state.last_online_at.is_some());

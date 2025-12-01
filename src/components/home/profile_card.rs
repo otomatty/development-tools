@@ -57,7 +57,7 @@ where
                                 }.into_any()
                             }
                         }}
-                        
+
                         // Level badge
                         {move || {
                             level_info.get().map(|info| view! {
@@ -149,4 +149,3 @@ where
         </div>
     }
 }
-

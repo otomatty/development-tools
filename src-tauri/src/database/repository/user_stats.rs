@@ -120,7 +120,11 @@ impl Database {
     }
 
     /// Update streak
-    pub async fn update_streak(&self, user_id: i64, activity_date: NaiveDate) -> DbResult<UserStats> {
+    pub async fn update_streak(
+        &self,
+        user_id: i64,
+        activity_date: NaiveDate,
+    ) -> DbResult<UserStats> {
         let now = Utc::now().to_rfc3339();
 
         let current = self

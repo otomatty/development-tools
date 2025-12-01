@@ -11,11 +11,26 @@ pub struct StreakMilestone {
 
 /// All streak milestones (ordered by days)
 pub const STREAK_MILESTONES: &[StreakMilestone] = &[
-    StreakMilestone { days: 7, xp_bonus: 50 },
-    StreakMilestone { days: 14, xp_bonus: 100 },
-    StreakMilestone { days: 30, xp_bonus: 200 },
-    StreakMilestone { days: 100, xp_bonus: 500 },
-    StreakMilestone { days: 365, xp_bonus: 1000 },
+    StreakMilestone {
+        days: 7,
+        xp_bonus: 50,
+    },
+    StreakMilestone {
+        days: 14,
+        xp_bonus: 100,
+    },
+    StreakMilestone {
+        days: 30,
+        xp_bonus: 200,
+    },
+    StreakMilestone {
+        days: 100,
+        xp_bonus: 500,
+    },
+    StreakMilestone {
+        days: 365,
+        xp_bonus: 1000,
+    },
 ];
 
 /// Daily bonus XP for maintaining streak

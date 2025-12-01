@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 use crate::types::{ToolConfig, ToolInfo};
 
@@ -8,10 +8,10 @@ fn get_tools_dir() -> Result<PathBuf, String> {
     // 実行ファイルの場所から相対的にtoolsディレクトリを探す
     let current_exe = std::env::current_exe()
         .map_err(|e| format!("Failed to get current executable path: {}", e))?;
-    
+
     // 開発時は実行ファイルがtarget/debug等にあるので、プロジェクトルートを探す
     let mut search_path = current_exe.parent().map(|p| p.to_path_buf());
-    
+
     while let Some(path) = search_path {
         let tools_dir = path.join("tools");
         if tools_dir.exists() && tools_dir.is_dir() {
@@ -19,12 +19,12 @@ fn get_tools_dir() -> Result<PathBuf, String> {
         }
         search_path = path.parent().map(|p| p.to_path_buf());
     }
-    
+
     // フォールバック: カレントディレクトリからの相対パス
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("Failed to get current directory: {}", e))?;
+    let cwd =
+        std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?;
     let tools_dir = cwd.join("tools");
-    
+
     if tools_dir.exists() && tools_dir.is_dir() {
         Ok(tools_dir)
     } else {
@@ -38,8 +38,8 @@ pub fn list_tools() -> Result<Vec<ToolInfo>, String> {
     let tools_dir = get_tools_dir()?;
     let mut tools = Vec::new();
 
-    let entries = fs::read_dir(&tools_dir)
-        .map_err(|e| format!("Failed to read tools directory: {}", e))?;
+    let entries =
+        fs::read_dir(&tools_dir).map_err(|e| format!("Failed to read tools directory: {}", e))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -65,7 +65,10 @@ pub fn list_tools() -> Result<Vec<ToolInfo>, String> {
                 });
             }
             Err(e) => {
-                eprintln!("Warning: Failed to load tool config at {:?}: {}", tool_json_path, e);
+                eprintln!(
+                    "Warning: Failed to load tool config at {:?}: {}",
+                    tool_json_path, e
+                );
             }
         }
     }
@@ -91,11 +94,10 @@ pub fn get_tool_config(tool_name: String) -> Result<ToolConfig, String> {
 
 /// tool.jsonファイルを読み込んでパースする
 fn load_tool_config(path: &PathBuf) -> Result<ToolConfig, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read tool.json: {}", e))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read tool.json: {}", e))?;
 
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse tool.json: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse tool.json: {}", e))
 }
 
 /// ツールのバイナリパスを取得する
@@ -118,7 +120,7 @@ pub fn get_tool_binary_path(tool_name: &str) -> Result<PathBuf, String> {
 }
 
 /// ファイルまたはディレクトリを選択するダイアログを表示
-/// 
+///
 /// # Arguments
 /// * `app` - Tauri AppHandle
 /// * `path_type` - 選択するパスの種類 ("file", "directory", "any")
@@ -135,14 +137,14 @@ pub async fn select_path(
     use tokio::sync::oneshot;
 
     let (tx, rx) = oneshot::channel();
-    
+
     let mut dialog = app.dialog().file();
-    
+
     // タイトルを設定
     if let Some(t) = title {
         dialog = dialog.set_title(t);
     }
-    
+
     // デフォルトパスを設定
     if let Some(path) = default_path {
         dialog = dialog.set_directory(path);
@@ -181,4 +183,3 @@ mod tests {
         println!("Tools dir: {:?}", result);
     }
 }
-

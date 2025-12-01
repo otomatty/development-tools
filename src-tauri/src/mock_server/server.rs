@@ -94,7 +94,8 @@ impl MockServer {
             .map_err(|e| format!("Failed to bind to port {}: {}", config.port, e))?;
 
         // Get actual port (important when port 0 is used for dynamic allocation)
-        let actual_port = listener.local_addr()
+        let actual_port = listener
+            .local_addr()
             .map(|addr| addr.port())
             .unwrap_or(config.port);
         self.port = actual_port;
@@ -131,7 +132,7 @@ impl MockServer {
     }
 
     /// Update mappings on a running server
-    /// 
+    ///
     /// Note: Currently, updating mappings at runtime is not supported.
     /// The server must be restarted to apply new mappings.
     pub async fn update_mappings(&self, _mappings: Vec<DirectoryMapping>) -> Result<(), String> {
@@ -163,10 +164,7 @@ fn build_cors_layer(config: &MockServerConfig) -> CorsLayer {
                 if origins.iter().any(|o| o == "*") {
                     cors = cors.allow_origin(Any);
                 } else {
-                    let origins: Vec<_> = origins
-                        .iter()
-                        .filter_map(|o| o.parse().ok())
-                        .collect();
+                    let origins: Vec<_> = origins.iter().filter_map(|o| o.parse().ok()).collect();
                     cors = cors.allow_origin(origins);
                 }
             } else {
@@ -175,10 +173,7 @@ fn build_cors_layer(config: &MockServerConfig) -> CorsLayer {
 
             // Set allowed methods
             if let Some(methods) = &config.cors_methods {
-                let methods: Vec<Method> = methods
-                    .iter()
-                    .filter_map(|m| m.parse().ok())
-                    .collect();
+                let methods: Vec<Method> = methods.iter().filter_map(|m| m.parse().ok()).collect();
                 cors = cors.allow_methods(methods);
             } else {
                 cors = cors.allow_methods(Any);
@@ -186,10 +181,7 @@ fn build_cors_layer(config: &MockServerConfig) -> CorsLayer {
 
             // Set allowed headers
             if let Some(headers) = &config.cors_headers {
-                let headers: Vec<_> = headers
-                    .iter()
-                    .filter_map(|h| h.parse().ok())
-                    .collect();
+                let headers: Vec<_> = headers.iter().filter_map(|h| h.parse().ok()).collect();
                 cors = cors.allow_headers(headers);
             } else {
                 cors = cors.allow_headers(Any);
@@ -295,9 +287,7 @@ async fn serve_file(
     };
 
     let (parts, body) = request.into_parts();
-    let mut new_request = Request::builder()
-        .method(parts.method)
-        .uri(&uri);
+    let mut new_request = Request::builder().method(parts.method).uri(&uri);
 
     for (key, value) in parts.headers.iter() {
         new_request = new_request.header(key, value);
@@ -394,13 +384,9 @@ pub fn list_directory(path: &str) -> Result<Vec<super::types::FileInfo>, String>
 
         let name = entry.file_name().to_string_lossy().to_string();
         let is_directory = file_path.is_dir();
-        let size = metadata.as_ref().and_then(|m| {
-            if m.is_file() {
-                Some(m.len())
-            } else {
-                None
-            }
-        });
+        let size = metadata
+            .as_ref()
+            .and_then(|m| if m.is_file() { Some(m.len()) } else { None });
 
         let mime_type = if is_directory {
             None
@@ -420,12 +406,10 @@ pub fn list_directory(path: &str) -> Result<Vec<super::types::FileInfo>, String>
     }
 
     // Sort: directories first, then by name
-    files.sort_by(|a, b| {
-        match (a.is_directory, b.is_directory) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        }
+    files.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
 
     Ok(files)
@@ -486,7 +470,11 @@ mod tests {
         assert_eq!(files[0].name, "subdir");
 
         // Files should be sorted alphabetically
-        let file_names: Vec<&str> = files.iter().filter(|f| !f.is_directory).map(|f| f.name.as_str()).collect();
+        let file_names: Vec<&str> = files
+            .iter()
+            .filter(|f| !f.is_directory)
+            .map(|f| f.name.as_str())
+            .collect();
         assert!(file_names.contains(&"file1.txt"));
         assert!(file_names.contains(&"file2.html"));
     }
@@ -522,7 +510,11 @@ mod tests {
         let files = result.expect("Should list files");
 
         for file in &files {
-            assert!(file.mime_type.is_some(), "File {} should have mime type", file.name);
+            assert!(
+                file.mime_type.is_some(),
+                "File {} should have mime type",
+                file.name
+            );
         }
 
         // Check specific mime types
@@ -584,7 +576,7 @@ mod tests {
             .get(format!("http://127.0.0.1:{}/", port))
             .send()
             .await;
-        
+
         // Should get a response (404 is expected since no mappings)
         assert!(response.is_ok());
 
@@ -600,7 +592,7 @@ mod tests {
             .get(format!("http://127.0.0.1:{}/", port))
             .send()
             .await;
-        
+
         assert!(response.is_err(), "Connection should fail after stop");
     }
 
@@ -610,7 +602,8 @@ mod tests {
         let temp_dir = TempDir::new().expect("Should create temp dir");
         let file_path = temp_dir.path().join("test.txt");
         let mut file = File::create(&file_path).expect("Should create file");
-        file.write_all(b"Hello, Mock Server!").expect("Should write");
+        file.write_all(b"Hello, Mock Server!")
+            .expect("Should write");
 
         let mut server = MockServer::new();
         let config = MockServerConfig {
@@ -811,15 +804,12 @@ mod tests {
             .expect("Should get response");
 
         // Wait for log entry
-        let log_result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(1),
-            log_receiver.recv(),
-        )
-        .await;
+        let log_result =
+            tokio::time::timeout(tokio::time::Duration::from_secs(1), log_receiver.recv()).await;
 
         assert!(log_result.is_ok(), "Should receive log within timeout");
         let log_entry = log_result.unwrap().expect("Should have log entry");
-        
+
         assert_eq!(log_entry.method, "GET");
         assert!(log_entry.path.contains("test.txt"));
         assert_eq!(log_entry.status_code, 200);
@@ -835,7 +825,7 @@ mod tests {
         // Create different files in each directory
         let mut file1 = File::create(temp_dir1.path().join("file1.txt")).expect("Create file1");
         file1.write_all(b"Content from dir 1").expect("Write");
-        
+
         let mut file2 = File::create(temp_dir2.path().join("file2.txt")).expect("Create file2");
         file2.write_all(b"Content from dir 2").expect("Write");
 
@@ -888,7 +878,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock_server_content_type_detection() {
         let temp_dir = TempDir::new().expect("Should create temp dir");
-        
+
         // Create files with different types
         File::create(temp_dir.path().join("page.html"))
             .expect("Create")
@@ -927,7 +917,10 @@ mod tests {
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        assert!(content_type.contains("text/html"), "HTML should have text/html content type");
+        assert!(
+            content_type.contains("text/html"),
+            "HTML should have text/html content type"
+        );
 
         // Check JSON content type
         let response = client
@@ -940,7 +933,10 @@ mod tests {
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        assert!(content_type.contains("json"), "JSON should have application/json content type");
+        assert!(
+            content_type.contains("json"),
+            "JSON should have application/json content type"
+        );
 
         server.stop().await.expect("Should stop");
     }

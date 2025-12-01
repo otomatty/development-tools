@@ -119,7 +119,11 @@ impl Database {
     }
 
     /// Update user settings
-    pub async fn update_user_settings(&self, user_id: i64, settings: &UserSettings) -> DbResult<UserSettings> {
+    pub async fn update_user_settings(
+        &self,
+        user_id: i64,
+        settings: &UserSettings,
+    ) -> DbResult<UserSettings> {
         let now = Utc::now().to_rfc3339();
 
         sqlx::query(

@@ -12,9 +12,8 @@ use crate::types::BadgeWithProgress;
 #[component]
 pub fn BadgeGrid() -> impl IntoView {
     // Fetch badges with progress
-    let badges_resource = LocalResource::new(
-        move || async move { tauri_api::get_badges_with_progress().await },
-    );
+    let badges_resource =
+        LocalResource::new(move || async move { tauri_api::get_badges_with_progress().await });
 
     // Selected badge for modal
     let (selected_badge, set_selected_badge) = signal(Option::<BadgeWithProgress>::None);
@@ -47,7 +46,7 @@ pub fn BadgeGrid() -> impl IntoView {
                                     .collect();
                                 let total_count = badges.len();
                                 let earned_count = earned.len();
-                                
+
                                 // Pre-render sections
                                 let earned_section = if !earned.is_empty() {
                                     let earned_len = earned.len();
@@ -78,7 +77,7 @@ pub fn BadgeGrid() -> impl IntoView {
                                 } else {
                                     None
                                 };
-                                
+
                                 let near_completion_section = if !near_completion.is_empty() {
                                     let near_completion_len = near_completion.len();
                                     Some(view! {
@@ -108,7 +107,7 @@ pub fn BadgeGrid() -> impl IntoView {
                                 } else {
                                     None
                                 };
-                                
+
                                 let empty_section = if earned_section.is_none() && near_completion_section.is_none() {
                                     Some(view! {
                                         <div class="text-center py-8 text-dt-text-sub">
@@ -119,7 +118,7 @@ pub fn BadgeGrid() -> impl IntoView {
                                 } else {
                                     None
                                 };
-                                
+
                                 view! {
                                     // Header
                                     <div class="flex items-center justify-between mb-4">
@@ -130,7 +129,7 @@ pub fn BadgeGrid() -> impl IntoView {
                                             {format!("{} / {} unlocked", earned_count, total_count)}
                                         </span>
                                     </div>
-                                    
+
                                     {earned_section}
                                     {near_completion_section}
                                     {empty_section}
@@ -148,7 +147,7 @@ pub fn BadgeGrid() -> impl IntoView {
                 }}
             </Suspense>
         </div>
-        
+
         // Badge detail modal
         <BadgeDetailModal
             badge_info=selected_badge
@@ -236,7 +235,7 @@ where
             <div class="flex-shrink-0 opacity-60">
                 <span class="text-2xl">{badge.icon.clone()}</span>
             </div>
-            
+
             // Badge info and progress
             <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between mb-1">
@@ -245,7 +244,7 @@ where
                         {format!("{}/{}", current_value, target_value)}
                     </span>
                 </div>
-                
+
                 // Progress bar
                 <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden">
                     <div
@@ -254,7 +253,7 @@ where
                     ></div>
                 </div>
             </div>
-            
+
             // Progress percentage
             <div class="flex-shrink-0 text-sm font-bold text-gm-accent-cyan">
                 {format!("{}%", progress_percent.round() as i32)}
@@ -265,7 +264,10 @@ where
 
 /// Badge detail modal
 #[component]
-fn BadgeDetailModal<F>(badge_info: ReadSignal<Option<BadgeWithProgress>>, on_close: F) -> impl IntoView
+fn BadgeDetailModal<F>(
+    badge_info: ReadSignal<Option<BadgeWithProgress>>,
+    on_close: F,
+) -> impl IntoView
 where
     F: Fn() + 'static + Clone + Send + Sync,
 {
@@ -414,4 +416,3 @@ where
         </Show>
     }
 }
-

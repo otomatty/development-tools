@@ -7,13 +7,7 @@ mod base;
 mod variants;
 
 pub use base::Skeleton;
-pub use variants::{
-    SkeletonAvatar,
-    SkeletonCard,
-    SkeletonStat,
-    SkeletonBadge,
-    SkeletonGraph,
-};
+pub use variants::{SkeletonAvatar, SkeletonBadge, SkeletonCard, SkeletonGraph, SkeletonStat};
 
 // Re-export SkeletonText for future use
 #[allow(unused)]

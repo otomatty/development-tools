@@ -18,8 +18,8 @@
 //!   └─ GitHub Issue: #39
 
 use leptos::ev;
-use leptos::prelude::*;
 use leptos::html;
+use leptos::prelude::*;
 
 use super::animation_context::use_animation_context_or_default;
 
@@ -77,7 +77,7 @@ where
             "absolute {} top-full mt-2 min-w-[160px] bg-gm-bg-card/95 backdrop-blur-sm border border-gm-accent-cyan/20 rounded-lg shadow-lg z-50",
             if align == "left" { "left-0" } else { "right-0" }
         );
-        
+
         if animation_ctx.is_enabled() {
             format!("{} transition-all duration-200 ease-out", base)
         } else {
@@ -88,7 +88,7 @@ where
     let menu_style = move || {
         let is_open_val = is_open.get();
         let animated = animation_ctx.is_enabled();
-        
+
         if is_open_val {
             "opacity: 1; transform: translateY(0);"
         } else if animated {
@@ -158,11 +158,14 @@ where
     let menu_ctx = use_context::<DropdownMenuContext>();
 
     let base_classes = "flex items-center gap-3 px-4 py-2 text-sm transition-colors cursor-pointer w-full text-left";
-    
+
     let item_classes = if danger {
         format!("{} text-gm-error hover:bg-gm-error/10", base_classes)
     } else {
-        format!("{} text-dt-text-main hover:bg-gm-accent-cyan/10", base_classes)
+        format!(
+            "{} text-dt-text-main hover:bg-gm-accent-cyan/10",
+            base_classes
+        )
     };
 
     view! {
@@ -217,10 +220,10 @@ mod tests {
     #[test]
     fn test_toggle_opens_menu() {
         let is_open = RwSignal::new(false);
-        
+
         // Simulate toggle
         is_open.update(|open| *open = !*open);
-        
+
         assert!(is_open.get_untracked());
     }
 
@@ -231,10 +234,10 @@ mod tests {
     #[test]
     fn test_toggle_closes_menu() {
         let is_open = RwSignal::new(true);
-        
+
         // Simulate toggle
         is_open.update(|open| *open = !*open);
-        
+
         assert!(!is_open.get_untracked());
     }
 
@@ -245,10 +248,10 @@ mod tests {
     #[test]
     fn test_close_menu() {
         let is_open = RwSignal::new(true);
-        
+
         // Simulate close
         is_open.set(false);
-        
+
         assert!(!is_open.get_untracked());
     }
 
@@ -258,14 +261,17 @@ mod tests {
     #[test]
     fn test_danger_classes() {
         let base_classes = "flex items-center gap-3 px-4 py-2 text-sm transition-colors cursor-pointer w-full text-left";
-        
+
         // danger = true
         let danger_classes = format!("{} text-gm-error hover:bg-gm-error/10", base_classes);
         assert!(danger_classes.contains("text-gm-error"));
         assert!(danger_classes.contains("hover:bg-gm-error/10"));
-        
+
         // danger = false
-        let normal_classes = format!("{} text-dt-text-main hover:bg-gm-accent-cyan/10", base_classes);
+        let normal_classes = format!(
+            "{} text-dt-text-main hover:bg-gm-accent-cyan/10",
+            base_classes
+        );
         assert!(normal_classes.contains("text-dt-text-main"));
         assert!(normal_classes.contains("hover:bg-gm-accent-cyan/10"));
     }
@@ -275,10 +281,18 @@ mod tests {
     fn test_alignment_classes() {
         let align_right = "right";
         let align_left = "left";
-        
-        let right_class = if align_right == "left" { "left-0" } else { "right-0" };
-        let left_class = if align_left == "left" { "left-0" } else { "right-0" };
-        
+
+        let right_class = if align_right == "left" {
+            "left-0"
+        } else {
+            "right-0"
+        };
+        let left_class = if align_left == "left" {
+            "left-0"
+        } else {
+            "right-0"
+        };
+
         assert_eq!(right_class, "right-0");
         assert_eq!(left_class, "left-0");
     }

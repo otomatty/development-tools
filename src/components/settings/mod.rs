@@ -17,5 +17,5 @@ pub use notification_settings::NotificationSettings;
 pub use settings_page::SettingsPage;
 pub use settings_reset::SettingsResetSection;
 pub use sync_settings::SyncSettings;
-pub use toast::{Toast, InlineToast, ToastType, SaveStatusIndicator};
-pub use toggle_switch::{ToggleSwitch, LabeledToggle, ToggleSwitchSize};
+pub use toast::{InlineToast, SaveStatusIndicator, Toast, ToastType};
+pub use toggle_switch::{LabeledToggle, ToggleSwitch, ToggleSwitchSize};

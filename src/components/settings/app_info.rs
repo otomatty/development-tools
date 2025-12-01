@@ -130,10 +130,7 @@ pub fn AppInfoSection() -> impl IntoView {
 
 /// Info item component for displaying version/build info
 #[component]
-fn InfoItem(
-    label: &'static str,
-    value: String,
-) -> impl IntoView {
+fn InfoItem(label: &'static str, value: String) -> impl IntoView {
     view! {
         <div class="p-3 bg-gm-bg-darker/50 rounded-lg">
             <dt class="text-xs text-dt-text-sub uppercase tracking-wider">

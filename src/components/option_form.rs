@@ -52,11 +52,11 @@ fn OptionField(
             {match opt_type {
                 OptionType::Boolean => {
                     let name = opt_name.clone();
-                    
+
                     view! {
-                        <BooleanField 
-                            name=name 
-                            values=values 
+                        <BooleanField
+                            name=name
+                            values=values
                             set_values=set_values
                             default=opt_default.and_then(|v| v.as_bool()).unwrap_or(false)
                         />
@@ -66,11 +66,11 @@ fn OptionField(
                     let name = opt_name.clone();
                     let options = opt_options.unwrap_or_default();
                     let default = opt_default.and_then(|v| v.as_str().map(|s| s.to_string()));
-                    
+
                     view! {
-                        <SelectField 
-                            name=name 
-                            values=values 
+                        <SelectField
+                            name=name
+                            values=values
                             set_values=set_values
                             options=options
                             default=default
@@ -82,11 +82,11 @@ fn OptionField(
                     let placeholder = opt_placeholder.unwrap_or_default();
                     let description = opt_description.clone();
                     let path_type = option.path_type.clone();
-                    
+
                     view! {
-                        <PathField 
-                            name=name 
-                            values=values 
+                        <PathField
+                            name=name
+                            values=values
                             set_values=set_values
                             placeholder=placeholder
                             description=description
@@ -98,11 +98,11 @@ fn OptionField(
                     let name = opt_name.clone();
                     let placeholder = opt_placeholder.unwrap_or_default();
                     let default = opt_default.and_then(|v| v.as_f64());
-                    
+
                     view! {
-                        <NumberField 
-                            name=name 
-                            values=values 
+                        <NumberField
+                            name=name
+                            values=values
                             set_values=set_values
                             placeholder=placeholder
                             default=default
@@ -112,11 +112,11 @@ fn OptionField(
                 OptionType::String => {
                     let name = opt_name.clone();
                     let placeholder = opt_placeholder.unwrap_or_default();
-                    
+
                     view! {
-                        <StringField 
-                            name=name 
-                            values=values 
+                        <StringField
+                            name=name
+                            values=values
                             set_values=set_values
                             placeholder=placeholder
                         />
@@ -193,7 +193,7 @@ fn SelectField(
     let name_for_change = name.clone();
     let name_for_select = name.clone();
     let default_for_select = default.clone();
-    
+
     view! {
         <div class="relative">
             <select
@@ -213,7 +213,7 @@ fn SelectField(
                     let opt_value = opt.clone();
                     let name_for_check = name_for_select.clone();
                     let default_for_check = default_for_select.clone();
-                    
+
                     let is_selected = move || {
                         let current = values.get()
                             .get(&name_for_check)
@@ -222,7 +222,7 @@ fn SelectField(
                             .unwrap_or_default();
                         current == opt_value
                     };
-                    
+
                     view! {
                         <option value=opt.clone() selected=is_selected>
                             {opt_display}
@@ -255,9 +255,10 @@ fn PathField(
     let placeholder_for_click = placeholder.clone();
     let description_for_click = description.clone();
     let path_type_for_click = path_type.clone();
-    
+
     let current_value = move || {
-        values.get()
+        values
+            .get()
             .get(&name_for_value)
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_default()
@@ -269,7 +270,7 @@ fn PathField(
         let placeholder = placeholder_for_click.clone();
         let description = description_for_click.clone();
         let path_type_opt = path_type_for_click.clone();
-        
+
         // path_typeが指定されていればそれを使用、なければプレースホルダーから推測（デフォルトはdirectory）
         let path_type = path_type_opt.unwrap_or_else(|| {
             if placeholder.to_lowercase().contains("file") {
@@ -278,7 +279,7 @@ fn PathField(
                 "directory".to_string()
             }
         });
-        
+
         spawn_local(async move {
             match tauri_api::select_path(&path_type, Some(&description), None).await {
                 Ok(Some(selected_path)) => {
@@ -336,9 +337,10 @@ fn NumberField(
 ) -> impl IntoView {
     let name_for_value = name.clone();
     let name_for_input = name.clone();
-    
+
     let current_value = move || {
-        values.get()
+        values
+            .get()
             .get(&name_for_value)
             .and_then(|v| v.as_f64())
             .or(default)
@@ -379,9 +381,10 @@ fn StringField(
 ) -> impl IntoView {
     let name_for_value = name.clone();
     let name_for_input = name.clone();
-    
+
     let current_value = move || {
-        values.get()
+        values
+            .get()
             .get(&name_for_value)
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_default()
@@ -405,4 +408,3 @@ fn StringField(
         />
     }
 }
-

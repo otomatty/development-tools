@@ -16,19 +16,19 @@ pub fn ResultView(
             <div class="card mt-4">
                 // タブヘッダー
                 <div class="flex border-b border-slate-700/50">
-                    <TabButton 
+                    <TabButton
                         label="Summary".to_string()
                         tab_id="summary".to_string()
                         active_tab=active_tab
                         on_click=set_active_tab
                     />
-                    <TabButton 
+                    <TabButton
                         label="Details".to_string()
                         tab_id="details".to_string()
                         active_tab=active_tab
                         on_click=set_active_tab
                     />
-                    <TabButton 
+                    <TabButton
                         label="Raw Output".to_string()
                         tab_id="raw".to_string()
                         active_tab=active_tab
@@ -59,15 +59,15 @@ fn get_value_by_path(json: &serde_json::Value, path: &str) -> Option<serde_json:
     if path == "$" {
         return Some(json.clone());
     }
-    
+
     // $. で始まるパスを正規化
     let path = path.strip_prefix("$.").unwrap_or(path);
-    
+
     // 空パスの場合はルート要素を返す
     if path.is_empty() {
         return Some(json.clone());
     }
-    
+
     let mut current = json;
     // 空のパス部分をフィルタリング（連続ドット対策）
     for part in path.split('.').filter(|p| !p.is_empty()) {
@@ -128,23 +128,26 @@ fn SummaryViewInner(
         let parsed = res.parsed_result.as_ref()?;
         let schema = schema.get()?;
         let summary_def = schema.summary?;
-        
-        let items: Vec<(String, usize, String, String)> = summary_def.iter().filter_map(|item| {
-            let value = get_value_by_path(parsed, &item.path)?;
-            let count = match &value {
-                serde_json::Value::Number(n) => n.as_u64().unwrap_or(0) as usize,
-                serde_json::Value::Array(arr) => arr.len(),
-                _ => 0,
-            };
-            
-            Some((
-                item.label.clone(),
-                count,
-                item.color.clone().unwrap_or_else(|| "slate".to_string()),
-                item.icon.clone().unwrap_or_else(|| "info".to_string()),
-            ))
-        }).collect();
-        
+
+        let items: Vec<(String, usize, String, String)> = summary_def
+            .iter()
+            .filter_map(|item| {
+                let value = get_value_by_path(parsed, &item.path)?;
+                let count = match &value {
+                    serde_json::Value::Number(n) => n.as_u64().unwrap_or(0) as usize,
+                    serde_json::Value::Array(arr) => arr.len(),
+                    _ => 0,
+                };
+
+                Some((
+                    item.label.clone(),
+                    count,
+                    item.color.clone().unwrap_or_else(|| "slate".to_string()),
+                    item.icon.clone().unwrap_or_else(|| "info".to_string()),
+                ))
+            })
+            .collect();
+
         if items.is_empty() {
             None
         } else {
@@ -158,7 +161,7 @@ fn SummaryViewInner(
                 if let Some(items) = summary_items() {
                     items.into_iter().map(|(label, count, color, icon)| {
                         view! {
-                            <SummaryCard 
+                            <SummaryCard
                                 label=label
                                 count=count
                                 color=color
@@ -181,16 +184,19 @@ fn SummaryViewInner(
 
 /// サマリーカード
 #[component]
-fn SummaryCard(
-    label: String,
-    count: usize,
-    color: String,
-    icon: String,
-) -> impl IntoView {
+fn SummaryCard(label: String, count: usize, color: String, icon: String) -> impl IntoView {
     let (bg_class, text_class, border_class) = match color.as_str() {
         "red" => ("bg-red-500/10", "text-red-400", "border-red-500/30"),
-        "yellow" => ("bg-yellow-500/10", "text-yellow-400", "border-yellow-500/30"),
-        "orange" => ("bg-orange-500/10", "text-orange-400", "border-orange-500/30"),
+        "yellow" => (
+            "bg-yellow-500/10",
+            "text-yellow-400",
+            "border-yellow-500/30",
+        ),
+        "orange" => (
+            "bg-orange-500/10",
+            "text-orange-400",
+            "border-orange-500/30",
+        ),
         "green" => ("bg-green-500/10", "text-green-400", "border-green-500/30"),
         "blue" => ("bg-blue-500/10", "text-blue-400", "border-blue-500/30"),
         _ => ("bg-slate-500/10", "text-slate-400", "border-slate-500/30"),
@@ -221,11 +227,12 @@ fn DetailsViewInner(
         let parsed = res.parsed_result.as_ref()?;
         let schema = schema.get()?;
         let details_config = schema.details?;
-        
+
         // アイテムリストを取得
         let items = get_value_by_path(parsed, &details_config.items)?
-            .as_array()?.clone();
-        
+            .as_array()?
+            .clone();
+
         Some((items, details_config.columns))
     };
 
@@ -274,7 +281,7 @@ fn DetailsViewInner(
                                                             }
                                                         })
                                                         .unwrap_or_else(|| "-".to_string());
-                                                    
+
                                                     // type列は特別なスタイリング
                                                     let is_type_col = col.key == "type";
                                                     let cell_class = if is_type_col {
@@ -282,7 +289,7 @@ fn DetailsViewInner(
                                                     } else {
                                                         "text-dt-text-sub".to_string()
                                                     };
-                                                    
+
                                                     view! {
                                                         <td class="py-3">
                                                             {if is_type_col {
@@ -339,15 +346,18 @@ fn get_type_badge_class(type_value: &str) -> String {
 #[component]
 fn RawOutputViewInner(result: ReadSignal<Option<ToolResult>>) -> impl IntoView {
     let output = move || {
-        result.get().map(|r| {
-            if !r.stdout.is_empty() {
-                r.stdout
-            } else if !r.stderr.is_empty() {
-                r.stderr
-            } else {
-                "No output".to_string()
-            }
-        }).unwrap_or_else(|| "No output".to_string())
+        result
+            .get()
+            .map(|r| {
+                if !r.stdout.is_empty() {
+                    r.stdout
+                } else if !r.stderr.is_empty() {
+                    r.stderr
+                } else {
+                    "No output".to_string()
+                }
+            })
+            .unwrap_or_else(|| "No output".to_string())
     };
 
     view! {

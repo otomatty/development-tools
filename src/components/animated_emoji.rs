@@ -290,7 +290,13 @@ mod tests {
     #[test]
     fn test_animation_intensity_modifier() {
         assert_eq!(AnimationIntensity::None.class_modifier(), "");
-        assert_eq!(AnimationIntensity::Subtle.class_modifier(), "animation-subtle");
-        assert_eq!(AnimationIntensity::Strong.class_modifier(), "animation-strong");
+        assert_eq!(
+            AnimationIntensity::Subtle.class_modifier(),
+            "animation-subtle"
+        );
+        assert_eq!(
+            AnimationIntensity::Strong.class_modifier(),
+            "animation-strong"
+        );
     }
 }

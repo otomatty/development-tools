@@ -93,7 +93,13 @@ pub async fn run_tool(
     let cancelled = Arc::new(AtomicBool::new(false));
 
     thread::spawn(move || {
-        let result = execute_process(&app_clone, &tool_name_clone, &binary_path, &args, &cancelled);
+        let result = execute_process(
+            &app_clone,
+            &tool_name_clone,
+            &binary_path,
+            &args,
+            &cancelled,
+        );
 
         match result {
             Ok(tool_result) => {
@@ -112,7 +118,12 @@ pub async fn run_tool(
                     stderr: e,
                     parsed_result: None,
                 };
-                emit_status(&app_clone, &tool_name_clone, ToolStatus::Failed, Some(error_result));
+                emit_status(
+                    &app_clone,
+                    &tool_name_clone,
+                    ToolStatus::Failed,
+                    Some(error_result),
+                );
             }
         }
     });
@@ -170,7 +181,9 @@ fn execute_process(
     });
 
     // プロセスの終了を待つ
-    let exit_status = child.wait().map_err(|e| format!("Failed to wait for process: {}", e))?;
+    let exit_status = child
+        .wait()
+        .map_err(|e| format!("Failed to wait for process: {}", e))?;
 
     // スレッドの終了を待つ
     stdout_content = stdout_handle.join().unwrap_or_default();
@@ -243,4 +256,3 @@ fn expand_tilde(path: &str) -> String {
     }
     path.to_string()
 }
-
