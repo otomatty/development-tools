@@ -134,7 +134,7 @@ fn get_xp_explanation(action_type: &str) -> Option<Vec<(&'static str, &'static s
                 ("📋", "Issue作成", 5),
                 ("✔️", "Issueクローズ", 10),
                 ("👀", "レビュー", 15),
-                ("⭐", "スター獲得", 5),
+                ("⭐", "スター", 5),
             ])
         }
         "commit" => Some(vec![("📝", "コミット", 10)]),
@@ -143,7 +143,7 @@ fn get_xp_explanation(action_type: &str) -> Option<Vec<(&'static str, &'static s
         "review" => Some(vec![("👀", "レビュー", 15)]),
         "issue" => Some(vec![("📋", "Issue作成", 5)]),
         "issue_closed" => Some(vec![("✔️", "Issueクローズ", 10)]),
-        "star" => Some(vec![("⭐", "スター獲得", 5)]),
+        "star" => Some(vec![("⭐", "スター", 5)]),
         "streak_bonus" => None, // Streak bonus is percentage based
         _ => None,
     }
@@ -404,13 +404,11 @@ fn XpHistoryItem(entry: XpHistoryEntry) -> impl IntoView {
                                             </div>
                                         </div>
                                     }
-                                })
-                            }).flatten()
-                        } else {
-                            None
-                        }}
-
-                        // Streak bonus explanation
+                            })
+                        })
+                    } else {
+                        None
+                    }}                        // Streak bonus explanation
                         {if is_streak_bonus {
                             Some(view! {
                                 <div class="mt-4">

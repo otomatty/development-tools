@@ -19,8 +19,9 @@ impl Database {
         breakdown: Option<&XpBreakdown>,
     ) -> DbResult<i64> {
         let breakdown_json = breakdown
-            .map(|b| serde_json::to_string(b).ok())
-            .flatten();
+            .map(|b| serde_json::to_string(b))
+            .transpose()
+            .map_err(|e| DatabaseError::Query(format!("Failed to serialize XP breakdown: {}", e)))?;
 
         let id = sqlx::query(
             r#"
@@ -79,8 +80,16 @@ impl Database {
             .iter()
             .map(|row| {
                 let breakdown_json: Option<String> = row.get("breakdown_json");
-                let breakdown = breakdown_json
-                    .and_then(|json| serde_json::from_str::<XpBreakdown>(&json).ok());
+                let breakdown = breakdown_json.and_then(|json| {
+                    match serde_json::from_str::<XpBreakdown>(&json) {
+                        Ok(b) => Some(b),
+                        Err(e) => {
+                            // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+                            eprintln!("[WARN] Failed to deserialize XP breakdown: {}", e);
+                            None
+                        }
+                    }
+                });
 
                 XpHistoryEntry {
                     id: row.get("id"),
