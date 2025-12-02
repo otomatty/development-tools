@@ -324,7 +324,12 @@ pub async fn sync_project_issues(
     let now = Utc::now().to_rfc3339();
 
     for issue in &all_issues {
-        let status = IssuesClient::extract_status(&issue.labels);
+        // Use extract_status_with_state to properly handle closed issues
+        let status = IssuesClient::extract_status_with_state(
+            &issue.labels,
+            &issue.state,
+            issue.state_reason.as_deref(),
+        );
         let priority = IssuesClient::extract_priority(&issue.labels);
         let labels_json =
             serde_json::to_string(&issue.labels.iter().map(|l| &l.name).collect::<Vec<_>>())

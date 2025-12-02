@@ -64,7 +64,7 @@ impl IssueStatus {
         ]
     }
 
-    /// Get visible statuses (excluding cancelled for kanban)
+    /// Get visible statuses (for kanban board display)
     pub fn visible() -> Vec<IssueStatus> {
         vec![
             IssueStatus::Backlog,
@@ -72,6 +72,7 @@ impl IssueStatus {
             IssueStatus::InProgress,
             IssueStatus::InReview,
             IssueStatus::Done,
+            IssueStatus::Cancelled,
         ]
     }
 }
@@ -214,6 +215,31 @@ impl CachedIssue {
     /// Check if issue is open
     pub fn is_open(&self) -> bool {
         self.state == "open"
+    }
+
+    /// Check if issue was updated within the specified number of days
+    /// Uses JavaScript Date for WASM compatibility
+    pub fn is_updated_within_days(&self, days: i64) -> bool {
+        let updated_at = match &self.github_updated_at {
+            Some(s) => s,
+            None => return true, // If no date, show it (conservative approach)
+        };
+
+        // Parse RFC3339 date using JavaScript Date
+        let updated_ms = js_sys::Date::parse(updated_at);
+        if updated_ms.is_nan() {
+            return true; // If parse fails, show it
+        }
+
+        let now_ms = js_sys::Date::now();
+        let days_ms = (days as f64) * 24.0 * 60.0 * 60.0 * 1000.0;
+        
+        (now_ms - updated_ms) <= days_ms
+    }
+
+    /// Check if issue is a completed status (Done or Cancelled)
+    pub fn is_completed_status(&self) -> bool {
+        matches!(self.status.as_str(), "done" | "cancelled")
     }
 }
 

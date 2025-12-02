@@ -30,6 +30,9 @@ pub struct GitHubIssue {
     pub title: String,
     pub body: Option<String>,
     pub state: String,
+    /// Reason for closing the issue (completed, not_planned, duplicate)
+    /// Only present for closed issues
+    pub state_reason: Option<String>,
     pub html_url: String,
     pub labels: Vec<GitHubLabel>,
     pub assignee: Option<GitHubAssignee>,
@@ -494,16 +497,27 @@ impl IssuesClient {
         self.add_issue_label(owner, repo, issue_number, new_status.to_label())
             .await?;
 
-        // If done, close the issue
-        if new_status == IssueStatus::Done {
-            self.update_issue(owner, repo, issue_number, None, None, Some("closed"), None)
-                .await
-        } else if new_status != IssueStatus::Cancelled && issue.state == "closed" {
-            // Reopen if moving from Done/Cancelled back to active status
-            self.update_issue(owner, repo, issue_number, None, None, Some("open"), None)
-                .await
-        } else {
-            self.get_issue(owner, repo, issue_number).await
+        // Handle GitHub issue state based on status
+        match new_status {
+            // Done/Cancelled -> close the issue
+            IssueStatus::Done | IssueStatus::Cancelled => {
+                if issue.state != "closed" {
+                    self.update_issue(owner, repo, issue_number, None, None, Some("closed"), None)
+                        .await
+                } else {
+                    self.get_issue(owner, repo, issue_number).await
+                }
+            }
+            // Active statuses -> reopen if currently closed
+            _ => {
+                if issue.state == "closed" {
+                    // Reopen if moving from Done/Cancelled back to active status
+                    self.update_issue(owner, repo, issue_number, None, None, Some("open"), None)
+                        .await
+                } else {
+                    self.get_issue(owner, repo, issue_number).await
+                }
+            }
         }
     }
 
@@ -549,6 +563,44 @@ impl IssuesClient {
             }
         }
         IssueStatus::Backlog
+    }
+
+    /// Extract status from issue considering GitHub state and state_reason
+    /// 
+    /// For closed issues:
+    /// - state_reason = "completed" → Done
+    /// - state_reason = "not_planned" or "duplicate" → Cancelled
+    /// - state_reason = None (legacy issues) → Check labels, fallback to Done
+    /// 
+    /// For open issues:
+    /// - Use labels to determine status, fallback to Backlog
+    pub fn extract_status_with_state(
+        labels: &[GitHubLabel],
+        state: &str,
+        state_reason: Option<&str>,
+    ) -> IssueStatus {
+        // First check if issue is closed
+        if state == "closed" {
+            // Check state_reason for closed issues
+            match state_reason {
+                Some("completed") => return IssueStatus::Done,
+                Some("not_planned") | Some("duplicate") => return IssueStatus::Cancelled,
+                // For legacy issues without state_reason, check labels first
+                None | Some(_) => {
+                    // Check if there's a status label
+                    for label in labels {
+                        if let Some(status) = IssueStatus::from_label(&label.name) {
+                            return status;
+                        }
+                    }
+                    // Default to Done for closed issues without labels
+                    return IssueStatus::Done;
+                }
+            }
+        }
+
+        // For open issues, use labels
+        Self::extract_status(labels)
     }
 
     /// Extract priority from issue labels
@@ -834,6 +886,98 @@ mod tests {
         assert_eq!(
             IssuesClient::extract_priority(&labels),
             Some(IssuePriority::High)
+        );
+    }
+
+    #[test]
+    fn test_extract_status_with_state_open() {
+        // Open issue with status label
+        let labels = vec![GitHubLabel {
+            id: 1,
+            name: "status:in-progress".to_string(),
+            color: "yellow".to_string(),
+            description: None,
+        }];
+
+        assert_eq!(
+            IssuesClient::extract_status_with_state(&labels, "open", None),
+            IssueStatus::InProgress
+        );
+    }
+
+    #[test]
+    fn test_extract_status_with_state_open_no_label() {
+        // Open issue without status label -> Backlog
+        let labels = vec![GitHubLabel {
+            id: 1,
+            name: "bug".to_string(),
+            color: "red".to_string(),
+            description: None,
+        }];
+
+        assert_eq!(
+            IssuesClient::extract_status_with_state(&labels, "open", None),
+            IssueStatus::Backlog
+        );
+    }
+
+    #[test]
+    fn test_extract_status_with_state_closed_completed() {
+        // Closed issue with state_reason=completed -> Done
+        let labels = vec![];
+
+        assert_eq!(
+            IssuesClient::extract_status_with_state(&labels, "closed", Some("completed")),
+            IssueStatus::Done
+        );
+    }
+
+    #[test]
+    fn test_extract_status_with_state_closed_not_planned() {
+        // Closed issue with state_reason=not_planned -> Cancelled
+        let labels = vec![];
+
+        assert_eq!(
+            IssuesClient::extract_status_with_state(&labels, "closed", Some("not_planned")),
+            IssueStatus::Cancelled
+        );
+    }
+
+    #[test]
+    fn test_extract_status_with_state_closed_duplicate() {
+        // Closed issue with state_reason=duplicate -> Cancelled
+        let labels = vec![];
+
+        assert_eq!(
+            IssuesClient::extract_status_with_state(&labels, "closed", Some("duplicate")),
+            IssueStatus::Cancelled
+        );
+    }
+
+    #[test]
+    fn test_extract_status_with_state_closed_no_reason() {
+        // Legacy closed issue without state_reason, no label -> Done
+        let labels = vec![];
+
+        assert_eq!(
+            IssuesClient::extract_status_with_state(&labels, "closed", None),
+            IssueStatus::Done
+        );
+    }
+
+    #[test]
+    fn test_extract_status_with_state_closed_with_label() {
+        // Closed issue with status label (should respect the label)
+        let labels = vec![GitHubLabel {
+            id: 1,
+            name: "status:cancelled".to_string(),
+            color: "gray".to_string(),
+            description: None,
+        }];
+
+        assert_eq!(
+            IssuesClient::extract_status_with_state(&labels, "closed", None),
+            IssueStatus::Cancelled
         );
     }
 }

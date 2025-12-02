@@ -270,53 +270,16 @@ fn KanbanColumn(
                 </div>
             </div>
 
-            // Column content
-            <div class="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]">
-                {move || {
-                    let issues = board.get();
-                    let column_issues = issues.get_issues(status);
-
-                    if column_issues.is_empty() {
-                        view! {
-                            <div class=move || {
-                                format!(
-                                    "flex items-center justify-center h-20 text-sm italic rounded-lg transition-colors {}",
-                                    if is_dragging() && is_valid_drop_target() {
-                                        "text-gm-accent-cyan bg-gm-accent-cyan/5 border-2 border-dashed border-gm-accent-cyan"
-                                    } else {
-                                        "text-dt-text-sub"
-                                    },
-                                )
-                            }>
-                                {move || {
-                                    if is_dragging() && is_valid_drop_target() {
-                                        "Drop here to move"
-                                    } else {
-                                        "No issues"
-                                    }
-                                }}
-                            </div>
-                        }
-                            .into_any()
-                    } else {
-                        column_issues
-                            .iter()
-                            .map(|issue| {
-                                view! {
-                                    <IssueCardDraggable
-                                        issue=issue.clone()
-                                        issue_click_signal=issue_click_signal
-                                        status_change_signal=status_change_signal
-                                        dragging=dragging
-                                        set_dragging=set_dragging
-                                    />
-                                }
-                            })
-                            .collect_view()
-                            .into_any()
-                    }
-                }}
-            </div>
+            // Column content - with filtering for completed statuses
+            <CompletedColumnContent
+                status=status
+                status_value=status_value
+                board=board
+                issue_click_signal=issue_click_signal
+                status_change_signal=status_change_signal
+                dragging=dragging
+                set_dragging=set_dragging
+            />
 
             // Drop indicator
             <Show when=move || is_dragging() && is_valid_drop_target()>
@@ -324,6 +287,152 @@ fn KanbanColumn(
                     <div class="h-1 bg-gm-accent-cyan rounded-full animate-pulse" />
                 </div>
             </Show>
+        </div>
+    }
+}
+
+/// Days to show for completed issues
+const COMPLETED_ISSUES_DAYS: i64 = 7;
+
+/// Column content with special handling for completed statuses (Done/Cancelled)
+/// Shows only issues updated within the last week, with "Show more" option
+#[component]
+fn CompletedColumnContent(
+    status: IssueStatus,
+    status_value: &'static str,
+    board: ReadSignal<KanbanBoardType>,
+    issue_click_signal: WriteSignal<Option<IssueClickEvent>>,
+    status_change_signal: WriteSignal<Option<StatusChangeEvent>>,
+    dragging: ReadSignal<Option<MouseDragState>>,
+    set_dragging: WriteSignal<Option<MouseDragState>>,
+) -> impl IntoView {
+    let is_completed_status = matches!(status, IssueStatus::Done | IssueStatus::Cancelled);
+    let (show_all, set_show_all) = signal(false);
+
+    // Derive is_dragging and is_valid_drop_target from the dragging signal
+    let is_dragging = move || dragging.get().is_some();
+    let is_valid_drop_target = move || {
+        dragging
+            .get()
+            .map(|d| d.from_status != status_value)
+            .unwrap_or(false)
+    };
+
+    view! {
+        <div class="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]">
+            {move || {
+                let issues = board.get();
+                let column_issues = issues.get_issues(status);
+
+                if column_issues.is_empty() {
+                    view! {
+                        <div class=move || {
+                            format!(
+                                "flex items-center justify-center h-20 text-sm italic rounded-lg transition-colors {}",
+                                if is_dragging() && is_valid_drop_target() {
+                                    "text-gm-accent-cyan bg-gm-accent-cyan/5 border-2 border-dashed border-gm-accent-cyan"
+                                } else {
+                                    "text-dt-text-sub"
+                                },
+                            )
+                        }>
+                            {move || {
+                                if is_dragging() && is_valid_drop_target() {
+                                    "Drop here to move"
+                                } else {
+                                    "No issues"
+                                }
+                            }}
+                        </div>
+                    }
+                        .into_any()
+                } else if is_completed_status && !show_all.get() {
+                    // For completed statuses, filter to recent issues
+                    let (recent_issues, older_count): (Vec<_>, usize) = {
+                        let recent: Vec<_> = column_issues
+                            .iter()
+                            .filter(|issue| issue.is_updated_within_days(COMPLETED_ISSUES_DAYS))
+                            .cloned()
+                            .collect();
+                        let older = column_issues.len() - recent.len();
+                        (recent, older)
+                    };
+
+                    view! {
+                        <div class="space-y-2">
+                            // Recent issues
+                            {recent_issues
+                                .into_iter()
+                                .map(|issue| {
+                                    view! {
+                                        <IssueCardDraggable
+                                            issue=issue
+                                            issue_click_signal=issue_click_signal
+                                            status_change_signal=status_change_signal
+                                            dragging=dragging
+                                            set_dragging=set_dragging
+                                        />
+                                    }
+                                })
+                                .collect_view()}
+
+                            // "Show more" button if there are older issues
+                            {if older_count > 0 {
+                                Some(view! {
+                                    <button
+                                        class="w-full py-2 px-3 text-sm text-dt-text-sub hover:text-dt-text 
+                                               bg-slate-800/50 hover:bg-slate-700/50 rounded-lg 
+                                               border border-slate-700/50 hover:border-slate-600/50
+                                               transition-colors flex items-center justify-center gap-2"
+                                        on:click=move |_| set_show_all.set(true)
+                                    >
+                                        <Icon name="chevron-down" class="w-4 h-4".to_string() />
+                                        <span>{format!("{} older issues", older_count)}</span>
+                                    </button>
+                                })
+                            } else {
+                                None
+                            }}
+                        </div>
+                    }
+                        .into_any()
+                } else {
+                    // Show all issues (non-completed or expanded)
+                    view! {
+                        <div class="space-y-2">
+                            // Collapse button for completed statuses when expanded
+                            <Show when=move || is_completed_status && show_all.get()>
+                                <button
+                                    class="w-full py-1.5 px-3 text-xs text-dt-text-sub hover:text-dt-text 
+                                           bg-slate-800/30 hover:bg-slate-700/30 rounded-lg 
+                                           border border-slate-700/30 hover:border-slate-600/30
+                                           transition-colors flex items-center justify-center gap-1"
+                                    on:click=move |_| set_show_all.set(false)
+                                >
+                                    <Icon name="chevron-up" class="w-3 h-3".to_string() />
+                                    <span>"Show recent only"</span>
+                                </button>
+                            </Show>
+
+                            {column_issues
+                                .iter()
+                                .map(|issue| {
+                                    view! {
+                                        <IssueCardDraggable
+                                            issue=issue.clone()
+                                            issue_click_signal=issue_click_signal
+                                            status_change_signal=status_change_signal
+                                            dragging=dragging
+                                            set_dragging=set_dragging
+                                        />
+                                    }
+                                })
+                                .collect_view()}
+                        </div>
+                    }
+                        .into_any()
+                }
+            }}
         </div>
     }
 }
