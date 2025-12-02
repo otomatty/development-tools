@@ -2,6 +2,7 @@ mod app;
 mod components;
 mod tauri_api;
 mod types;
+mod utils;
 
 use app::*;
 use leptos::prelude::*;

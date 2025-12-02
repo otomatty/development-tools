@@ -827,6 +827,244 @@ pub async fn delete_mock_server_mapping(id: i64) -> Result<(), String> {
     }
 }
 
+// =============================================================================
+// Issue Management API
+// =============================================================================
+
+use crate::types::issue::{CachedIssue, KanbanBoard, Project, RepositoryInfo};
+
+/// Get all projects for current user
+pub async fn get_projects() -> Result<Vec<Project>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_projects", args).await;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to get projects: {:?}", e))
+}
+
+/// Get a single project by ID
+pub async fn get_project(project_id: i64) -> Result<Project, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        project_id: i64,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
+    let result = invoke("get_project", args).await;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to get project: {:?}", e))
+}
+
+/// Create a new project
+pub async fn create_project(name: &str, description: Option<&str>) -> Result<Project, String> {
+    #[derive(serde::Serialize)]
+    struct Args<'a> {
+        name: &'a str,
+        description: Option<&'a str>,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { name, description }).unwrap();
+    let result = invoke("create_project", args).await;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to create project: {:?}", e))
+}
+
+/// Update a project
+pub async fn update_project(
+    project_id: i64,
+    name: Option<&str>,
+    description: Option<&str>,
+) -> Result<Project, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        project_id: i64,
+        name: Option<&'a str>,
+        description: Option<&'a str>,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args {
+        project_id,
+        name,
+        description,
+    })
+    .unwrap();
+    let result = invoke("update_project", args).await;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to update project: {:?}", e))
+}
+
+/// Delete a project
+pub async fn delete_project(project_id: i64) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        project_id: i64,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
+    let result = invoke("delete_project", args).await;
+
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Get user's GitHub repositories
+pub async fn get_user_repositories() -> Result<Vec<RepositoryInfo>, String> {
+    let args = serde_wasm_bindgen::to_value(&()).unwrap();
+    let result = invoke("get_user_repositories", args).await;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get repositories: {:?}", e))
+}
+
+/// Link a repository to a project
+pub async fn link_repository(project_id: i64, owner: &str, repo: &str) -> Result<Project, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        project_id: i64,
+        owner: &'a str,
+        repo: &'a str,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args {
+        project_id,
+        owner,
+        repo,
+    })
+    .unwrap();
+    let result = invoke("link_repository", args).await;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to link repository: {:?}", e))
+}
+
+/// Setup GitHub Actions for a project
+pub async fn setup_github_actions(project_id: i64) -> Result<String, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        project_id: i64,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
+    let result = invoke("setup_github_actions", args).await;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to setup GitHub Actions: {:?}", e))
+}
+
+/// Sync issues from GitHub for a project
+pub async fn sync_project_issues(project_id: i64) -> Result<Vec<CachedIssue>, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        project_id: i64,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
+    let result = invoke("sync_project_issues", args).await;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to sync issues: {:?}", e))
+}
+
+/// Get cached issues for a project
+pub async fn get_project_issues(project_id: i64) -> Result<Vec<CachedIssue>, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        project_id: i64,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
+    let result = invoke("get_project_issues", args).await;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to get issues: {:?}", e))
+}
+
+/// Get kanban board for a project
+pub async fn get_kanban_board(project_id: i64) -> Result<KanbanBoard, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        project_id: i64,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
+    let result = invoke("get_kanban_board", args).await;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to get kanban board: {:?}", e))
+}
+
+/// Update issue status
+pub async fn update_issue_status(
+    project_id: i64,
+    issue_number: i32,
+    new_status: &str,
+) -> Result<(), String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        project_id: i64,
+        issue_number: i32,
+        new_status: &'a str,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args {
+        project_id,
+        issue_number,
+        new_status,
+    })
+    .unwrap();
+    let result = invoke("update_issue_status", args).await;
+
+    if result.is_null() || result.is_undefined() {
+        Ok(())
+    } else if let Ok(err) = serde_wasm_bindgen::from_value::<String>(result) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Create a new issue on GitHub
+pub async fn create_github_issue(
+    project_id: i64,
+    title: &str,
+    body: Option<&str>,
+    status: Option<&str>,
+    priority: Option<&str>,
+) -> Result<CachedIssue, String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        project_id: i64,
+        title: &'a str,
+        body: Option<&'a str>,
+        status: Option<&'a str>,
+        priority: Option<&'a str>,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args {
+        project_id,
+        title,
+        body,
+        status,
+        priority,
+    })
+    .unwrap();
+    let result = invoke("create_github_issue", args).await;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to create issue: {:?}", e))
+}
+
 /// List files in a directory
 pub async fn list_mock_server_directory(path: &str) -> Result<Vec<FileInfo>, String> {
     #[derive(serde::Serialize)]

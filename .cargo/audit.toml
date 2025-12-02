@@ -1,0 +1,55 @@
+# Security Audit Configuration
+# https://rustsec.org/advisories/
+
+[advisories]
+# Don't fail on warnings (unmaintained crates)
+# We still want to see them, but not block CI
+informational_warnings = ["unmaintained", "unsound"]
+
+# Ignore specific advisories that are in upstream dependencies
+# and cannot be fixed by us directly
+ignore = [
+    # RSA: Marvin Attack - No fix available yet
+    # Dependency chain: sqlx-mysql -> rsa
+    # This is a timing sidechannel vulnerability (medium severity)
+    # We're not using MySQL in production, and the risk is limited
+    "RUSTSEC-2023-0071",
+
+    # GTK3 bindings - unmaintained (Linux only)
+    # These are Tauri's dependencies for Linux builds
+    # macOS/Windows are not affected
+    "RUSTSEC-2024-0411", # gdkwayland-sys
+    "RUSTSEC-2024-0412", # gdk
+    "RUSTSEC-2024-0413", # atk
+    "RUSTSEC-2024-0414", # gdkx11-sys
+    "RUSTSEC-2024-0415", # gtk
+    "RUSTSEC-2024-0416", # atk-sys
+    "RUSTSEC-2024-0417", # gdkx11
+    "RUSTSEC-2024-0418", # gdk-sys
+    "RUSTSEC-2024-0419", # gtk3-macros
+    "RUSTSEC-2024-0420", # gtk-sys
+
+    # proc-macro-error - unmaintained
+    # Used by glib-macros (Tauri dependency)
+    "RUSTSEC-2024-0370",
+
+    # paste - unmaintained
+    # Used by Leptos
+    "RUSTSEC-2024-0436",
+
+    # fxhash - unmaintained
+    # Used by Tauri (selectors -> kuchikiki)
+    "RUSTSEC-2025-0057",
+
+    # unic-* crates - unmaintained
+    # Used by Tauri (urlpattern)
+    "RUSTSEC-2025-0075", # unic-char-range
+    "RUSTSEC-2025-0080", # unic-common
+    "RUSTSEC-2025-0081", # unic-char-property
+    "RUSTSEC-2025-0098", # unic-ucd-version
+    "RUSTSEC-2025-0100", # unic-ucd-ident
+
+    # glib unsound - Iterator impl issue
+    # Used by Tauri's GTK bindings
+    "RUSTSEC-2024-0429",
+]
