@@ -51,7 +51,7 @@ anyhow = "1"
 
 # Security (for token encryption)
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.9"
 base64 = "0.22"
 
 # Async utilities
