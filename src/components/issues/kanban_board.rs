@@ -446,22 +446,9 @@ fn IssueCardDraggable(
     dragging: ReadSignal<Option<MouseDragState>>,
     set_dragging: WriteSignal<Option<MouseDragState>>,
 ) -> impl IntoView {
-    let (show_dropdown, set_show_dropdown) = signal(false);
     let (is_mouse_down, set_is_mouse_down) = signal(false);
-    // Track mouse down position for click vs drag detection (Issue #108)
-    let (title_mouse_down_pos, set_title_mouse_down_pos) = signal(Option::<(i32, i32)>::None);
     let issue_clone = issue.clone();
 
-    let statuses = vec![
-        ("backlog", "Backlog", "bg-gray-500"),
-        ("todo", "Todo", "bg-blue-500"),
-        ("in-progress", "In Progress", "bg-yellow-500"),
-        ("in-review", "In Review", "bg-purple-500"),
-        ("done", "Done", "bg-green-500"),
-        ("cancelled", "Cancelled", "bg-red-500"),
-    ];
-
-    let current_status = issue.status.clone();
     let issue_url = issue.html_url.clone().unwrap_or_default();
     let issue_title = issue.title.clone();
     let issue_title_for_drag = issue.title.clone();
@@ -471,16 +458,6 @@ fn IssueCardDraggable(
     let issue_assignee = issue.assignee_login.clone();
     let issue_status_for_drag = issue.status.clone();
     let issue_status_for_title_drag = issue.status.clone();
-
-    let status_color = match current_status.as_str() {
-        "backlog" => "bg-gray-500",
-        "todo" => "bg-blue-500",
-        "in-progress" => "bg-yellow-500",
-        "in-review" => "bg-purple-500",
-        "done" => "bg-green-500",
-        "cancelled" => "bg-red-500",
-        _ => "bg-gray-500",
-    };
 
     // Check if this card is being dragged
     let is_being_dragged = move || {
@@ -541,31 +518,49 @@ fn IssueCardDraggable(
                 }
             }
         >
-            // Header with issue number and GitHub link
+            // Header with issue number, detail button, and GitHub link
             <div class="flex items-center justify-between mb-2">
                 <span class="text-xs text-gray-400 font-mono">{"#"} {issue_number}</span>
-                <a
-                    href=issue_url
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-gray-400 hover:text-white transition-colors"
-                    on:mousedown=move |e| e.stop_propagation()
-                    on:click=move |e| e.stop_propagation()
-                >
-                    <Icon name="github".to_string() class="w-4 h-4".to_string() />
-                </a>
+                <div class="flex items-center gap-1" on:mousedown=move |e| e.stop_propagation()>
+                    // Detail button
+                    <button
+                        class="p-1 text-gray-400 hover:text-gm-accent-cyan hover:bg-gray-700 rounded transition-all"
+                        title="View details"
+                        on:click={
+                            let issue_for_click = issue_clone.clone();
+                            move |e: web_sys::MouseEvent| {
+                                e.stop_propagation();
+                                leptos::logging::log!("🔍 Detail button clicked for issue #{}", issue_number);
+                                issue_click_signal.set(Some(IssueClickEvent {
+                                    issue: issue_for_click.clone(),
+                                }));
+                            }
+                        }
+                    >
+                        <Icon name="expand".to_string() class="w-4 h-4".to_string() />
+                    </button>
+                    // GitHub link
+                    <a
+                        href=issue_url.clone()
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-all"
+                        title="Open in GitHub"
+                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                    >
+                        <Icon name="github".to_string() class="w-4 h-4".to_string() />
+                    </a>
+                </div>
             </div>
 
-            // Title - clickable to open detail (with drag detection - Issue #108)
+            // Title - draggable only (detail opens via button)
             <h4
-                class="text-sm font-medium text-white mb-2 line-clamp-2 hover:text-gm-accent-cyan cursor-pointer"
+                class="text-sm font-medium text-white mb-2 line-clamp-2"
                 on:mousedown={
                     let issue_status = issue_status_for_title_drag.clone();
                     let title = issue_title_for_title_drag.clone();
                     move |e: web_sys::MouseEvent| {
-                        // Record mouse down position for click vs drag detection
-                        set_title_mouse_down_pos.set(Some((e.client_x(), e.client_y())));
-                        // Also start drag (same as card mousedown)
+                        // Start drag
                         e.prevent_default();
                         if e.button() == 0 {
                             leptos::logging::log!("🚀 Drag start from title: issue #{} from {}", issue_number, issue_status);
@@ -579,23 +574,6 @@ fn IssueCardDraggable(
                         e.stop_propagation();
                     }
                 }
-                on:click={
-                    let issue_for_click = issue_clone.clone();
-                    move |e: web_sys::MouseEvent| {
-                        // Check if this was a drag (moved more than 5px) or a click
-                        if let Some((start_x, start_y)) = title_mouse_down_pos.get() {
-                            let dx = (e.client_x() - start_x).abs();
-                            let dy = (e.client_y() - start_y).abs();
-                            // Only trigger click if movement was less than 5px (not a drag)
-                            if dx < 5 && dy < 5 {
-                                issue_click_signal.set(Some(IssueClickEvent {
-                                    issue: issue_for_click.clone(),
-                                }));
-                            }
-                        }
-                        set_title_mouse_down_pos.set(None);
-                    }
-                }
             >
                 {issue_title}
             </h4>
@@ -605,80 +583,17 @@ fn IssueCardDraggable(
                 view! { <p class="text-xs text-gray-400 mb-2 line-clamp-2">{body}</p> }
             })}
 
-            // Footer
-            <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-700">
-                // Status dropdown
-                <div class="relative" on:mousedown=move |e| e.stop_propagation()>
-                    <button
-                        class=format!(
-                            "px-2 py-1 rounded text-xs text-white {} hover:opacity-80 transition-opacity flex items-center gap-1",
-                            status_color,
-                        )
-                        on:click=move |e| {
-                            e.stop_propagation();
-                            set_show_dropdown.update(|v| *v = !*v);
-                        }
-                    >
-                        {current_status.replace("-", " ")}
-                        <svg
-                            class="w-3 h-3 rotate-90"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M9 5l7 7-7 7"
-                            />
-                        </svg>
-                    </button>
-
-                    <Show when=move || show_dropdown.get()>
-                        <div class="absolute left-0 bottom-full mb-1 bg-gray-900 rounded-lg shadow-lg border border-gray-700 py-1 z-50 min-w-[120px]">
-                            {statuses
-                                .iter()
-                                .map(|(value, label, color)| {
-                                    let value = value.to_string();
-                                    let label = *label;
-                                    let color = *color;
-                                    view! {
-                                        <button
-                                            class="w-full px-3 py-1.5 text-left text-xs text-white hover:bg-gray-800 flex items-center gap-2"
-                                            on:click={
-                                                let value = value.clone();
-                                                move |e| {
-                                                    e.stop_propagation();
-                                                    status_change_signal
-                                                        .set(Some(StatusChangeEvent {
-                                                            issue_number,
-                                                            new_status: value.clone(),
-                                                        }));
-                                                    set_show_dropdown.set(false);
-                                                }
-                                            }
-                                        >
-                                            <span class=format!("w-2 h-2 rounded-full {}", color)></span>
-                                            {label}
-                                        </button>
-                                    }
-                                })
-                                .collect_view()}
-                        </div>
-                    </Show>
-                </div>
-
-                // Assignee
-                {issue_assignee.map(|assignee| {
-                    let assignee_display = assignee.clone();
-                    view! {
+            // Footer - Assignee only (status changed via drag & drop)
+            {issue_assignee.map(|assignee| {
+                let assignee_display = assignee.clone();
+                view! {
+                    <div class="mt-2 pt-2 border-t border-gray-700">
                         <span class="text-xs text-gray-400 truncate max-w-[80px]" title=assignee>
                             {"@"} {assignee_display}
                         </span>
-                    }
-                })}
-            </div>
+                    </div>
+                }
+            })}
         </div>
     }
 }

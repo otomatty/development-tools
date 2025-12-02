@@ -540,3 +540,237 @@
 .animation-strong {
   animation-duration: 0.5s !important;
 }
+
+/* ========================================
+   GitHub-style Markdown Body Styles
+   ======================================== */
+.markdown-body {
+  @apply text-dt-text text-sm leading-relaxed;
+  word-wrap: break-word;
+}
+
+/* Headings */
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  @apply font-semibold text-dt-text mt-6 mb-4;
+  line-height: 1.25;
+}
+
+.markdown-body h1 {
+  @apply text-2xl pb-2 border-b border-slate-700;
+}
+
+.markdown-body h2 {
+  @apply text-xl pb-2 border-b border-slate-700;
+}
+
+.markdown-body h3 {
+  @apply text-lg;
+}
+
+.markdown-body h4 {
+  @apply text-base;
+}
+
+.markdown-body h5 {
+  @apply text-sm;
+}
+
+.markdown-body h6 {
+  @apply text-xs text-dt-text-sub;
+}
+
+/* First heading should not have top margin */
+.markdown-body > :first-child {
+  margin-top: 0 !important;
+}
+
+/* Last element should not have bottom margin */
+.markdown-body > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Paragraphs */
+.markdown-body p {
+  @apply my-4;
+}
+
+/* Links */
+.markdown-body a {
+  @apply text-blue-400 hover:text-blue-300 underline;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+/* Bold and Italic */
+.markdown-body strong {
+  @apply font-semibold text-dt-text;
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+/* Inline code */
+.markdown-body code {
+  @apply px-1.5 py-0.5 bg-slate-700/70 text-pink-400 rounded text-xs font-mono;
+}
+
+/* Code blocks */
+.markdown-body pre {
+  @apply my-4 p-4 bg-slate-900 rounded-lg overflow-x-auto border border-slate-700;
+}
+
+.markdown-body pre code {
+  @apply p-0 bg-transparent text-dt-text rounded-none text-xs;
+  white-space: pre;
+}
+
+/* Lists */
+.markdown-body ul,
+.markdown-body ol {
+  @apply my-4 pl-8;
+}
+
+.markdown-body ul {
+  list-style-type: disc;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+}
+
+.markdown-body li {
+  @apply my-1;
+}
+
+.markdown-body li + li {
+  @apply mt-1;
+}
+
+/* Nested lists */
+.markdown-body ul ul,
+.markdown-body ul ol,
+.markdown-body ol ul,
+.markdown-body ol ol {
+  @apply my-0;
+}
+
+/* Task lists */
+.markdown-body ul.contains-task-list,
+.markdown-body .task-list-item {
+  list-style-type: none;
+}
+
+.markdown-body input[type="checkbox"] {
+  @apply mr-2 w-4 h-4 rounded bg-slate-700 border-slate-600;
+  vertical-align: middle;
+}
+
+.markdown-body input[type="checkbox"]:checked {
+  @apply bg-blue-500 border-blue-500;
+}
+
+/* Blockquotes */
+.markdown-body blockquote {
+  @apply my-4 pl-4 border-l-4 border-slate-600 text-dt-text-sub italic;
+}
+
+.markdown-body blockquote > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* Horizontal rules */
+.markdown-body hr {
+  @apply my-6 border-0 border-t border-slate-700;
+}
+
+/* Tables */
+.markdown-body table {
+  @apply w-full my-4 border-collapse;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+  @apply px-4 py-2 border border-slate-700;
+}
+
+.markdown-body table th {
+  @apply bg-slate-800 font-semibold text-left;
+}
+
+.markdown-body table tr {
+  @apply bg-transparent;
+}
+
+.markdown-body table tr:nth-child(even) {
+  @apply bg-slate-800/30;
+}
+
+/* Images */
+.markdown-body img {
+  @apply max-w-full h-auto rounded-lg my-4;
+}
+
+/* Details/Summary */
+.markdown-body details {
+  @apply my-4;
+}
+
+.markdown-body summary {
+  @apply cursor-pointer font-medium text-dt-text;
+}
+
+.markdown-body details[open] summary {
+  @apply mb-2;
+}
+
+/* Keyboard input */
+.markdown-body kbd {
+  @apply px-2 py-1 text-xs font-mono bg-slate-800 border border-slate-600 rounded shadow-sm;
+}
+
+/* Strikethrough */
+.markdown-body del {
+  @apply text-dt-text-sub line-through;
+}
+
+/* Subscript and Superscript */
+.markdown-body sub,
+.markdown-body sup {
+  font-size: 75%;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+.markdown-body sup {
+  top: -0.5em;
+}
+
+.markdown-body sub {
+  bottom: -0.25em;
+}
+
+/* Definition lists */
+.markdown-body dl {
+  @apply my-4;
+}
+
+.markdown-body dt {
+  @apply font-semibold mt-4;
+}
+
+.markdown-body dd {
+  @apply ml-8 my-1;
+}

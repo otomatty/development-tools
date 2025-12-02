@@ -16,6 +16,7 @@ use leptos::prelude::*;
 
 use crate::components::icons::Icon;
 use crate::types::issue::{CachedIssue, IssueStatus};
+use crate::utils::render_markdown;
 
 /// Event emitted when issue status is changed from the detail modal
 #[derive(Clone, Debug)]
@@ -240,11 +241,13 @@ pub fn IssueDetailModal(
                                         <p class="text-dt-text-sub italic">"No description provided."</p>
                                     }.into_any()
                                 } else {
-                                    // Simple markdown-like rendering
+                                    // Render Markdown to HTML
+                                    let html_content = render_markdown(&body);
                                     view! {
-                                        <div class="prose prose-invert prose-sm max-w-none text-dt-text whitespace-pre-wrap">
-                                            {body}
-                                        </div>
+                                        <div
+                                            class="markdown-body"
+                                            inner_html=html_content
+                                        />
                                     }.into_any()
                                 }
                             }).unwrap_or_else(|| view! {

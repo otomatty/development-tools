@@ -77,7 +77,7 @@ pub fn IssueCard(
     
     view! {
         <div 
-            class="bg-gray-800 rounded-lg p-3 shadow-md hover:shadow-lg transition-all border cursor-grab border-gray-700 hover:border-gm-accent-cyan/50"
+            class="group bg-gray-800 rounded-lg p-3 shadow-md hover:shadow-lg transition-all border cursor-grab border-gray-700 hover:border-gm-accent-cyan/50 relative"
             draggable="true"
             on:dragstart={
                 let issue_number_for_drag = issue_number;
@@ -112,29 +112,43 @@ pub fn IssueCard(
                     signal.set(None);
                 }
             }
-            on:click={
-                let issue_for_click = issue_clone.clone();
-                move |_| {
-                    issue_click_signal.set(Some(IssueClickEvent {
-                        issue: issue_for_click.clone(),
-                    }));
-                }
-            }
         >
             // Header with issue number and GitHub link
             <div class="flex items-center justify-between mb-2">
                 <span class="text-xs text-gray-400 font-mono">
                     {"#"}{issue_number}
                 </span>
-                <a
-                    href={issue_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-gray-400 hover:text-white transition-colors"
-                    on:click=move |e| e.stop_propagation()
-                >
-                    <Icon name="github".to_string() class="w-4 h-4".to_string() />
-                </a>
+                <div class="flex items-center gap-1">
+                    // Detail button
+                    <button
+                        class="p-1 text-gray-400 hover:text-gm-accent-cyan hover:bg-gray-700 rounded transition-all"
+                        title="View details"
+                        on:click={
+                            let issue_for_click = issue_clone.clone();
+                            move |e: web_sys::MouseEvent| {
+                                e.stop_propagation();
+                                e.prevent_default();
+                                leptos::logging::log!("🔍 Detail button clicked for issue");
+                                issue_click_signal.set(Some(IssueClickEvent {
+                                    issue: issue_for_click.clone(),
+                                }));
+                            }
+                        }
+                    >
+                        <Icon name="expand".to_string() class="w-4 h-4".to_string() />
+                    </button>
+                    // GitHub link
+                    <a
+                        href={issue_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-all"
+                        title="Open in GitHub"
+                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                    >
+                        <Icon name="github".to_string() class="w-4 h-4".to_string() />
+                    </a>
+                </div>
             </div>
             
             // Title
