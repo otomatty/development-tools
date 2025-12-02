@@ -23,9 +23,9 @@ use commands::{
     create_challenge,
     // Issue management commands (Issue #59)
     create_github_issue,
-    create_project,
     // Mock Server commands
     create_mock_server_mapping,
+    create_project,
     delete_challenge,
     delete_mock_server_mapping,
     delete_project,

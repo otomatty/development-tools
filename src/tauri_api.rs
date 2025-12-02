@@ -866,8 +866,7 @@ pub async fn create_project(name: &str, description: Option<&str>) -> Result<Pro
     let args = serde_wasm_bindgen::to_value(&Args { name, description }).unwrap();
     let result = invoke("create_project", args).await;
 
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to create project: {:?}", e))
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to create project: {:?}", e))
 }
 
 /// Update a project
@@ -892,8 +891,7 @@ pub async fn update_project(
     .unwrap();
     let result = invoke("update_project", args).await;
 
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to update project: {:?}", e))
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to update project: {:?}", e))
 }
 
 /// Delete a project
@@ -926,11 +924,7 @@ pub async fn get_user_repositories() -> Result<Vec<RepositoryInfo>, String> {
 }
 
 /// Link a repository to a project
-pub async fn link_repository(
-    project_id: i64,
-    owner: &str,
-    repo: &str,
-) -> Result<Project, String> {
+pub async fn link_repository(project_id: i64, owner: &str, repo: &str) -> Result<Project, String> {
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
     struct Args<'a> {
@@ -977,8 +971,7 @@ pub async fn sync_project_issues(project_id: i64) -> Result<Vec<CachedIssue>, St
     let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
     let result = invoke("sync_project_issues", args).await;
 
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to sync issues: {:?}", e))
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to sync issues: {:?}", e))
 }
 
 /// Get cached issues for a project
@@ -992,8 +985,7 @@ pub async fn get_project_issues(project_id: i64) -> Result<Vec<CachedIssue>, Str
     let args = serde_wasm_bindgen::to_value(&Args { project_id }).unwrap();
     let result = invoke("get_project_issues", args).await;
 
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to get issues: {:?}", e))
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to get issues: {:?}", e))
 }
 
 /// Get kanban board for a project
@@ -1070,8 +1062,7 @@ pub async fn create_github_issue(
     .unwrap();
     let result = invoke("create_github_issue", args).await;
 
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to create issue: {:?}", e))
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("Failed to create issue: {:?}", e))
 }
 
 /// List files in a directory

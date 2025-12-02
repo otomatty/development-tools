@@ -141,7 +141,7 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
             set_issue_click_event.set(None);
         }
     });
-    
+
     // React to status change events
     Effect::new(move |_| {
         if let Some(event) = status_change_event.get() {
@@ -261,7 +261,7 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
                 <Show when=move || error.get().is_some()>
                     <div class="mt-3 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
                         {move || error.get().unwrap_or_default()}
-                        <button 
+                        <button
                             class="ml-2 underline"
                             on:click=move |_| set_error.set(None)
                         >
@@ -300,8 +300,8 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
 
                 // Kanban board (when linked)
                 <Show when=move || !loading.get() && project.get().map(|p| p.is_linked()).unwrap_or(false)>
-                    <KanbanBoard 
-                        board=kanban 
+                    <KanbanBoard
+                        board=kanban
                         status_change_signal=set_status_change_event
                         issue_click_signal=set_issue_click_event
                     />
@@ -391,14 +391,14 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
                     let issue = selected_issue.get().unwrap();
                     let (close_modal_trigger, set_close_modal_trigger) = signal(false);
                     let (detail_status_change, set_detail_status_change) = signal(Option::<IssueDetailStatusChange>::None);
-                    
+
                     // Watch for close trigger
                     Effect::new(move |_| {
                         if close_modal_trigger.get() {
                             set_selected_issue.set(None);
                         }
                     });
-                    
+
                     // Watch for status change from detail modal
                     Effect::new(move |_| {
                         if let Some(event) = detail_status_change.get() {
@@ -411,7 +411,7 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
                             set_selected_issue.set(None);
                         }
                     });
-                    
+
                     view! {
                         <IssueDetailModal
                             issue=issue

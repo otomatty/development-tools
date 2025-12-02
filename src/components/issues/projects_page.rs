@@ -16,7 +16,10 @@ use leptos::task::spawn_local;
 
 use crate::components::icons::Icon;
 use crate::tauri_api;
-use crate::types::{issue::{Project, RepositoryInfo}, AppPage};
+use crate::types::{
+    issue::{Project, RepositoryInfo},
+    AppPage,
+};
 
 /// Projects list page component
 #[component]
@@ -28,7 +31,7 @@ pub fn ProjectsPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
     let (new_project_name, set_new_project_name) = signal(String::new());
     let (new_project_description, set_new_project_description) = signal(String::new());
     let (creating, set_creating) = signal(false);
-    
+
     // Repository selection state
     let (repositories, set_repositories) = signal(Vec::<RepositoryInfo>::new());
     let (repos_loading, set_repos_loading) = signal(false);
@@ -53,13 +56,13 @@ pub fn ProjectsPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
     // Create project handler - requires repository selection
     let create_project = move |_| {
         let repo_info = selected_repo.get();
-        
+
         // Repository is required
         let repo = match repo_info {
             Some(r) => r,
             None => return,
         };
-        
+
         let name = new_project_name.get();
         if name.trim().is_empty() {
             return;
@@ -82,10 +85,12 @@ pub fn ProjectsPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                             project = linked_project;
                         }
                         Err(e) => {
-                            web_sys::console::error_1(&format!("Failed to link repository: {}", e).into());
+                            web_sys::console::error_1(
+                                &format!("Failed to link repository: {}", e).into(),
+                            );
                         }
                     }
-                    
+
                     set_projects.update(|p| p.push(project));
                     set_show_create_modal.set(false);
                     set_new_project_name.set(String::new());
@@ -159,7 +164,7 @@ pub fn ProjectsPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                             let project_is_linked = project.is_linked();
                             let project_is_actions_setup = project.is_actions_setup;
                             let project_last_synced_at = project.last_synced_at.clone();
-                            
+
                             // Clone for inner closures
                             let repo_full_name_check = project_repo_full_name.clone();
                             let repo_full_name_display = project_repo_full_name.clone();
@@ -167,11 +172,11 @@ pub fn ProjectsPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                             let description_display = project_description.clone();
                             let last_synced_check = project_last_synced_at.clone();
                             let last_synced_display = project_last_synced_at.clone();
-                            
+
                             view! {
                                 <div class="bg-dt-card border border-slate-700/50 rounded-lg p-4 hover:border-gm-accent-cyan/50 transition-colors cursor-pointer group">
                                     // Card content (clickable)
-                                    <div 
+                                    <div
                                         class="flex-1"
                                         on:click=move |_| {
                                             set_current_page.set(AppPage::ProjectDetail(project_id_for_click));
@@ -195,7 +200,7 @@ pub fn ProjectsPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                                                 </div>
                                             </div>
                                         </div>
-                                        
+
                                         {description_display.map(|desc| view! {
                                             <p class="text-sm text-dt-text-sub mt-3 line-clamp-2">
                                                 {desc}
@@ -337,14 +342,16 @@ fn CreateProjectModal(
                         set_repositories.set(repos);
                     }
                     Err(e) => {
-                        web_sys::console::error_1(&format!("Failed to load repositories: {}", e).into());
+                        web_sys::console::error_1(
+                            &format!("Failed to load repositories: {}", e).into(),
+                        );
                     }
                 }
                 set_repos_loading.set(false);
             });
         }
     }
-    
+
     // Filter repositories based on search query
     let filtered_repos = move || {
         let query = repo_search_query.get().to_lowercase();
@@ -364,7 +371,7 @@ fn CreateProjectModal(
                 .collect()
         }
     };
-    
+
     // Handle repository selection - auto-fill project name and description
     let on_repo_select = move |repo: RepositoryInfo| {
         // Use repository name as project name
@@ -385,7 +392,7 @@ fn CreateProjectModal(
                     <h2 class="text-xl font-semibold text-dt-text">"Create New Project"</h2>
                     <p class="text-sm text-dt-text-sub mt-1">"Select a GitHub repository to create a project"</p>
                 </div>
-                
+
                 // Content
                 <div class="flex-1 overflow-hidden flex">
                     // Left: Repository list
@@ -402,7 +409,7 @@ fn CreateProjectModal(
                                 />
                             </div>
                         </div>
-                        
+
                         <div class="flex-1 overflow-y-auto">
                             // Loading state
                             <Show when=move || repos_loading.get()>
@@ -410,7 +417,7 @@ fn CreateProjectModal(
                                     <div class="animate-spin w-6 h-6 border-2 border-gm-accent-cyan border-t-transparent rounded-full"/>
                                 </div>
                             </Show>
-                            
+
                             // Repository list
                             <Show when=move || !repos_loading.get()>
                                 {move || {
@@ -430,7 +437,7 @@ fn CreateProjectModal(
                                             let repo_description = repo.description.clone();
                                             let repo_private = repo.private;
                                             let repo_issues_count = repo.open_issues_count;
-                                            
+
                                             view! {
                                                 <button
                                                     type="button"
@@ -478,7 +485,7 @@ fn CreateProjectModal(
                             </Show>
                         </div>
                     </div>
-                    
+
                     // Right: Project details form
                     <div class="w-1/2 p-6 flex flex-col">
                         <Show
@@ -504,7 +511,7 @@ fn CreateProjectModal(
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 // Project Name
                                 <div>
                                     <label class="block text-sm font-medium text-dt-text-sub mb-2">"Project Name"</label>
@@ -516,7 +523,7 @@ fn CreateProjectModal(
                                         on:input=move |ev| set_new_project_name.set(event_target_value(&ev))
                                     />
                                 </div>
-                                
+
                                 // Description
                                 <div>
                                     <label class="block text-sm font-medium text-dt-text-sub mb-2">"Description"</label>

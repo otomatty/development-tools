@@ -327,7 +327,7 @@ impl KanbanBoard {
     /// Create kanban board from issues list
     pub fn from_issues(issues: Vec<CachedIssue>) -> Self {
         let mut board = KanbanBoard::default();
-        
+
         for issue in issues {
             match issue.get_status() {
                 IssueStatus::Backlog => board.backlog.push(issue),
@@ -338,7 +338,7 @@ impl KanbanBoard {
                 IssueStatus::Cancelled => board.cancelled.push(issue),
             }
         }
-        
+
         board
     }
 }
@@ -443,7 +443,10 @@ mod tests {
 
     #[test]
     fn test_issue_status_parse() {
-        assert_eq!("backlog".parse::<IssueStatus>().unwrap(), IssueStatus::Backlog);
+        assert_eq!(
+            "backlog".parse::<IssueStatus>().unwrap(),
+            IssueStatus::Backlog
+        );
         assert_eq!(
             "in-progress".parse::<IssueStatus>().unwrap(),
             IssueStatus::InProgress

@@ -233,7 +233,7 @@ impl CachedIssue {
 
         let now_ms = js_sys::Date::now();
         let days_ms = (days as f64) * 24.0 * 60.0 * 60.0 * 1000.0;
-        
+
         (now_ms - updated_ms) <= days_ms
     }
 

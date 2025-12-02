@@ -58,7 +58,10 @@ pub fn KanbanBoard(
         }) as Box<dyn FnMut(_)>);
 
         document
-            .add_event_listener_with_callback("mousemove", mousemove_handler.as_ref().unchecked_ref())
+            .add_event_listener_with_callback(
+                "mousemove",
+                mousemove_handler.as_ref().unchecked_ref(),
+            )
             .unwrap();
 
         // Global mouseup to handle drop or cancel
@@ -382,7 +385,7 @@ fn CompletedColumnContent(
                             {if older_count > 0 {
                                 Some(view! {
                                     <button
-                                        class="w-full py-2 px-3 text-sm text-dt-text-sub hover:text-dt-text 
+                                        class="w-full py-2 px-3 text-sm text-dt-text-sub hover:text-dt-text
                                                bg-slate-800/50 hover:bg-slate-700/50 rounded-lg 
                                                border border-slate-700/50 hover:border-slate-600/50
                                                transition-colors flex items-center justify-center gap-2"
@@ -405,7 +408,7 @@ fn CompletedColumnContent(
                             // Collapse button for completed statuses when expanded
                             <Show when=move || is_completed_status && show_all.get()>
                                 <button
-                                    class="w-full py-1.5 px-3 text-xs text-dt-text-sub hover:text-dt-text 
+                                    class="w-full py-1.5 px-3 text-xs text-dt-text-sub hover:text-dt-text
                                            bg-slate-800/30 hover:bg-slate-700/30 rounded-lg 
                                            border border-slate-700/30 hover:border-slate-600/30
                                            transition-colors flex items-center justify-center gap-1"

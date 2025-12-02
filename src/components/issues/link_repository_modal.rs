@@ -138,7 +138,7 @@ pub fn LinkRepositoryModal(
                                         let repo_description = repo.description.clone();
                                         let repo_private = repo.private;
                                         let repo_issues_count = repo.open_issues_count;
-                                        
+
                                         view! {
                                             <button
                                                 class="w-full p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg hover:border-gm-accent-cyan/50 transition-colors text-left"
@@ -147,7 +147,7 @@ pub fn LinkRepositoryModal(
                                                     set_linking.set(true);
                                                     let owner = repo_owner.clone();
                                                     let name = repo_name.clone();
-                                                    
+
                                                     spawn_local(async move {
                                                         match tauri_api::link_repository(
                                                             project_id,

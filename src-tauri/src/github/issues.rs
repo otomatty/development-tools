@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 
-use crate::database::models::project::{IssueStatus, IssuePriority, LabelDefinition};
+use crate::database::models::project::{IssuePriority, IssueStatus, LabelDefinition};
 
 use super::client::{GitHubError, GitHubResult};
 
@@ -351,7 +351,7 @@ impl IssuesClient {
             GITHUB_API_URL, owner, repo, issue_number
         );
         let payload = serde_json::json!({ "labels": labels });
-        
+
         // PUT replaces all labels
         let response = self
             .client
@@ -566,12 +566,12 @@ impl IssuesClient {
     }
 
     /// Extract status from issue considering GitHub state and state_reason
-    /// 
+    ///
     /// For closed issues:
     /// - state_reason = "completed" → Done
     /// - state_reason = "not_planned" or "duplicate" → Cancelled
     /// - state_reason = None (legacy issues) → Check labels, fallback to Done
-    /// 
+    ///
     /// For open issues:
     /// - Use labels to determine status, fallback to Backlog
     pub fn extract_status_with_state(

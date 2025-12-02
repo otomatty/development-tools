@@ -1,3 +1,5 @@
+use crate::components::icons::Icon;
+use crate::types::CachedIssue;
 /**
  * Issue Card Component
  *
@@ -11,10 +13,7 @@
  * Dependencies:
  *   └─ src/types/issue.rs (CachedIssue)
  */
-
 use leptos::prelude::*;
-use crate::types::CachedIssue;
-use crate::components::icons::Icon;
 
 /// Status change event data
 #[derive(Clone, Debug)]
@@ -47,7 +46,7 @@ pub fn IssueCard(
 ) -> impl IntoView {
     let (show_dropdown, set_show_dropdown) = signal(false);
     let issue_clone = issue.clone();
-    
+
     let statuses = vec![
         ("backlog", "Backlog", "bg-gray-500"),
         ("todo", "Todo", "bg-blue-500"),
@@ -56,14 +55,14 @@ pub fn IssueCard(
         ("done", "Done", "bg-green-500"),
         ("cancelled", "Cancelled", "bg-red-500"),
     ];
-    
+
     let current_status = issue.status.clone();
     let issue_url = issue.html_url.clone().unwrap_or_default();
     let issue_title = issue.title.clone();
     let issue_number = issue.number;
     let issue_body = issue.body.clone();
     let issue_assignee = issue.assignee_login.clone();
-    
+
     // Status badge color
     let status_color = match current_status.as_str() {
         "backlog" => "bg-gray-500",
@@ -74,9 +73,9 @@ pub fn IssueCard(
         "cancelled" => "bg-red-500",
         _ => "bg-gray-500",
     };
-    
+
     view! {
-        <div 
+        <div
             class="group bg-gray-800 rounded-lg p-3 shadow-md hover:shadow-lg transition-all border cursor-grab border-gray-700 hover:border-gm-accent-cyan/50 relative"
             draggable="true"
             on:dragstart={
@@ -84,7 +83,7 @@ pub fn IssueCard(
                 let current_status_for_drag = issue.status.clone();
                 move |e: web_sys::DragEvent| {
                     leptos::logging::log!("🚀 dragstart fired for issue #{}", issue_number_for_drag);
-                    
+
                     // CRITICAL: Must set data on DataTransfer for drop to work!
                     // Without this, browsers won't allow drops
                     if let Some(dt) = e.data_transfer() {
@@ -95,7 +94,7 @@ pub fn IssueCard(
                     } else {
                         leptos::logging::log!("❌ No DataTransfer available!");
                     }
-                    
+
                     // Notify parent about drag start via signal
                     if let Some(signal) = drag_signal {
                         signal.set(Some(DragStartEvent {
@@ -150,12 +149,12 @@ pub fn IssueCard(
                     </a>
                 </div>
             </div>
-            
+
             // Title
             <h4 class="text-sm font-medium text-white mb-2 line-clamp-2">
                 {issue_title}
             </h4>
-            
+
             // Body preview (if exists)
             {issue_body.map(|body| {
                 view! {
@@ -164,7 +163,7 @@ pub fn IssueCard(
                     </p>
                 }
             })}
-            
+
             // Footer with status and assignee
             <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-700">
                 // Status dropdown
@@ -181,7 +180,7 @@ pub fn IssueCard(
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                         </svg>
                     </button>
-                    
+
                     // Dropdown menu
                     <Show when=move || show_dropdown.get()>
                         <div class="absolute left-0 bottom-full mb-1 bg-gray-900 rounded-lg shadow-lg border border-gray-700 py-1 z-50 min-w-[120px]">
@@ -214,7 +213,7 @@ pub fn IssueCard(
                         </div>
                     </Show>
                 </div>
-                
+
                 // Assignee
                 {issue_assignee.map(|assignee| {
                     let assignee_display = assignee.clone();
