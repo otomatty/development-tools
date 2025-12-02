@@ -339,6 +339,8 @@ fn IssueCardDraggable(
 ) -> impl IntoView {
     let (show_dropdown, set_show_dropdown) = signal(false);
     let (is_mouse_down, set_is_mouse_down) = signal(false);
+    // Track mouse down position for click vs drag detection (Issue #108)
+    let (title_mouse_down_pos, set_title_mouse_down_pos) = signal(Option::<(i32, i32)>::None);
     let issue_clone = issue.clone();
 
     let statuses = vec![
@@ -354,10 +356,12 @@ fn IssueCardDraggable(
     let issue_url = issue.html_url.clone().unwrap_or_default();
     let issue_title = issue.title.clone();
     let issue_title_for_drag = issue.title.clone();
+    let issue_title_for_title_drag = issue.title.clone();
     let issue_number = issue.number;
     let issue_body = issue.body.clone();
     let issue_assignee = issue.assignee_login.clone();
     let issue_status_for_drag = issue.status.clone();
+    let issue_status_for_title_drag = issue.status.clone();
 
     let status_color = match current_status.as_str() {
         "backlog" => "bg-gray-500",
@@ -443,16 +447,44 @@ fn IssueCardDraggable(
                 </a>
             </div>
 
-            // Title - clickable to open detail
+            // Title - clickable to open detail (with drag detection - Issue #108)
             <h4
                 class="text-sm font-medium text-white mb-2 line-clamp-2 hover:text-gm-accent-cyan cursor-pointer"
-                on:mousedown=move |e| e.stop_propagation()
+                on:mousedown={
+                    let issue_status = issue_status_for_title_drag.clone();
+                    let title = issue_title_for_title_drag.clone();
+                    move |e: web_sys::MouseEvent| {
+                        // Record mouse down position for click vs drag detection
+                        set_title_mouse_down_pos.set(Some((e.client_x(), e.client_y())));
+                        // Also start drag (same as card mousedown)
+                        e.prevent_default();
+                        if e.button() == 0 {
+                            leptos::logging::log!("🚀 Drag start from title: issue #{} from {}", issue_number, issue_status);
+                            set_is_mouse_down.set(true);
+                            set_dragging.set(Some(MouseDragState {
+                                issue_number,
+                                from_status: issue_status.clone(),
+                                issue_title: title.clone(),
+                            }));
+                        }
+                        e.stop_propagation();
+                    }
+                }
                 on:click={
                     let issue_for_click = issue_clone.clone();
-                    move |_| {
-                        issue_click_signal.set(Some(IssueClickEvent {
-                            issue: issue_for_click.clone(),
-                        }));
+                    move |e: web_sys::MouseEvent| {
+                        // Check if this was a drag (moved more than 5px) or a click
+                        if let Some((start_x, start_y)) = title_mouse_down_pos.get() {
+                            let dx = (e.client_x() - start_x).abs();
+                            let dy = (e.client_y() - start_y).abs();
+                            // Only trigger click if movement was less than 5px (not a drag)
+                            if dx < 5 && dy < 5 {
+                                issue_click_signal.set(Some(IssueClickEvent {
+                                    issue: issue_for_click.clone(),
+                                }));
+                            }
+                        }
+                        set_title_mouse_down_pos.set(None);
                     }
                 }
             >
