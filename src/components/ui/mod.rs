@@ -13,7 +13,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crate::components::ui::{Card, CardVariant, Modal, DropdownMenu};
+//! use crate::components::ui::{Card, CardVariant, Modal, ModalSize, DropdownMenu};
 //! ```
 
 pub mod card;
@@ -23,6 +23,9 @@ pub mod skeleton;
 
 // Re-exports for convenient access
 pub use card::{Card, CardVariant};
-pub use dialog::{ConfirmDialog, Modal};
+pub use dialog::{ConfirmDialog, Modal, ModalBody, ModalFooter, ModalHeader, ModalSize};
 pub use dropdown::{DropdownMenu, DropdownMenuDivider, DropdownMenuItem};
-pub use skeleton::{Skeleton, SkeletonAvatar, SkeletonCard, SkeletonText};
+pub use skeleton::{
+    Skeleton, SkeletonAvatar, SkeletonBadge, SkeletonCard, SkeletonGraph, SkeletonStat,
+    SkeletonText,
+};

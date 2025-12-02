@@ -18,7 +18,6 @@
 //!   └─ GitHub Issue: #114
 
 use leptos::ev;
-use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::animation_context::use_animation_context_or_default;
@@ -49,7 +48,7 @@ where
 {
     let is_open = RwSignal::new(false);
     let animation_ctx = use_animation_context_or_default();
-    let container_ref = NodeRef::<html::Div>::new();
+    // TODO: [IMPROVE] container_refは将来的にフォーカストラップ実装時に使用予定
 
     // Provide context for child components (DropdownMenuItem)
     provide_context(DropdownMenuContext { is_open });
@@ -99,7 +98,7 @@ where
     };
 
     view! {
-        <div class="relative" node_ref=container_ref>
+        <div class="relative">
             // Overlay for click outside detection (only when menu is open)
             {move || {
                 if is_open.get() {

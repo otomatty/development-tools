@@ -13,7 +13,7 @@
 use leptos::prelude::*;
 
 /// Card style variants
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum CardVariant {
     /// Default card style (bg-dt-card)
     #[default]
@@ -92,13 +92,15 @@ pub fn Card(
 ) -> impl IntoView {
     let padding_class = if padding { "p-6" } else { "" };
 
+    // Filter empty classes and join to avoid extra whitespace
+    let classes = [variant.classes(), padding_class, class]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
     view! {
-        <div class=format!(
-            "{} {} {}",
-            variant.classes(),
-            padding_class,
-            class
-        )>
+        <div class=classes>
             {children()}
         </div>
     }
@@ -114,6 +116,15 @@ mod tests {
         assert!(CardVariant::Gaming.classes().contains("backdrop-blur-sm"));
         assert!(CardVariant::GamingCyan.classes().contains("gm-accent-cyan"));
         assert!(CardVariant::GamingGold.classes().contains("gm-accent-gold"));
+        assert!(CardVariant::GamingPurple
+            .classes()
+            .contains("gm-accent-purple"));
         assert!(CardVariant::Elevated.classes().contains("shadow-lg"));
+        assert_eq!(CardVariant::Ghost.classes(), "rounded-lg");
+    }
+
+    #[test]
+    fn test_card_variant_default() {
+        assert_eq!(CardVariant::default(), CardVariant::Default);
     }
 }

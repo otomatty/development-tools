@@ -1,18 +1,19 @@
 //! Confirmation dialog component
 //!
 //! A reusable confirmation dialog component for confirming actions.
-//! Built on top of the Modal component.
 //!
 //! DEPENDENCY MAP:
 //!
 //! Parents (Files that import this component):
 //!   └─ src/components/ui/dialog/mod.rs
 //!
-//! Dependencies:
-//!   └─ src/components/ui/dialog/modal.rs
-//!
 //! Related Documentation:
 //!   └─ Issue: GitHub Issue #114
+//!
+//! TODO: [DEBT] このコンポーネントをModalコンポーネントベースにリファクタリングする
+//! 現在はオーバーレイロジックが重複しているため、Modal + ModalHeader/Body/Footer を
+//! 使用した実装に置き換えることで、コードの重複を削減し一貫性を高める。
+//! See: GitHub PR #119 review comments
 
 use leptos::prelude::*;
 
@@ -23,7 +24,7 @@ use leptos::prelude::*;
 /// # Example
 ///
 /// ```rust
-/// let (show_dialog, set_show_dialog) = signal(false);
+/// let visible = RwSignal::new(false);
 ///
 /// view! {
 ///     <ConfirmDialog
@@ -31,12 +32,12 @@ use leptos::prelude::*;
 ///         message="Are you sure you want to delete this item?".to_string()
 ///         confirm_label="Delete".to_string()
 ///         cancel_label="Cancel".to_string()
-///         visible=show_dialog
+///         visible=visible.read_only()
 ///         on_confirm=move |_| {
 ///             // Handle confirmation
-///             set_show_dialog.set(false);
+///             visible.set(false);
 ///         }
-///         on_cancel=move |_| set_show_dialog.set(false)
+///         on_cancel=move |_| visible.set(false)
 ///     />
 /// }
 /// ```
@@ -61,11 +62,6 @@ where
     F: Fn(leptos::ev::MouseEvent) + 'static + Clone + Send + Sync,
     G: Fn(leptos::ev::MouseEvent) + 'static + Clone + Send + Sync,
 {
-    let title = title.clone();
-    let message = message.clone();
-    let confirm_label = confirm_label.clone();
-    let cancel_label = cancel_label.clone();
-
     view! {
         <Show when=move || visible.get()>
             <div

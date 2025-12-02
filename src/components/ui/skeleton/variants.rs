@@ -147,6 +147,14 @@ pub fn SkeletonBadge() -> impl IntoView {
 }
 
 /// Skeleton for contribution graph
+///
+/// **Performance Note**: Rendering large graphs (e.g., 52 weeks × 7 days = 364 elements)
+/// may impact initial render performance. Consider using smaller values for better
+/// performance if the full year view is not required.
+///
+/// # Props
+/// - `weeks`: Number of weeks to show (default: 52 for full year)
+/// - `days`: Number of days per week (default: 7)
 #[component]
 pub fn SkeletonGraph(
     /// Number of weeks to show (default: 52 for full year)

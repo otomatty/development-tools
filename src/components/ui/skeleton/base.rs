@@ -54,6 +54,9 @@ pub fn Skeleton(
                 class
             )
             style=format!("width: {}; height: {};", width, height)
+            role="status"
+            aria-busy="true"
+            aria-label="Loading..."
         />
     }
 }
