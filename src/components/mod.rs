@@ -1,7 +1,5 @@
 pub mod animated_emoji;
 pub mod animation_context;
-pub mod confirm_dialog;
-pub mod dropdown_menu;
 pub mod home;
 pub mod icons;
 pub mod issues;
@@ -12,8 +10,14 @@ pub mod option_form;
 pub mod result_view;
 pub mod settings;
 pub mod sidebar;
-pub mod skeleton;
 pub mod tool_detail;
+pub mod ui;
+
+// Legacy modules - kept for backward compatibility
+// TODO: [DEBT] Remove these re-exports after migrating all usages to ui/ path
+pub mod confirm_dialog;
+pub mod dropdown_menu;
+pub mod skeleton;
 
 pub use animated_emoji::{
     AnimatedEmoji, AnimatedEmojiWithIntensity, AnimationIntensity, EmojiType,
@@ -33,3 +37,6 @@ pub use network_status::{
 pub use result_view::ResultView;
 pub use sidebar::Sidebar;
 pub use tool_detail::ToolDetail;
+
+// UI components (new paths)
+pub use ui::{Card, CardVariant, Modal};
