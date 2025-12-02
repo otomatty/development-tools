@@ -21,7 +21,9 @@ impl Database {
         let breakdown_json = breakdown
             .map(|b| serde_json::to_string(b))
             .transpose()
-            .map_err(|e| DatabaseError::Query(format!("Failed to serialize XP breakdown: {}", e)))?;
+            .map_err(|e| {
+                DatabaseError::Query(format!("Failed to serialize XP breakdown: {}", e))
+            })?;
 
         let id = sqlx::query(
             r#"

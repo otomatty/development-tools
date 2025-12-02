@@ -114,11 +114,7 @@ fn format_absolute_time(created_at: &str) -> String {
 
     format!(
         "{}/{:02}/{:02} {:02}:{:02}",
-        year,
-        month,
-        day,
-        hours,
-        minutes
+        year, month, day, hours, minutes
     )
 }
 
@@ -509,9 +505,7 @@ pub fn XpHistoryPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
     let (error, set_error) = signal(Option::<String>::None);
 
     // Calculate total XP from history
-    let total_xp = Memo::new(move |_| {
-        xp_history.get().iter().map(|e| e.xp_amount).sum::<i32>()
-    });
+    let total_xp = Memo::new(move |_| xp_history.get().iter().map(|e| e.xp_amount).sum::<i32>());
 
     // Load XP history on mount
     spawn_local(async move {

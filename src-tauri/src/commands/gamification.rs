@@ -73,7 +73,14 @@ pub async fn add_xp(
     // Record XP gain (no breakdown for manual XP additions)
     state
         .db
-        .record_xp_gain(user.id, &action_type, amount, description.as_deref(), None, None)
+        .record_xp_gain(
+            user.id,
+            &action_type,
+            amount,
+            description.as_deref(),
+            None,
+            None,
+        )
         .await
         .map_err(|e| e.to_string())?;
 
