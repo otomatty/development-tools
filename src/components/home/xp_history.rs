@@ -97,46 +97,151 @@ fn format_relative_time(created_at: &str) -> String {
     }
 }
 
-/// XP History item component
+/// Format absolute time from ISO8601 string
+fn format_absolute_time(created_at: &str) -> String {
+    let created_date = js_sys::Date::new(&wasm_bindgen::JsValue::from_str(created_at));
+    let created_time = created_date.get_time();
+
+    if created_time.is_nan() {
+        return "不明".to_string();
+    }
+
+    let year = created_date.get_full_year() as i32;
+    let month = created_date.get_month() as i32 + 1; // 0-indexed
+    let day = created_date.get_date() as i32;
+    let hours = created_date.get_hours() as i32;
+    let minutes = created_date.get_minutes() as i32;
+
+    format!(
+        "{}/{:02}/{:02} {:02}:{:02}",
+        year,
+        month,
+        day,
+        hours,
+        minutes
+    )
+}
+
+/// XP History item component with accordion
 #[component]
 fn XpHistoryItem(entry: XpHistoryEntry) -> impl IntoView {
+    let (expanded, set_expanded) = signal(false);
+
     let icon = get_action_icon(&entry.action_type);
     let action_name = get_action_display_name(&entry.action_type);
     let color_class = get_action_color_class(&entry.action_type);
     let relative_time = format_relative_time(&entry.created_at);
+    let absolute_time = format_absolute_time(&entry.created_at);
     let xp_amount = entry.xp_amount;
     let description = entry.description.clone();
+    let description_for_expanded = entry.description.clone();
+    let action_type = entry.action_type.clone();
+    let github_event_id = entry.github_event_id.clone();
+    let entry_id = entry.id;
 
     view! {
-        <div class="flex items-center gap-4 p-4 bg-gm-bg-card/50 rounded-xl border border-slate-700/30 hover:border-gm-accent-cyan/30 transition-all duration-200">
-            // Icon
-            <div class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-slate-800/50 rounded-xl text-2xl">
-                {icon}
-            </div>
-
-            // Content
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                    <span class=format!("font-medium {}", color_class)>
-                        {action_name}
-                    </span>
-                    <span class="text-dt-text-sub text-sm">
-                        {relative_time}
-                    </span>
+        <div class="bg-gm-bg-card/50 rounded-xl border border-slate-700/30 hover:border-gm-accent-cyan/30 transition-all duration-200 overflow-hidden">
+            // Main row (clickable)
+            <button
+                class="w-full flex items-center gap-4 p-4 text-left cursor-pointer"
+                on:click=move |_| set_expanded.update(|e| *e = !*e)
+            >
+                // Icon
+                <div class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-slate-800/50 rounded-xl text-2xl">
+                    {icon}
                 </div>
-                {description.map(|desc| view! {
-                    <p class="text-dt-text-sub text-sm mt-1 truncate">
-                        {desc}
-                    </p>
-                })}
-            </div>
 
-            // XP Amount
-            <div class="flex-shrink-0 text-right">
-                <span class="text-xl font-gaming-mono font-bold text-gm-success">
-                    "+" {xp_amount}
-                </span>
-                <span class="text-gm-accent-cyan text-sm ml-1">"XP"</span>
+                // Content
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class=format!("font-medium {}", color_class)>
+                            {action_name}
+                        </span>
+                        <span class="text-dt-text-sub text-sm">
+                            {relative_time}
+                        </span>
+                    </div>
+                    {description.clone().map(|desc| view! {
+                        <p class="text-dt-text-sub text-sm mt-1 truncate">
+                            {desc}
+                        </p>
+                    })}
+                </div>
+
+                // XP Amount
+                <div class="flex-shrink-0 text-right">
+                    <span class="text-xl font-gaming-mono font-bold text-gm-success">
+                        "+" {xp_amount}
+                    </span>
+                    <span class="text-gm-accent-cyan text-sm ml-1">"XP"</span>
+                </div>
+
+                // Expand indicator
+                <div class="flex-shrink-0 text-dt-text-sub transition-transform duration-200"
+                    class=("rotate-180", move || expanded.get())
+                >
+                    <Icon name="chevron-down".to_string() class="w-5 h-5".to_string() />
+                </div>
+            </button>
+
+            // Expanded details (using CSS for show/hide to avoid closure issues)
+            <div
+                class="overflow-hidden transition-all duration-200"
+                class=("max-h-0", move || !expanded.get())
+                class=("max-h-96", move || expanded.get())
+            >
+                <div class="px-4 pb-4 pt-0 border-t border-slate-700/30 bg-slate-800/20">
+                    <div class="pt-4 space-y-3">
+                        // Detail grid
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            // Action Type
+                            <div>
+                                <div class="text-dt-text-sub text-xs mb-1">"アクションタイプ"</div>
+                                <div class="text-dt-text font-mono">{action_type.clone()}</div>
+                            </div>
+
+                            // XP Amount
+                            <div>
+                                <div class="text-dt-text-sub text-xs mb-1">"獲得XP"</div>
+                                <div class="text-gm-success font-gaming-mono font-bold">
+                                    "+" {xp_amount} " XP"
+                                </div>
+                            </div>
+
+                            // Absolute Time
+                            <div>
+                                <div class="text-dt-text-sub text-xs mb-1">"取得日時"</div>
+                                <div class="text-dt-text">{absolute_time}</div>
+                            </div>
+
+                            // Entry ID
+                            <div>
+                                <div class="text-dt-text-sub text-xs mb-1">"履歴ID"</div>
+                                <div class="text-dt-text font-mono text-xs">{entry_id}</div>
+                            </div>
+                        </div>
+
+                        // GitHub Event ID (if exists)
+                        {github_event_id.map(|event_id| view! {
+                            <div>
+                                <div class="text-dt-text-sub text-xs mb-1">"GitHub Event ID"</div>
+                                <div class="text-dt-text font-mono text-xs break-all bg-slate-900/50 p-2 rounded">
+                                    {event_id}
+                                </div>
+                            </div>
+                        })}
+
+                        // Description (full, if exists)
+                        {description_for_expanded.map(|desc| view! {
+                            <div>
+                                <div class="text-dt-text-sub text-xs mb-1">"詳細"</div>
+                                <div class="text-dt-text text-sm bg-slate-900/50 p-2 rounded">
+                                    {desc}
+                                </div>
+                            </div>
+                        })}
+                    </div>
+                </div>
             </div>
         </div>
     }
