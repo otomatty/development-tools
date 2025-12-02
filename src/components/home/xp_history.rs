@@ -1,0 +1,278 @@
+//! XP History Page
+//!
+//! Displays the user's XP acquisition history.
+//!
+//! DEPENDENCY MAP:
+//!
+//! Parents (Files that import this component):
+//!   └─ src/app.rs
+//! Related Documentation:
+//!   ├─ Spec: ./xp_history.spec.md
+//!   └─ Types: src/types/gamification.rs
+
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+
+use crate::components::icons::Icon;
+use crate::tauri_api;
+use crate::types::{AppPage, XpHistoryEntry};
+
+/// Get icon for action type
+fn get_action_icon(action_type: &str) -> &'static str {
+    match action_type {
+        "commit" => "📝",
+        "pull_request" => "🔀",
+        "pull_request_merged" => "✅",
+        "review" => "👀",
+        "issue" => "📋",
+        "issue_closed" => "✔️",
+        "streak_bonus" => "🔥",
+        "star" => "⭐",
+        _ => "💫",
+    }
+}
+
+/// Get display name for action type
+fn get_action_display_name(action_type: &str) -> &'static str {
+    match action_type {
+        "commit" => "コミット",
+        "pull_request" => "PR作成",
+        "pull_request_merged" => "PRマージ",
+        "review" => "レビュー",
+        "issue" => "Issue作成",
+        "issue_closed" => "Issueクローズ",
+        "streak_bonus" => "ストリークボーナス",
+        "star" => "スター獲得",
+        _ => "その他",
+    }
+}
+
+/// Get color class for action type
+fn get_action_color_class(action_type: &str) -> &'static str {
+    match action_type {
+        "commit" => "text-blue-400",
+        "pull_request" => "text-purple-400",
+        "pull_request_merged" => "text-green-400",
+        "review" => "text-yellow-400",
+        "issue" => "text-orange-400",
+        "issue_closed" => "text-emerald-400",
+        "streak_bonus" => "text-red-400",
+        "star" => "text-amber-400",
+        _ => "text-gray-400",
+    }
+}
+
+/// Format relative time from ISO8601 string
+fn format_relative_time(created_at: &str) -> String {
+    // Parse the date (handle both RFC3339 and simple date format)
+    let now = js_sys::Date::new_0();
+    let today = js_sys::Date::new_0();
+    today.set_hours(0);
+    today.set_minutes(0);
+    today.set_seconds(0);
+    today.set_milliseconds(0);
+
+    let created_date = js_sys::Date::new(&wasm_bindgen::JsValue::from_str(created_at));
+    let created_time = created_date.get_time();
+
+    if created_time.is_nan() {
+        return "不明".to_string();
+    }
+
+    let diff_ms = now.get_time() - created_time;
+    let diff_days = (diff_ms / (1000.0 * 60.0 * 60.0 * 24.0)).floor() as i32;
+
+    if diff_days == 0 {
+        "今日".to_string()
+    } else if diff_days == 1 {
+        "昨日".to_string()
+    } else if diff_days < 7 {
+        format!("{}日前", diff_days)
+    } else if diff_days < 30 {
+        format!("{}週間前", diff_days / 7)
+    } else if diff_days < 365 {
+        format!("{}ヶ月前", diff_days / 30)
+    } else {
+        format!("{}年前", diff_days / 365)
+    }
+}
+
+/// XP History item component
+#[component]
+fn XpHistoryItem(entry: XpHistoryEntry) -> impl IntoView {
+    let icon = get_action_icon(&entry.action_type);
+    let action_name = get_action_display_name(&entry.action_type);
+    let color_class = get_action_color_class(&entry.action_type);
+    let relative_time = format_relative_time(&entry.created_at);
+    let xp_amount = entry.xp_amount;
+    let description = entry.description.clone();
+
+    view! {
+        <div class="flex items-center gap-4 p-4 bg-gm-bg-card/50 rounded-xl border border-slate-700/30 hover:border-gm-accent-cyan/30 transition-all duration-200">
+            // Icon
+            <div class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-slate-800/50 rounded-xl text-2xl">
+                {icon}
+            </div>
+
+            // Content
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class=format!("font-medium {}", color_class)>
+                        {action_name}
+                    </span>
+                    <span class="text-dt-text-sub text-sm">
+                        {relative_time}
+                    </span>
+                </div>
+                {description.map(|desc| view! {
+                    <p class="text-dt-text-sub text-sm mt-1 truncate">
+                        {desc}
+                    </p>
+                })}
+            </div>
+
+            // XP Amount
+            <div class="flex-shrink-0 text-right">
+                <span class="text-xl font-gaming-mono font-bold text-gm-success">
+                    "+" {xp_amount}
+                </span>
+                <span class="text-gm-accent-cyan text-sm ml-1">"XP"</span>
+            </div>
+        </div>
+    }
+}
+
+/// Loading skeleton for XP history items
+#[component]
+fn XpHistorySkeleton() -> impl IntoView {
+    view! {
+        <div class="space-y-3">
+            {(0..5).map(|_| view! {
+                <div class="flex items-center gap-4 p-4 bg-gm-bg-card/50 rounded-xl border border-slate-700/30 animate-pulse">
+                    <div class="w-12 h-12 bg-slate-700/50 rounded-xl"></div>
+                    <div class="flex-1 space-y-2">
+                        <div class="h-4 bg-slate-700/50 rounded w-24"></div>
+                        <div class="h-3 bg-slate-700/50 rounded w-48"></div>
+                    </div>
+                    <div class="h-6 bg-slate-700/50 rounded w-16"></div>
+                </div>
+            }).collect_view()}
+        </div>
+    }
+}
+
+/// Empty state component
+#[component]
+fn EmptyState() -> impl IntoView {
+    view! {
+        <div class="flex flex-col items-center justify-center py-16 text-center">
+            <div class="w-20 h-20 mb-6 flex items-center justify-center bg-slate-800/50 rounded-full text-4xl">
+                "📜"
+            </div>
+            <h3 class="text-xl font-gaming font-bold text-dt-text mb-2">
+                "まだ履歴がありません"
+            </h3>
+            <p class="text-dt-text-sub max-w-md">
+                "GitHubで活動すると、ここにXP獲得履歴が表示されます。"
+                <br />
+                "コミット、PR作成、レビューなどでXPを獲得しましょう！"
+            </p>
+        </div>
+    }
+}
+
+/// XP History Page component
+#[component]
+pub fn XpHistoryPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
+    // State
+    let (xp_history, set_xp_history) = signal(Vec::<XpHistoryEntry>::new());
+    let (loading, set_loading) = signal(true);
+    let (error, set_error) = signal(Option::<String>::None);
+
+    // Calculate total XP from history
+    let total_xp = Memo::new(move |_| {
+        xp_history.get().iter().map(|e| e.xp_amount).sum::<i32>()
+    });
+
+    // Load XP history on mount
+    spawn_local(async move {
+        match tauri_api::get_xp_history(Some(20)).await {
+            Ok(history) => {
+                set_xp_history.set(history);
+            }
+            Err(e) => {
+                web_sys::console::error_1(&format!("Failed to load XP history: {}", e).into());
+                set_error.set(Some(format!("履歴の読み込みに失敗しました: {}", e)));
+            }
+        }
+        set_loading.set(false);
+    });
+
+    view! {
+        <div class="flex-1 overflow-y-auto">
+            <div class="max-w-4xl mx-auto p-6">
+                // Header
+                <div class="flex items-center gap-4 mb-8">
+                    // Back button
+                    <button
+                        class="p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 text-dt-text-sub hover:text-dt-text transition-colors"
+                        on:click=move |_| set_current_page.set(AppPage::Home)
+                    >
+                        <Icon name="arrow-left".to_string() class="w-5 h-5".to_string() />
+                    </button>
+
+                    <div class="flex-1">
+                        <h1 class="text-2xl font-gaming font-bold text-dt-text flex items-center gap-3">
+                            <span class="text-3xl">"📜"</span>
+                            "XP獲得履歴"
+                        </h1>
+                        <p class="text-dt-text-sub mt-1">
+                            "最近のXP獲得履歴を確認できます"
+                        </p>
+                    </div>
+
+                    // Total XP badge (only show when not loading and has data)
+                    <Show when=move || !loading.get() && !xp_history.get().is_empty()>
+                        <div class="px-4 py-2 bg-gm-bg-card rounded-xl border border-gm-accent-cyan/30">
+                            <div class="text-xs text-dt-text-sub">"表示中の合計"</div>
+                            <div class="text-lg font-gaming-mono font-bold text-gm-success">
+                                "+" {move || total_xp.get()} " XP"
+                            </div>
+                        </div>
+                    </Show>
+                </div>
+
+                // Error state
+                <Show when=move || error.get().is_some()>
+                    <div class="p-4 mb-6 bg-red-500/10 border border-red-500/30 rounded-xl">
+                        <div class="flex items-center gap-3 text-red-400">
+                            <span class="text-xl">"⚠️"</span>
+                            <span>{move || error.get().unwrap_or_default()}</span>
+                        </div>
+                    </div>
+                </Show>
+
+                // Content
+                <Show
+                    when=move || !loading.get()
+                    fallback=move || view! { <XpHistorySkeleton /> }
+                >
+                    <Show
+                        when=move || !xp_history.get().is_empty()
+                        fallback=move || view! { <EmptyState /> }
+                    >
+                        <div class="space-y-3">
+                            <For
+                                each=move || xp_history.get()
+                                key=|entry| entry.id
+                                children=move |entry| {
+                                    view! { <XpHistoryItem entry=entry /> }
+                                }
+                            />
+                        </div>
+                    </Show>
+                </Show>
+            </div>
+        </div>
+    }
+}

@@ -23,7 +23,7 @@ pub use animation_context::{
 };
 pub use confirm_dialog::ConfirmDialog;
 pub use dropdown_menu::{DropdownMenu, DropdownMenuDivider, DropdownMenuItem};
-pub use home::HomePage;
+pub use home::{HomePage, XpHistoryPage};
 pub use issues::{ProjectDashboard, ProjectsPage};
 pub use log_viewer::LogViewer;
 pub use mock_server::MockServerPage;

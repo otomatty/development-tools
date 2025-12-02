@@ -9,6 +9,7 @@ pub mod login_card;
 pub mod profile_card;
 pub mod skeleton;
 pub mod stats_display;
+pub mod xp_history;
 pub mod xp_notification;
 
 pub use badge_grid::BadgeGrid;
@@ -18,6 +19,7 @@ pub use login_card::{LoginCard, LoginState};
 pub use profile_card::ProfileCard;
 pub use skeleton::HomeSkeleton;
 pub use stats_display::StatsDisplay;
+pub use xp_history::XpHistoryPage;
 pub use xp_notification::{LevelUpModal, MultipleBadgesNotification, XpNotification};
 
 use leptos::prelude::*;
@@ -711,6 +713,18 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                             on_logout=move |e| on_logout.run(e)
                             on_settings=move |_| set_current_page.set(AppPage::Settings)
                         />
+
+                        // Quick Actions
+                        <div class="flex justify-end">
+                            <button
+                                class="flex items-center gap-2 px-4 py-2 text-sm text-dt-text-sub hover:text-gm-accent-cyan transition-colors"
+                                on:click=move |_| set_current_page.set(AppPage::XpHistory)
+                            >
+                                <span>"📜"</span>
+                                <span>"XP獲得履歴を見る"</span>
+                                <span class="text-xs">"→"</span>
+                            </button>
+                        </div>
 
                         // Stats and Challenges Grid
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

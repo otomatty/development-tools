@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use crate::components::settings::SettingsPage;
 use crate::components::{
     AnimationContext, HomePage, LogViewer, NetworkStatusProvider, OfflineBanner, ProjectDashboard,
-    ProjectsPage, ResultView, Sidebar, ToolDetail,
+    ProjectsPage, ResultView, Sidebar, ToolDetail, XpHistoryPage,
 };
 use crate::tauri_api;
 use crate::types::{
@@ -294,6 +294,10 @@ pub fn App() -> impl IntoView {
                                 set_auth_state=set_auth_state
                                 set_current_page=set_current_page
                             />
+                        }.into_any(),
+
+                        AppPage::XpHistory => view! {
+                            <XpHistoryPage set_current_page=set_current_page />
                         }.into_any(),
                     }}
                 </main>

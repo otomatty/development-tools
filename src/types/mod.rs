@@ -37,4 +37,5 @@ pub enum AppPage {
     ProjectDetail(i64),
     MockServer,
     Settings,
+    XpHistory,
 }
