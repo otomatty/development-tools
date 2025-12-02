@@ -104,11 +104,10 @@ fn sanitize_html(html: &str) -> String {
     // Define allowed attributes
     let mut tag_attributes = std::collections::HashMap::new();
 
-    // Links
+    // Links (rel is set via link_rel, not here)
     let mut a_attrs = HashSet::new();
     a_attrs.insert("href");
     a_attrs.insert("title");
-    a_attrs.insert("rel");
     tag_attributes.insert("a", a_attrs);
 
     // Images

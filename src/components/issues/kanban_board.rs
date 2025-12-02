@@ -13,9 +13,11 @@
 //!   └─ src/components/issues/issue_card.rs
 
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 use crate::components::icons::Icon;
 use crate::components::issues::{IssueClickEvent, StatusChangeEvent};
+use crate::tauri_api;
 use crate::types::issue::{IssueStatus, KanbanBoard as KanbanBoardType};
 use crate::types::CachedIssue;
 
@@ -540,16 +542,24 @@ fn IssueCardDraggable(
                         <Icon name="expand".to_string() class="w-4 h-4".to_string() />
                     </button>
                     // GitHub link
-                    <a
-                        href=issue_url.clone()
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    <button
                         class="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-all"
                         title="Open in GitHub"
-                        on:click=move |e: web_sys::MouseEvent| e.stop_propagation()
+                        on:click={
+                            let url = issue_url.clone();
+                            move |e: web_sys::MouseEvent| {
+                                e.stop_propagation();
+                                let url = url.clone();
+                                spawn_local(async move {
+                                    if let Err(e) = tauri_api::open_external_url(&url).await {
+                                        leptos::logging::log!("Failed to open URL: {}", e);
+                                    }
+                                });
+                            }
+                        }
                     >
                         <Icon name="github".to_string() class="w-4 h-4".to_string() />
-                    </a>
+                    </button>
                 </div>
             </div>
 
