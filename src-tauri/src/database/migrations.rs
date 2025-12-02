@@ -320,6 +320,16 @@ CREATE INDEX IF NOT EXISTS idx_cached_issues_status ON cached_issues(project_id,
 CREATE INDEX IF NOT EXISTS idx_cached_issues_number ON cached_issues(project_id, number);
 "#,
     },
+    Migration {
+        version: 8,
+        name: "add_xp_history_breakdown",
+        sql: r#"
+-- Add breakdown_json column to xp_history table
+-- This stores the detailed XP breakdown for each history entry
+-- Related: XP履歴の詳細内訳保存機能
+ALTER TABLE xp_history ADD COLUMN breakdown_json TEXT;
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

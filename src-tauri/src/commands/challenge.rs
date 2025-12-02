@@ -265,7 +265,7 @@ pub async fn update_challenge_progress(
 
     // Check if challenge was just completed (active -> completed transition)
     if updated.status == "completed" && original_challenge.status == "active" {
-        // Award XP for completing the challenge
+        // Award XP for completing the challenge (no breakdown for challenge completion)
         state
             .db
             .record_xp_gain(
@@ -273,6 +273,7 @@ pub async fn update_challenge_progress(
                 "challenge_completed",
                 updated.reward_xp,
                 Some(&format!("Completed {} challenge", updated.challenge_type)),
+                None,
                 None,
             )
             .await

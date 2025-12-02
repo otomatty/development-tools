@@ -346,7 +346,7 @@ pub async fn sync_github_stats(
 
     // Add XP if there's any gain
     let updated_stats = if total_xp_gained > 0 {
-        // Record activity XP gain
+        // Record activity XP gain with breakdown
         if xp_gained > 0 {
             state
                 .db
@@ -356,12 +356,13 @@ pub async fn sync_github_stats(
                     xp_gained,
                     Some("GitHub stats sync"),
                     None,
+                    Some(&xp_breakdown),
                 )
                 .await
                 .map_err(|e| e.to_string())?;
         }
 
-        // Record streak bonus XP
+        // Record streak bonus XP (no breakdown for streak bonus)
         if streak_bonus_xp > 0 {
             let description = if let Some(milestone) = streak_bonus_result.milestone_reached {
                 format!("{}日連続達成ボーナス！", milestone)
@@ -376,6 +377,7 @@ pub async fn sync_github_stats(
                     &XpActionType::StreakBonus.to_string(),
                     streak_bonus_xp,
                     Some(&description),
+                    None,
                     None,
                 )
                 .await
@@ -710,7 +712,7 @@ pub async fn sync_github_stats(
                         Ok(updated_challenge) => {
                             // Check if challenge was just completed (active -> completed transition)
                             if ch.status == "active" && updated_challenge.status == "completed" {
-                                // Award XP for completing the challenge
+                                // Award XP for completing the challenge (no breakdown for challenge completion)
                                 if let Err(e) = state
                                     .db
                                     .record_xp_gain(
@@ -721,6 +723,7 @@ pub async fn sync_github_stats(
                                             "Completed {} challenge",
                                             updated_challenge.challenge_type
                                         )),
+                                        None,
                                         None,
                                     )
                                     .await
