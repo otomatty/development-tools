@@ -114,12 +114,35 @@ fn format_absolute_time(created_at: &str) -> String {
 
     format!(
         "{}/{:02}/{:02} {:02}:{:02}",
-        year,
-        month,
-        day,
-        hours,
-        minutes
+        year, month, day, hours, minutes
     )
+}
+
+/// Get XP breakdown explanation for action type
+fn get_xp_explanation(action_type: &str) -> Option<Vec<(&'static str, &'static str, i32)>> {
+    match action_type {
+        "github_sync" => {
+            // For github_sync, we can show the possible breakdown based on XP rules
+            Some(vec![
+                ("📝", "コミット", 10),
+                ("🔀", "PR作成", 25),
+                ("✅", "PRマージ", 50),
+                ("📋", "Issue作成", 5),
+                ("✔️", "Issueクローズ", 10),
+                ("👀", "レビュー", 15),
+                ("⭐", "スター", 5),
+            ])
+        }
+        "commit" => Some(vec![("📝", "コミット", 10)]),
+        "pull_request" => Some(vec![("🔀", "PR作成", 25)]),
+        "pull_request_merged" => Some(vec![("✅", "PRマージ", 50)]),
+        "review" => Some(vec![("👀", "レビュー", 15)]),
+        "issue" => Some(vec![("📋", "Issue作成", 5)]),
+        "issue_closed" => Some(vec![("✔️", "Issueクローズ", 10)]),
+        "star" => Some(vec![("⭐", "スター", 5)]),
+        "streak_bonus" => None, // Streak bonus is percentage based
+        _ => None,
+    }
 }
 
 /// XP History item component with accordion
@@ -136,8 +159,12 @@ fn XpHistoryItem(entry: XpHistoryEntry) -> impl IntoView {
     let description = entry.description.clone();
     let description_for_expanded = entry.description.clone();
     let action_type = entry.action_type.clone();
+    let action_type_for_breakdown = entry.action_type.clone();
     let github_event_id = entry.github_event_id.clone();
     let entry_id = entry.id;
+    let is_github_sync = entry.action_type == "github_sync";
+    let is_streak_bonus = entry.action_type == "streak_bonus";
+    let breakdown = entry.breakdown.clone();
 
     view! {
         <div class="bg-gm-bg-card/50 rounded-xl border border-slate-700/30 hover:border-gm-accent-cyan/30 transition-all duration-200 overflow-hidden">
@@ -221,6 +248,189 @@ fn XpHistoryItem(entry: XpHistoryEntry) -> impl IntoView {
                             </div>
                         </div>
 
+                        // XP Breakdown - show actual data if available, otherwise show reference
+                        {if is_github_sync {
+                            if let Some(ref bd) = breakdown {
+                                // Show actual breakdown data from database
+                                Some(view! {
+                                    <div class="mt-4">
+                                        <div class="text-dt-text-sub text-xs mb-2">"XP計算内訳"</div>
+                                        <div class="bg-slate-900/50 rounded-lg p-3">
+                                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                                {(bd.commits_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"📝"</span>
+                                                        <span class="text-dt-text-sub">"コミット"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.commits_xp}</span>
+                                                    </div>
+                                                })}
+                                                {(bd.prs_created_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"🔀"</span>
+                                                        <span class="text-dt-text-sub">"PR作成"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.prs_created_xp}</span>
+                                                    </div>
+                                                })}
+                                                {(bd.prs_merged_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"✅"</span>
+                                                        <span class="text-dt-text-sub">"PRマージ"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.prs_merged_xp}</span>
+                                                    </div>
+                                                })}
+                                                {(bd.reviews_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"👀"</span>
+                                                        <span class="text-dt-text-sub">"レビュー"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.reviews_xp}</span>
+                                                    </div>
+                                                })}
+                                                {(bd.issues_created_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"📋"</span>
+                                                        <span class="text-dt-text-sub">"Issue作成"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.issues_created_xp}</span>
+                                                    </div>
+                                                })}
+                                                {(bd.issues_closed_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"✔️"</span>
+                                                        <span class="text-dt-text-sub">"Issueクローズ"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.issues_closed_xp}</span>
+                                                    </div>
+                                                })}
+                                                {(bd.stars_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"⭐"</span>
+                                                        <span class="text-dt-text-sub">"スター"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.stars_xp}</span>
+                                                    </div>
+                                                })}
+                                                {(bd.streak_bonus_xp > 0).then(|| view! {
+                                                    <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                        <span>"🔥"</span>
+                                                        <span class="text-dt-text-sub">"ストリーク"</span>
+                                                        <span class="text-gm-success font-mono ml-auto">"+" {bd.streak_bonus_xp}</span>
+                                                    </div>
+                                                })}
+                                            </div>
+                                            <div class="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-700/30">
+                                                <span class="text-dt-text-sub text-xs">"合計"</span>
+                                                <span class="text-gm-success font-gaming-mono font-bold">"+" {bd.total_xp} " XP"</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }.into_any())
+                            } else {
+                                // Fallback: show XP rate reference when breakdown data is not available
+                                Some(view! {
+                                    <div class="mt-4">
+                                        <div class="text-dt-text-sub text-xs mb-2">"XP計算内訳（単価参考）"</div>
+                                        <div class="bg-slate-900/50 rounded-lg p-3">
+                                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"📝"</span>
+                                                    <span class="text-dt-text-sub">"コミット"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"10"</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"🔀"</span>
+                                                    <span class="text-dt-text-sub">"PR作成"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"25"</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"✅"</span>
+                                                    <span class="text-dt-text-sub">"PRマージ"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"50"</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"👀"</span>
+                                                    <span class="text-dt-text-sub">"レビュー"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"15"</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"📋"</span>
+                                                    <span class="text-dt-text-sub">"Issue作成"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"5"</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"✔️"</span>
+                                                    <span class="text-dt-text-sub">"Issueクローズ"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"10"</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"⭐"</span>
+                                                    <span class="text-dt-text-sub">"スター"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"5"</span>
+                                                </div>
+                                                <div class="flex items-center gap-1.5 p-2 bg-slate-800/50 rounded">
+                                                    <span>"🔥"</span>
+                                                    <span class="text-dt-text-sub">"ストリーク"</span>
+                                                    <span class="text-gm-accent-cyan font-mono ml-auto">"%"</span>
+                                                </div>
+                                            </div>
+                                            <p class="text-dt-text-sub text-xs mt-2 italic">
+                                                "※ 過去の履歴のため詳細内訳は記録されていません"
+                                            </p>
+                                        </div>
+                                    </div>
+                                }.into_any())
+                            }
+                        } else {
+                            None
+                        }}
+
+                        // Single action XP explanation (not github_sync)
+                        {if !is_github_sync && !is_streak_bonus {
+                            get_xp_explanation(&action_type_for_breakdown).map(|rules| {
+                                let rule = rules.first();
+                                rule.map(|(icon, name, unit_xp)| {
+                                    let count = if *unit_xp > 0 { xp_amount / unit_xp } else { 0 };
+                                    view! {
+                                        <div class="mt-4">
+                                            <div class="text-dt-text-sub text-xs mb-2">"XP計算"</div>
+                                            <div class="bg-slate-900/50 rounded-lg p-3 flex items-center gap-3">
+                                                <span class="text-2xl">{*icon}</span>
+                                                <div class="flex-1">
+                                                    <div class="text-dt-text font-medium">{*name}</div>
+                                                    <div class="text-dt-text-sub text-xs">
+                                                        {format!("{} × {} = {} XP", count, unit_xp, xp_amount)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                            })
+                        })
+                    } else {
+                        None
+                    }}                        // Streak bonus explanation
+                        {if is_streak_bonus {
+                            Some(view! {
+                                <div class="mt-4">
+                                    <div class="text-dt-text-sub text-xs mb-2">"ストリークボーナス"</div>
+                                    <div class="bg-slate-900/50 rounded-lg p-3">
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-3xl">"🔥"</span>
+                                            <div class="flex-1">
+                                                <div class="text-gm-warning font-bold">
+                                                    "+" {xp_amount} " XP"
+                                                </div>
+                                                <div class="text-dt-text-sub text-xs mt-1">
+                                                    "連続活動日数に応じたボーナスXP"
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <p class="text-dt-text-sub text-xs mt-2 italic">
+                                            "※ 最大10日間で+10%のボーナス（累積）"
+                                        </p>
+                                    </div>
+                                </div>
+                            })
+                        } else {
+                            None
+                        }}
+
                         // GitHub Event ID (if exists)
                         {github_event_id.map(|event_id| view! {
                             <div>
@@ -295,9 +505,7 @@ pub fn XpHistoryPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
     let (error, set_error) = signal(Option::<String>::None);
 
     // Calculate total XP from history
-    let total_xp = Memo::new(move |_| {
-        xp_history.get().iter().map(|e| e.xp_amount).sum::<i32>()
-    });
+    let total_xp = Memo::new(move |_| xp_history.get().iter().map(|e| e.xp_amount).sum::<i32>());
 
     // Load XP history on mount
     spawn_local(async move {

@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# pre-commit hook for development-tools
+# Runs format check before commit
+#
+
+echo "🔍 Running pre-commit checks..."
+
+# Check if cargo is available
+if ! command -v cargo &> /dev/null; then
+    echo "❌ cargo not found. Please install Rust."
+    exit 1
+fi
+
+# Run cargo fmt check
+echo "📝 Checking code format..."
+if ! cargo fmt -- --check 2>/dev/null; then
+    echo ""
+    echo "❌ Format check failed!"
+    echo ""
+    echo "Running 'cargo fmt' to fix..."
+    cargo fmt
+    echo ""
+    echo "✅ Code formatted. Please review the changes and commit again:"
+    echo "   git add -A && git commit"
+    echo ""
+    exit 1
+fi
+
+echo "✅ Format check passed!"
+echo ""
+
+exit 0

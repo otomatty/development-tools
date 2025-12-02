@@ -94,6 +94,9 @@ cargo install tauri-cli
 git clone https://github.com/otomatty/development-tools.git
 cd development-tools
 
+# Git hooksのセットアップ（初回のみ）
+./scripts/setup-hooks.sh
+
 # 依存関係のインストール
 bun install
 # または

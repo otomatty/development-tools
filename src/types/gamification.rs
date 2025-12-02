@@ -168,6 +168,7 @@ pub struct XpHistoryEntry {
     pub xp_amount: i32,
     pub description: Option<String>,
     pub github_event_id: Option<String>,
+    pub breakdown: Option<XpBreakdown>,
     pub created_at: String,
 }
 
