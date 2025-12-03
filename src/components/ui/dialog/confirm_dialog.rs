@@ -1,25 +1,26 @@
 //! Confirmation dialog component
 //!
 //! A reusable confirmation dialog component for confirming actions.
+//! Built on top of the Modal component.
 //!
 //! DEPENDENCY MAP:
 //!
 //! Parents (Files that import this component):
 //!   └─ src/components/ui/dialog/mod.rs
 //!
+//! Dependencies:
+//!   └─ src/components/ui/dialog/modal.rs
+//!
 //! Related Documentation:
 //!   └─ Issue: GitHub Issue #114
-//!
-//! TODO: [DEBT] このコンポーネントをModalコンポーネントベースにリファクタリングする
-//! 現在はオーバーレイロジックが重複しているため、Modal + ModalHeader/Body/Footer を
-//! 使用した実装に置き換えることで、コードの重複を削減し一貫性を高める。
-//! See: GitHub PR #119 review comments
 
+use super::modal::{Modal, ModalBody, ModalFooter, ModalHeader, ModalSize};
 use leptos::prelude::*;
 
 /// Confirmation dialog component
 ///
 /// A specialized modal for confirming user actions with confirm/cancel buttons.
+/// Built on top of the Modal component for consistent behavior.
 ///
 /// # Example
 ///
@@ -57,52 +58,62 @@ pub fn ConfirmDialog<F, G>(
     on_confirm: F,
     /// Callback when cancel button is clicked
     on_cancel: G,
+    /// Whether to close on overlay click (default: false for confirm dialogs)
+    #[prop(default = false)]
+    close_on_overlay: bool,
 ) -> impl IntoView
 where
     F: Fn(leptos::ev::MouseEvent) + 'static + Clone + Send + Sync,
     G: Fn(leptos::ev::MouseEvent) + 'static + Clone + Send + Sync,
 {
+    // Clone values for use in the view closure (Modal uses ChildrenFn which may call children multiple times)
+    let title = StoredValue::new(title);
+    let message = StoredValue::new(message);
+    let confirm_label = StoredValue::new(confirm_label);
+    let cancel_label = StoredValue::new(cancel_label);
+    let on_confirm = StoredValue::new(on_confirm);
+    let on_cancel = StoredValue::new(on_cancel);
+
     view! {
-        <Show when=move || visible.get()>
-            <div
-                class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="confirm-dialog-title"
-                aria-describedby="confirm-dialog-message"
-            >
-                <div
-                    id="confirm-dialog"
-                    class="bg-gm-bg-card rounded-2xl border border-gm-accent-cyan/20 shadow-lg p-6 max-w-md w-full mx-4"
+        <Modal
+            visible=visible
+            on_close=move || {
+                // No-op: ConfirmDialog requires explicit confirm/cancel button clicks
+            }
+            size=ModalSize::Medium
+            close_on_overlay=close_on_overlay
+            close_on_escape=false
+        >
+            <ModalHeader>
+                <h3
+                    id="confirm-dialog-title"
+                    class="text-xl font-gaming font-bold text-white"
                 >
-                    <h3
-                        id="confirm-dialog-title"
-                        class="text-xl font-gaming font-bold text-white mb-4"
-                    >
-                        {title.clone()}
-                    </h3>
-                    <p
-                        id="confirm-dialog-message"
-                        class="text-dt-text-sub mb-6"
-                    >
-                        {message.clone()}
-                    </p>
-                    <div class="flex gap-3 justify-end">
-                        <button
-                            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
-                            on:click=on_cancel.clone()
-                        >
-                            {cancel_label.clone()}
-                        </button>
-                        <button
-                            class="px-4 py-2 rounded-lg bg-gm-error hover:bg-red-600 text-white transition-colors"
-                            on:click=on_confirm.clone()
-                        >
-                            {confirm_label.clone()}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </Show>
+                    {title.get_value()}
+                </h3>
+            </ModalHeader>
+            <ModalBody>
+                <p
+                    id="confirm-dialog-message"
+                    class="text-dt-text-sub"
+                >
+                    {message.get_value()}
+                </p>
+            </ModalBody>
+            <ModalFooter>
+                <button
+                    class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+                    on:click=move |ev| on_cancel.get_value()(ev)
+                >
+                    {cancel_label.get_value()}
+                </button>
+                <button
+                    class="px-4 py-2 rounded-lg bg-gm-error hover:bg-red-600 text-white transition-colors"
+                    on:click=move |ev| on_confirm.get_value()(ev)
+                >
+                    {confirm_label.get_value()}
+                </button>
+            </ModalFooter>
+        </Modal>
     }
 }
