@@ -13,7 +13,7 @@
 use leptos::prelude::*;
 
 /// Loading size
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum LoadingSize {
     Small,
     #[default]

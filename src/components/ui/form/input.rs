@@ -130,6 +130,9 @@ pub fn Input(
         base_class, size_class, disabled_class, extra_class
     );
 
+    // Clone id for use in the view (avoid lifetime issues)
+    let id_str = id.unwrap_or_default();
+
     view! {
         <input
             type=input_type.as_str()
@@ -137,7 +140,7 @@ pub fn Input(
             placeholder=placeholder.unwrap_or("")
             disabled=disabled
             name=name.unwrap_or("")
-            id=id.as_deref().unwrap_or("")
+            id=id_str
             prop:value=move || value.get()
             on:input=move |ev| {
                 let new_value = event_target_value(&ev);
@@ -219,7 +222,7 @@ pub fn LabeledInput(
                 placeholder=placeholder.unwrap_or("")
                 disabled=disabled
                 size=size
-                id=Some(input_id)
+                id=input_id
             />
         </div>
     }
