@@ -16,6 +16,7 @@
 //!   └─ docs/03_plans/issue-management/20251201_implementation_plan.md
 
 mod create_issue_modal;
+mod create_project_modal;
 mod issue_card;
 mod issue_detail_modal;
 mod kanban_board;
@@ -24,6 +25,7 @@ mod project_dashboard;
 mod projects_page;
 
 pub use create_issue_modal::CreateIssueModal;
+pub use create_project_modal::CreateProjectModal;
 pub use issue_card::{IssueCard, IssueClickEvent, StatusChangeEvent};
 pub use issue_detail_modal::{IssueDetailModal, IssueDetailStatusChange};
 pub use kanban_board::KanbanBoard;
