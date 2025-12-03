@@ -6,8 +6,8 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
-use super::toast::{InlineToast, ToastType};
-use super::toggle_switch::ToggleSwitch;
+use crate::components::ui::feedback::{InlineToast, ToastType};
+use crate::components::ui::form::ToggleSwitch;
 use crate::tauri_api;
 use crate::types::{SyncIntervalOption, UpdateSettingsRequest, UserSettings};
 

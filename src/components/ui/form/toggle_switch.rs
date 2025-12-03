@@ -1,6 +1,17 @@
 //! Toggle switch component
 //!
 //! A reusable toggle switch component with smooth animations.
+//!
+//! DEPENDENCY MAP:
+//!
+//! Parents (Files that import this component):
+//!   ├─ src/components/ui/form/mod.rs
+//!   ├─ src/components/settings/appearance_settings.rs
+//!   ├─ src/components/settings/notification_settings.rs
+//!   └─ src/components/settings/sync_settings.rs
+//! Related Documentation:
+//!   ├─ Spec: ./form.spec.md
+//!   └─ Issue: #115 Phase 2 フォーム・フィードバックコンポーネントの移動
 
 use leptos::prelude::*;
 

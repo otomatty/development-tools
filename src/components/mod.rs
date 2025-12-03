@@ -6,7 +6,6 @@ pub mod issues;
 pub mod log_viewer;
 pub mod mock_server;
 pub mod network_status;
-pub mod option_form;
 pub mod result_view;
 pub mod settings;
 pub mod sidebar;
@@ -40,3 +39,7 @@ pub use tool_detail::ToolDetail;
 
 // UI components (new paths)
 pub use ui::{Card, CardVariant, Modal};
+// Form components (new paths) - re-exported for backward compatibility
+pub use ui::form::{LabeledToggle, OptionForm, ToggleSwitch, ToggleSwitchSize};
+// Feedback components (new paths) - re-exported for backward compatibility
+pub use ui::feedback::{InlineToast, SaveStatusIndicator, Toast, ToastType};
