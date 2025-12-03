@@ -648,16 +648,13 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
     let on_close_badges = move || set_new_badges_event.set(Vec::new());
 
     view! {
+        // Fixed position notifications and modals - placed outside main content flow
+        // to avoid space-y-* influence on layout
+        <XpNotification event=xp_event on_close=on_close_xp />
+        <LevelUpModal event=level_up_event on_close=on_close_level_up />
+        <MultipleBadgesNotification badges=new_badges_event on_close=on_close_badges />
+
         <div class="flex-1 overflow-y-auto bg-gradient-to-br from-gm-bg-primary via-gm-bg-secondary to-gm-bg-primary min-h-full">
-            // XP Notification
-            <XpNotification event=xp_event on_close=on_close_xp />
-
-            // Level Up Modal
-            <LevelUpModal event=level_up_event on_close=on_close_level_up />
-
-            // Badge Notification
-            <MultipleBadgesNotification badges=new_badges_event on_close=on_close_badges />
-
             <div class="max-w-6xl mx-auto p-6 space-y-6">
                 // Error display
                 <Show when=move || error.get().is_some()>

@@ -10,11 +10,13 @@
 //!   └─ src/components/issues/project_dashboard.rs
 //! Dependencies:
 //!   ├─ src/types/issue.rs
-//!   └─ src/components/icons.rs
+//!   ├─ src/components/icons.rs
+//!   └─ src/components/ui/dialog/modal.rs
 
 use leptos::prelude::*;
 
 use crate::components::icons::Icon;
+use crate::components::ui::dialog::{Modal, ModalBody, ModalFooter, ModalHeader, ModalSize};
 use crate::types::issue::{CachedIssue, IssueStatus};
 use crate::utils::render_markdown;
 
@@ -30,7 +32,8 @@ pub struct IssueDetailStatusChange {
 #[component]
 pub fn IssueDetailModal(
     issue: CachedIssue,
-    on_close_signal: WriteSignal<bool>,
+    #[prop(into)] visible: Signal<bool>,
+    on_close: impl Fn() + 'static + Clone + Send + Sync,
     status_change_signal: WriteSignal<Option<IssueDetailStatusChange>>,
 ) -> impl IntoView {
     let status = issue.get_status();
@@ -39,64 +42,77 @@ pub fn IssueDetailModal(
     let issue_number = issue.number;
 
     // Status options for dropdown
-    let statuses = vec![
+    let statuses = StoredValue::new(vec![
         (IssueStatus::Backlog, "Backlog", "bg-gray-400"),
         (IssueStatus::Todo, "Todo", "bg-blue-500"),
         (IssueStatus::InProgress, "In Progress", "bg-yellow-500"),
         (IssueStatus::InReview, "In Review", "bg-purple-500"),
         (IssueStatus::Done, "Done", "bg-green-500"),
         (IssueStatus::Cancelled, "Cancelled", "bg-gray-500"),
-    ];
+    ]);
 
     let (show_status_dropdown, set_show_status_dropdown) = signal(false);
 
-    // Format dates
-    let created_at = issue
-        .github_created_at
-        .clone()
-        .map(|d| format_date(&d))
-        .unwrap_or_else(|| "Unknown".to_string());
-    let updated_at = issue
-        .github_updated_at
-        .clone()
-        .map(|d| format_date(&d))
-        .unwrap_or_else(|| "Unknown".to_string());
+    // Format dates - Store in StoredValue for ChildrenFn
+    let created_at = StoredValue::new(
+        issue
+            .github_created_at
+            .clone()
+            .map(|d| format_date(&d))
+            .unwrap_or_else(|| "Unknown".to_string()),
+    );
+    let updated_at = StoredValue::new(
+        issue
+            .github_updated_at
+            .clone()
+            .map(|d| format_date(&d))
+            .unwrap_or_else(|| "Unknown".to_string()),
+    );
+
+    // Store on_close for use in ChildrenFn
+    let on_close_stored = StoredValue::new(on_close.clone());
+    let on_close_callback = Callback::new(move |_: ()| on_close_stored.get_value()());
+
+    // Store issue data for use in ChildrenFn
+    let issue_title = StoredValue::new(issue.title.clone());
+    let issue_number_display = issue.number;
+    let issue_is_open = issue.is_open();
+    let issue_body = StoredValue::new(issue.body.clone());
+    let issue_html_url = StoredValue::new(issue.html_url.clone());
+    let assignee_login = StoredValue::new(issue.assignee_login.clone());
+    let assignee_avatar_url = StoredValue::new(issue.assignee_avatar_url.clone());
+    let labels_stored = StoredValue::new(labels.clone());
 
     view! {
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div
-                class="bg-dt-card border border-slate-700/50 rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col shadow-xl"
-                on:click=move |e| e.stop_propagation()
-            >
-                // Header
-                <div class="p-4 border-b border-slate-700/50 flex items-start justify-between gap-4">
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="text-sm text-dt-text-sub font-mono">
-                                {"#"}{issue.number}
-                            </span>
-                            // State badge
-                            <span class=format!(
-                                "px-2 py-0.5 text-xs rounded-full {}",
-                                if issue.is_open() { "bg-green-500/20 text-green-400" } else { "bg-purple-500/20 text-purple-400" }
-                            )>
-                                {if issue.is_open() { "Open" } else { "Closed" }}
-                            </span>
-                        </div>
-                        <h2 class="text-xl font-semibold text-dt-text break-words">
-                            {issue.title.clone()}
-                        </h2>
+        <Modal
+            visible=visible
+            on_close=on_close.clone()
+            size=ModalSize::TwoXL
+        >
+            // Header
+            <ModalHeader on_close=on_close_callback>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-sm text-dt-text-sub font-mono">
+                            {"#"}{issue_number_display}
+                        </span>
+                        // State badge
+                        <span class=format!(
+                            "px-2 py-0.5 text-xs rounded-full {}",
+                            if issue_is_open { "bg-green-500/20 text-green-400" } else { "bg-purple-500/20 text-purple-400" }
+                        )>
+                            {if issue_is_open { "Open" } else { "Closed" }}
+                        </span>
                     </div>
-                    <button
-                        class="p-1.5 text-dt-text-sub hover:text-dt-text hover:bg-slate-800 rounded-lg transition-colors flex-shrink-0"
-                        on:click=move |_| on_close_signal.set(true)
-                    >
-                        <Icon name="x".to_string() class="w-5 h-5".to_string() />
-                    </button>
+                    <h2 class="text-xl font-semibold text-dt-text break-words">
+                        {issue_title.get_value()}
+                    </h2>
                 </div>
+            </ModalHeader>
 
-                // Content (scrollable)
-                <div class="flex-1 overflow-y-auto p-4 space-y-6">
+            // Content (scrollable)
+            <ModalBody class="max-h-[60vh]">
+                <div class="space-y-6">
                     // Metadata grid
                     <div class="grid grid-cols-2 gap-4">
                         // Status
@@ -118,7 +134,7 @@ pub fn IssueDetailModal(
 
                                 <Show when=move || show_status_dropdown.get()>
                                     <div class="absolute top-full left-0 mt-1 w-full bg-slate-900 rounded-lg shadow-lg border border-slate-700 py-1 z-10">
-                                        {statuses.iter().map(|(s, label, color)| {
+                                        {statuses.get_value().iter().map(|(s, label, color)| {
                                             let status_value = match s {
                                                 IssueStatus::Backlog => "backlog",
                                                 IssueStatus::Todo => "todo",
@@ -175,8 +191,8 @@ pub fn IssueDetailModal(
                         <div>
                             <label class="block text-xs text-dt-text-sub mb-1">"Assignee"</label>
                             <div class="flex items-center gap-2 px-3 py-1.5 bg-slate-800 rounded-lg text-sm">
-                                {issue.assignee_login.clone().map(|login| {
-                                    let avatar_url = issue.assignee_avatar_url.clone();
+                                {move || assignee_login.get_value().clone().map(|login| {
+                                    let avatar_url = assignee_avatar_url.get_value();
                                     let login_display = login.clone();
                                     view! {
                                         <div class="flex items-center gap-2">
@@ -200,15 +216,15 @@ pub fn IssueDetailModal(
                         <div>
                             <label class="block text-xs text-dt-text-sub mb-1">"Created"</label>
                             <div class="px-3 py-1.5 bg-slate-800 rounded-lg text-sm text-dt-text">
-                                {created_at}
+                                {created_at.get_value()}
                             </div>
                         </div>
                     </div>
 
                     // Labels
                     {
-                        let has_labels = !labels.is_empty();
-                        let labels_for_display = labels.clone();
+                        let labels_for_display = labels_stored.get_value();
+                        let has_labels = !labels_for_display.is_empty();
                         view! {
                             <Show when=move || has_labels>
                                 <div>
@@ -235,7 +251,7 @@ pub fn IssueDetailModal(
                     <div>
                         <label class="block text-xs text-dt-text-sub mb-2">"Description"</label>
                         <div class="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                            {issue.body.clone().map(|body| {
+                            {move || issue_body.get_value().clone().map(|body| {
                                 if body.trim().is_empty() {
                                     view! {
                                         <p class="text-dt-text-sub italic">"No description provided."</p>
@@ -258,36 +274,34 @@ pub fn IssueDetailModal(
 
                     // Timestamps
                     <div class="text-xs text-dt-text-sub flex items-center gap-4">
-                        <span>"Updated: "{updated_at}</span>
+                        <span>"Updated: "{updated_at.get_value()}</span>
                     </div>
                 </div>
+            </ModalBody>
 
-                // Footer
-                <div class="p-4 border-t border-slate-700/50 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        {issue.html_url.clone().map(|url| {
-                            view! {
-                                <a
-                                    href={url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    class="flex items-center gap-2 px-3 py-1.5 text-sm text-dt-text-sub hover:text-dt-text border border-slate-700 hover:border-gm-accent-cyan rounded-lg transition-colors"
-                                >
-                                    <Icon name="github".to_string() class="w-4 h-4".to_string() />
-                                    <span>"View on GitHub"</span>
-                                </a>
-                            }
-                        })}
-                    </div>
-                    <button
-                        class="px-4 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-dt-text rounded-lg transition-colors"
-                        on:click=move |_| on_close_signal.set(true)
-                    >
-                        "Close"
-                    </button>
-                </div>
-            </div>
-        </div>
+            // Footer
+            <ModalFooter>
+                {move || issue_html_url.get_value().clone().map(|url| {
+                    view! {
+                        <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="flex items-center gap-2 px-3 py-1.5 text-sm text-dt-text-sub hover:text-dt-text border border-slate-700 hover:border-gm-accent-cyan rounded-lg transition-colors mr-auto"
+                        >
+                            <Icon name="github".to_string() class="w-4 h-4".to_string() />
+                            <span>"View on GitHub"</span>
+                        </a>
+                    }
+                })}
+                <button
+                    class="px-4 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-dt-text rounded-lg transition-colors"
+                    on:click=move |_| on_close_stored.get_value()()
+                >
+                    "Close"
+                </button>
+            </ModalFooter>
+        </Modal>
     }
 }
 

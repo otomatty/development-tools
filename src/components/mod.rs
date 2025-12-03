@@ -16,7 +16,8 @@ pub mod ui;
 // TODO: [DEBT] Remove these re-exports after migrating all usages to ui/ path
 pub mod confirm_dialog;
 pub mod dropdown_menu;
-pub mod skeleton;
+// TODO: [DEBT] skeleton module was removed, but declaration remained. Need to check if skeleton component is needed.
+// pub mod skeleton;
 
 pub use animated_emoji::{
     AnimatedEmoji, AnimatedEmojiWithIntensity, AnimationIntensity, EmojiType,

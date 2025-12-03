@@ -2,7 +2,7 @@
 //!
 //! Skeleton loading states for the dashboard/home page.
 
-use crate::components::skeleton::{
+use crate::components::ui::skeleton::{
     Skeleton, SkeletonAvatar, SkeletonBadge, SkeletonCard, SkeletonGraph, SkeletonStat,
 };
 use leptos::prelude::*;
