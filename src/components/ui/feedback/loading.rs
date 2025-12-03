@@ -117,10 +117,10 @@ pub fn LoadingOverlay(
     view! {
         <Show when=visible>
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-gm-bg-primary/80 backdrop-blur-sm">
-                {match text {
-                    Some(t) => view! { <Loading size=LoadingSize::Large text=t /> }.into_any(),
-                    None => view! { <Loading size=LoadingSize::Large /> }.into_any(),
-                }}
+                {text.map_or_else(
+                    || view! { <Loading size=LoadingSize::Large /> }.into_any(),
+                    |t| view! { <Loading size=LoadingSize::Large text=t /> }.into_any()
+                )}
             </div>
         </Show>
     }

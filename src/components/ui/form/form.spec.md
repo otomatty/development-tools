@@ -6,7 +6,9 @@
 - ToggleSwitch: `src/components/ui/form/toggle_switch.rs`
 - OptionForm: `src/components/ui/form/option_form.rs`
 - Input: `src/components/ui/form/input.rs` (新規)
-- LabeledField: `src/components/ui/form/labeled_field.rs` (新規)
+  - `Input` - 基本入力コンポーネント
+  - `LabeledInput` - ラベル付き入力コンポーネント
+  - `Textarea` - 複数行入力コンポーネント
 
 ## Related Documentation
 
@@ -37,11 +39,14 @@
    - テキスト、数値、パスワードなど複数の input type をサポート
    - placeholder 対応
    - disabled 状態のサポート
+   - 動的 ID サポート（`Option<String>`）
 
-4. **LabeledField** (新規) - ラベル付きフィールドラッパー
+4. **LabeledInput** (新規) - ラベル付き入力コンポーネント
    - 一貫したラベルスタイリング
    - 説明文（description）のサポート
    - 必須マーク（\*）のサポート
+   - 一意な ID 自動生成（同一ラベルでも重複しない）
+   - ラベルクリックで入力フィールドにフォーカス（アクセシビリティ対応）
 
 ### 状態構造
 
@@ -81,8 +86,7 @@ pub struct InputProps {
 // mod.rs からの re-export
 pub use toggle_switch::{ToggleSwitch, ToggleSwitchSize};
 pub use option_form::OptionForm;
-pub use input::Input;
-pub use labeled_field::LabeledField;
+pub use input::{Input, LabeledInput, Textarea, InputType, InputSize};
 ```
 
 ## Test Cases
@@ -117,25 +121,31 @@ pub use labeled_field::LabeledField;
 - **When**: Input がレンダリング
 - **Then**: placeholder 属性が正しく設定される
 
-### TC-006: LabeledField ラベル表示
+### TC-006: LabeledInput ラベル表示
 
 - **Given**: label="Username" が指定
-- **When**: LabeledField がレンダリング
+- **When**: LabeledInput がレンダリング
 - **Then**: ラベルテキストが表示される
 
-### TC-007: LabeledField 必須マーク
+### TC-007: LabeledInput 必須マーク
 
 - **Given**: required=true が指定
-- **When**: LabeledField がレンダリング
+- **When**: LabeledInput がレンダリング
 - **Then**: ラベルの横に "\*" が赤色で表示される
 
-### TC-008: OptionForm 複数オプション表示
+### TC-008: LabeledInput 一意 ID 生成
+
+- **Given**: 同じ label="Email" を持つ 2 つの LabeledInput
+- **When**: 両方がレンダリング
+- **Then**: 異なる id 属性が生成される（重複しない）
+
+### TC-009: OptionForm 複数オプション表示
 
 - **Given**: 3 つの ToolOption が渡される
 - **When**: OptionForm がレンダリング
 - **Then**: 3 つの OptionField がレンダリングされる
 
-### TC-009: モジュールインポート確認
+### TC-010: モジュールインポート確認
 
 - **Given**: `use crate::components::ui::form::ToggleSwitch;`
 - **When**: コードがコンパイル

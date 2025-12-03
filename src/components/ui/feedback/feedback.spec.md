@@ -5,7 +5,6 @@
 - Implementation: `src/components/ui/feedback/mod.rs`
 - Toast: `src/components/ui/feedback/toast.rs`
 - Loading: `src/components/ui/feedback/loading.rs` (新規)
-- Notification: `src/components/ui/feedback/notification.rs` (新規、オプション)
 
 ## Related Documentation
 
@@ -36,10 +35,8 @@
    - 3 つのサイズ（small, medium, large）をサポート
    - オプションのテキスト表示
    - アニメーション付きスピナー
-
-4. **Notification** (新規、オプション) - 永続的な通知
-   - 閉じるボタン付き
-   - アクション付き通知
+   - `LoadingOverlay` - フルページローディングオーバーレイ
+   - `InlineLoading` - インラインローディングインジケータ
 
 ### 状態構造
 

@@ -1,16 +1,25 @@
-/**
- * Input Component
- *
- * DEPENDENCY MAP:
- *
- * Parents (Files that import this component):
- *   ├─ src/components/ui/form/mod.rs
- *   └─ src/components/ui/mod.rs (re-export)
- * Related Documentation:
- *   ├─ Spec: ./form.spec.md
- *   └─ Tests: (embedded in this file)
- */
+//! Input Component
+//!
+//! DEPENDENCY MAP:
+//!
+//! Parents (Files that import this component):
+//!   ├─ src/components/ui/form/mod.rs
+//!   └─ src/components/ui/mod.rs (re-export)
+//! Related Documentation:
+//!   ├─ Spec: ./form.spec.md
+//!   └─ Tests: (embedded in this file)
+
 use leptos::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Static counter for generating unique IDs
+static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Generate a unique ID for form elements
+fn generate_unique_id(prefix: &str) -> String {
+    let id = ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{}", prefix.to_lowercase().replace(' ', "-"), id)
+}
 
 /// Input type enum for different input variations
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -98,9 +107,9 @@ pub fn Input(
     /// Optional name attribute for forms
     #[prop(optional)]
     name: Option<&'static str>,
-    /// Optional id attribute
+    /// Optional id attribute (supports dynamic String IDs)
     #[prop(optional)]
-    id: Option<&'static str>,
+    id: Option<String>,
 ) -> impl IntoView {
     let base_class = "w-full bg-gm-bg-secondary border border-gm-border rounded-md \
                       text-dt-text-main placeholder-dt-text-sub/50 \
@@ -128,7 +137,7 @@ pub fn Input(
             placeholder=placeholder.unwrap_or("")
             disabled=disabled
             name=name.unwrap_or("")
-            id=id.unwrap_or("")
+            id=id.as_deref().unwrap_or("")
             prop:value=move || value.get()
             on:input=move |ev| {
                 let new_value = event_target_value(&ev);
@@ -184,9 +193,9 @@ pub fn LabeledInput(
     #[prop(default = InputSize::Medium)]
     size: InputSize,
 ) -> impl IntoView {
-    let input_id = format!("input-{}", label.to_lowercase().replace(' ', "-"));
-    // Note: We create a static string from the input_id for the component
-    // In practice, you might want to use a different approach for dynamic IDs
+    // Generate a unique ID to ensure label-input association works correctly
+    // even when multiple LabeledInput components have the same label
+    let input_id = generate_unique_id(&format!("input-{}", label));
 
     view! {
         <div class="flex flex-col gap-1">
@@ -204,25 +213,14 @@ pub fn LabeledInput(
                 <span class="text-xs text-dt-text-sub">{desc}</span>
             })}
 
-            {match placeholder {
-                Some(p) => view! {
-                    <Input
-                        value=value
-                        input_type=input_type
-                        placeholder=p
-                        disabled=disabled
-                        size=size
-                    />
-                }.into_any(),
-                None => view! {
-                    <Input
-                        value=value
-                        input_type=input_type
-                        disabled=disabled
-                        size=size
-                    />
-                }.into_any(),
-            }}
+            <Input
+                value=value
+                input_type=input_type
+                placeholder=placeholder.unwrap_or("")
+                disabled=disabled
+                size=size
+                id=Some(input_id)
+            />
         </div>
     }
 }
