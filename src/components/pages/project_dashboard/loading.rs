@@ -5,9 +5,12 @@
 //! DEPENDENCY MAP:
 //! Parents (Files that import this module):
 //!   └─ src/components/pages/project_dashboard/mod.rs
+//! Imports (shared modules):
+//!   └─ crate::components::pages::shared_loading::{LoadingSpinner, ColumnsSkeleton}
 //! Related Documentation:
 //!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
 
+pub use crate::components::pages::shared_loading::LoadingSpinner;
 use leptos::prelude::*;
 
 /// Project dashboard loading skeleton
@@ -48,16 +51,6 @@ pub fn ProjectDashboardSkeleton() -> impl IntoView {
                     }).collect_view()}
                 </div>
             </div>
-        </div>
-    }
-}
-
-/// Loading spinner component
-#[component]
-pub fn LoadingSpinner() -> impl IntoView {
-    view! {
-        <div class="flex items-center justify-center h-full">
-            <div class="animate-spin w-8 h-8 border-2 border-gm-accent-cyan border-t-transparent rounded-full"/>
         </div>
     }
 }

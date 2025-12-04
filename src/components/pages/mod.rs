@@ -35,9 +35,19 @@ pub mod projects;
 pub mod settings;
 pub mod xp_history;
 
+// Shared utilities and components
+pub mod shared_loading;
+pub mod shared_utils;
+
 pub use home::HomePage;
 pub use mock_server::MockServerPage;
 pub use project_dashboard::ProjectDashboardPage;
 pub use projects::ProjectsPage;
 pub use settings::SettingsPage;
 pub use xp_history::XpHistoryPage;
+
+// Re-export shared components for convenience
+pub use shared_loading::{
+    AccordionSkeleton, ColumnsSkeleton, GridSkeleton, HeaderSkeleton, ListSkeleton, LoadingSpinner,
+};
+pub use shared_utils::{format_file_size, format_last_synced, get_file_icon};

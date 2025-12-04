@@ -5,9 +5,12 @@
 //! DEPENDENCY MAP:
 //! Parents (Files that import this module):
 //!   └─ src/components/pages/mock_server/mod.rs
+//! Imports (shared modules):
+//!   └─ crate::components::pages::shared_loading::{LoadingSpinner, ListSkeleton}
 //! Related Documentation:
 //!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
 
+pub use crate::components::pages::shared_loading::LoadingSpinner;
 use leptos::prelude::*;
 
 /// Mock server page loading skeleton
@@ -50,16 +53,6 @@ pub fn MockServerSkeleton() -> impl IntoView {
                     <div class="h-4 bg-slate-700/50 rounded w-32"></div>
                 </div>
             </div>
-        </div>
-    }
-}
-
-/// Loading spinner component
-#[component]
-pub fn LoadingSpinner() -> impl IntoView {
-    view! {
-        <div class="flex items-center justify-center py-12">
-            <div class="animate-spin w-8 h-8 border-3 border-gm-accent-cyan border-t-transparent rounded-full"/>
         </div>
     }
 }
