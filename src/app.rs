@@ -4,10 +4,12 @@ use leptos::task::spawn_local;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
-use crate::components::settings::SettingsPage;
+use crate::components::pages::{
+    HomePage, MockServerPage, ProjectDashboardPage, ProjectsPage, SettingsPage, XpHistoryPage,
+};
 use crate::components::{
-    AnimationContext, HomePage, LogViewer, NetworkStatusProvider, OfflineBanner, ProjectDashboard,
-    ProjectsPage, ResultView, Sidebar, ToolDetail, XpHistoryPage,
+    AnimationContext, LogViewer, NetworkStatusProvider, OfflineBanner, ResultView, Sidebar,
+    ToolDetail,
 };
 use crate::tauri_api;
 use crate::types::{
@@ -250,7 +252,7 @@ pub fn App() -> impl IntoView {
                         }.into_any(),
 
                         AppPage::ProjectDetail(project_id) => view! {
-                            <ProjectDashboard project_id=project_id set_current_page=set_current_page />
+                            <ProjectDashboardPage project_id=project_id set_current_page=set_current_page />
                         }.into_any(),
 
                         AppPage::Tools => view! {
@@ -285,7 +287,7 @@ pub fn App() -> impl IntoView {
                         }.into_any(),
 
                         AppPage::MockServer => view! {
-                            <crate::components::MockServerPage />
+                            <MockServerPage />
                         }.into_any(),
 
                         AppPage::Settings => view! {

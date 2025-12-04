@@ -1,16 +1,24 @@
-//! Project Dashboard Component
+//! Project Dashboard Module
 //!
 //! Main dashboard for a single project with kanban board, repository linking,
 //! and issue management features.
 //!
 //! DEPENDENCY MAP:
-//!
-//! Parents:
-//!   └─ src/components/issues/mod.rs
+//! Parents (Files that import this page):
+//!   ├─ src/components/pages/mod.rs
+//!   └─ src/app.rs
+//! Children:
+//!   ├─ loading.rs - Loading skeleton and states
+//!   └─ utils.rs - Utility functions
 //! Dependencies:
 //!   ├─ src/types/issue.rs
 //!   ├─ src/tauri_api.rs
 //!   └─ src/components/icons.rs
+//! Related Documentation:
+//!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
+
+pub mod loading;
+pub mod utils;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -26,9 +34,14 @@ use crate::types::{
     AppPage,
 };
 
+use loading::{LoadingSpinner, NotLinkedState};
+
 /// Project dashboard component
 #[component]
-pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>) -> impl IntoView {
+pub fn ProjectDashboardPage(
+    project_id: i64,
+    set_current_page: WriteSignal<AppPage>,
+) -> impl IntoView {
     let (project, set_project) = signal(Option::<Project>::None);
     let (kanban, set_kanban) = signal(KanbanBoardType::default());
     let (loading, set_loading) = signal(true);
@@ -117,15 +130,7 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
     // Handle issue created
     let on_issue_created = move |issue: CachedIssue| {
         set_kanban.update(|board| {
-            let status = issue.get_status();
-            match status {
-                crate::types::issue::IssueStatus::Backlog => board.backlog.push(issue),
-                crate::types::issue::IssueStatus::Todo => board.todo.push(issue),
-                crate::types::issue::IssueStatus::InProgress => board.in_progress.push(issue),
-                crate::types::issue::IssueStatus::InReview => board.in_review.push(issue),
-                crate::types::issue::IssueStatus::Done => board.done.push(issue),
-                crate::types::issue::IssueStatus::Cancelled => board.cancelled.push(issue),
-            }
+            utils::add_issue_to_board(board, issue);
         });
         set_show_create_issue_modal.set(false);
     };
@@ -162,6 +167,11 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
             // Clear the event after processing
             set_status_change_event.set(None);
         }
+    });
+
+    // Callback for not linked state
+    let on_link_click = Callback::new(move |_: ()| {
+        set_show_link_modal.set(true);
     });
 
     view! {
@@ -275,27 +285,12 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
             <div class="flex-1 overflow-hidden">
                 // Loading state
                 <Show when=move || loading.get()>
-                    <div class="flex items-center justify-center h-full">
-                        <div class="animate-spin w-8 h-8 border-2 border-gm-accent-cyan border-t-transparent rounded-full"/>
-                    </div>
+                    <LoadingSpinner />
                 </Show>
 
                 // Not linked state
                 <Show when=move || !loading.get() && project.get().map(|p| !p.is_linked()).unwrap_or(false)>
-                    <div class="flex flex-col items-center justify-center h-full text-center px-4">
-                        <Icon name="github".to_string() class="w-20 h-20 text-slate-600 mb-4".to_string() />
-                        <h2 class="text-xl font-semibold text-dt-text mb-2">"Link a GitHub Repository"</h2>
-                        <p class="text-dt-text-sub mb-6 max-w-md">
-                            "Connect a GitHub repository to start managing issues with your kanban board."
-                        </p>
-                        <button
-                            class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple text-white rounded-lg hover:opacity-90 transition-opacity"
-                            on:click=move |_| set_show_link_modal.set(true)
-                        >
-                            <Icon name="link".to_string() class="w-5 h-5".to_string() />
-                            <span>"Link Repository"</span>
-                        </button>
-                    </div>
+                    <NotLinkedState on_link=on_link_click />
                 </Show>
 
                 // Kanban board (when linked)
