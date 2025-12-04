@@ -1,8 +1,14 @@
-//! Mock Server Page Component
+//! Mock Server Page Module
+//!
+//! Page component for managing the mock server.
 //!
 //! DEPENDENCY MAP:
-//! Parents (Files that import this component):
-//!   └─ src/components/pages/mock_server_page.rs
+//! Parents (Files that import this page):
+//!   ├─ src/components/pages/mod.rs
+//!   └─ src/app.rs
+//! Children:
+//!   ├─ loading.rs - Loading skeleton
+//!   └─ utils.rs - Utility functions
 //! Dependencies:
 //!   ├─ src/tauri_api.rs
 //!   ├─ features/mock_server/server_status.rs
@@ -12,6 +18,9 @@
 //!   └─ features/mock_server/file_browser.rs
 //! Related Documentation:
 //!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
+
+pub mod loading;
+pub mod utils;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -27,6 +36,8 @@ use crate::types::{
     AccessLogEntry, CorsMode, CreateMappingRequest, DirectoryMapping, FileInfo, MockServerConfig,
     MockServerState, ServerStatus, UpdateConfigRequest, UpdateMappingRequest,
 };
+
+use loading::LoadingSpinner;
 
 #[wasm_bindgen]
 extern "C" {
@@ -328,9 +339,7 @@ pub fn MockServerPage() -> impl IntoView {
             <div class="flex-1 overflow-y-auto p-6 space-y-6">
                 // Loading state
                 <Show when=move || loading.get()>
-                    <div class="flex items-center justify-center py-12">
-                        <div class="animate-spin w-8 h-8 border-3 border-gm-accent-cyan border-t-transparent rounded-full"/>
-                    </div>
+                    <LoadingSpinner />
                 </Show>
 
                 <Show when=move || !loading.get()>

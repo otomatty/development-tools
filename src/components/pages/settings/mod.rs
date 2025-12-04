@@ -1,15 +1,23 @@
-//! Settings page component
+//! Settings Page Module
 //!
 //! Main settings page with accordion-style sections.
 //!
 //! DEPENDENCY MAP:
-//!
-//! Parents:
-//!   └─ src/components/pages/mod.rs
+//! Parents (Files that import this page):
+//!   ├─ src/components/pages/mod.rs
+//!   └─ src/app.rs
+//! Children:
+//!   ├─ loading.rs - Loading skeleton
+//!   └─ utils.rs - Utility functions and section types
 //! Dependencies:
 //!   ├─ src/components/ui/accordion.rs
 //!   ├─ src/components/icons.rs
 //!   └─ src/components/settings/*.rs
+//! Related Documentation:
+//!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
+
+pub mod loading;
+pub mod utils;
 
 use leptos::prelude::*;
 use std::collections::HashSet;
@@ -22,16 +30,7 @@ use crate::components::settings::{
 use crate::components::ui::AccordionSection;
 use crate::types::{AppPage, AuthState};
 
-/// Settings section enum
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum SettingsSection {
-    Account,
-    Notification,
-    Sync,
-    Appearance,
-    DataManagement,
-    AppInfo,
-}
+use utils::SettingsSection;
 
 /// Settings page component
 #[component]

@@ -1,17 +1,25 @@
-//! Projects Page Component
+//! Projects Page Module
 //!
 //! Displays a list of all projects with options to create, edit, and delete projects.
 //!
 //! DEPENDENCY MAP:
-//!
-//! Parents:
-//!   └─ src/components/pages/mod.rs
+//! Parents (Files that import this page):
+//!   ├─ src/components/pages/mod.rs
+//!   └─ src/app.rs
+//! Children:
+//!   ├─ loading.rs - Loading skeleton
+//!   └─ utils.rs - Utility functions
 //! Dependencies:
 //!   ├─ src/types/issue.rs
 //!   ├─ src/tauri_api.rs
 //!   ├─ src/components/icons.rs
 //!   ├─ src/components/features/issues/create_project_modal.rs
 //!   └─ src/components/features/issues/project_card.rs
+//! Related Documentation:
+//!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
+
+pub mod loading;
+pub mod utils;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -20,6 +28,8 @@ use crate::components::features::issues::{CreateProjectModal, ProjectCard, Proje
 use crate::components::icons::Icon;
 use crate::tauri_api;
 use crate::types::{issue::Project, AppPage};
+
+use loading::LoadingSpinner;
 
 /// Projects list page component
 #[component]
@@ -99,9 +109,7 @@ pub fn ProjectsPage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
 
             // Loading state
             <Show when=move || loading.get()>
-                <div class="flex items-center justify-center py-12">
-                    <div class="animate-spin w-8 h-8 border-2 border-gm-accent-cyan border-t-transparent rounded-full"/>
-                </div>
+                <LoadingSpinner />
             </Show>
 
             // Projects grid

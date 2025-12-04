@@ -1,4 +1,4 @@
-//! Home Page Component
+//! Home Page Module
 //!
 //! The main home page that displays user profile, stats, badges, and contribution graph.
 //! This page component is responsible for layout and orchestrating feature components.
@@ -7,16 +7,21 @@
 //! Parents (Files that import this page):
 //!   ├─ src/components/pages/mod.rs
 //!   └─ src/app.rs
+//! Children:
+//!   ├─ loading.rs - Loading skeleton and spinner
+//!   └─ utils.rs - Utility functions
 //! Dependencies (Feature components used):
 //!   ├─ features/auth/login_card.rs - LoginCard
 //!   ├─ features/gamification/cache_indicator.rs - CacheIndicator
 //!   ├─ features/gamification/dashboard_content.rs - DashboardContent
 //!   ├─ features/gamification/sync_notifications.rs - handle_sync_result_notifications
 //!   ├─ features/gamification/home_data_loader.rs - load_user_data
-//!   ├─ features/gamification/xp_notification.rs - XpNotification, LevelUpModal, MultipleBadgesNotification
-//!   └─ home/skeleton.rs - HomeSkeleton
+//!   └─ features/gamification/xp_notification.rs - XpNotification, LevelUpModal, MultipleBadgesNotification
 //! Related Documentation:
 //!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
+
+pub mod loading;
+pub mod utils;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -28,17 +33,16 @@ use crate::components::features::auth::LoginCard;
 use crate::components::features::gamification::xp_notification::{
     LevelUpModal, MultipleBadgesNotification,
 };
-use crate::components::features::gamification::{
-    handle_sync_result_notifications, load_user_data, CacheIndicator, DashboardContent,
-    XpNotification,
-};
-use crate::components::home::HomeSkeleton;
+use crate::components::features::gamification::{CacheIndicator, DashboardContent, XpNotification};
 use crate::components::network_status::use_is_online;
 use crate::tauri_api;
 use crate::types::{
     AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo,
     NewBadgeInfo, StatsDiffResult, UserSettings, UserStats, XpGainedEvent,
 };
+
+use loading::HomeSkeleton;
+use utils::{handle_sync_result_notifications, load_user_data};
 
 /// Home page component
 #[component]
@@ -50,7 +54,7 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
     let (level_info, set_level_info) = signal(Option::<LevelInfo>::None);
     let (user_stats, set_user_stats) = signal(Option::<UserStats>::None);
     let (badges, set_badges) = signal(Vec::<Badge>::new());
-    let (badge_definitions, set_badge_definitions) = signal(Vec::<BadgeDefinition>::new());
+    let (_badge_definitions, set_badge_definitions) = signal(Vec::<BadgeDefinition>::new());
     let (error, set_error) = signal(Option::<String>::None);
 
     // Stats diff for day-over-day comparison
