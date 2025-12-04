@@ -11,8 +11,8 @@
 //! - `tools/` - Development tools components
 //! - `mock_server/` - Mock server related components
 
-pub mod gamification;
 pub mod auth;
+pub mod gamification;
 pub mod issues;
-pub mod tools;
 pub mod mock_server;
+pub mod tools;
