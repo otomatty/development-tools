@@ -1,13 +1,16 @@
-//! Mock Server UI Components
+//! Mock Server UI Components (Legacy)
+//!
+//! This module is deprecated. Please use src/components/features/mock_server/ instead.
 //!
 //! DEPENDENCY MAP:
 //! Parents (Files that import this module):
-//!   └─ src/components/mod.rs
-//! Dependencies:
-//!   ├─ src/tauri_api.rs
-//!   └─ src/types.rs
+//!   └─ (deprecated - migrate to features/mock_server/)
+//! 
+//! New location:
+//!   └─ src/components/features/mock_server/
+//!
 //! Spec: docs/prd/mock-server.md
 
-pub mod mock_server_page;
+// Re-export for backward compatibility during migration
+pub use crate::components::features::mock_server::*;
 
-pub use mock_server_page::MockServerPage;

@@ -1,26 +1,18 @@
 //! Home page components
 //!
-//! This module contains all components for the gamification home page.
+//! This module contains the main home page component.
 
-pub mod badge_grid;
-pub mod challenge_card;
-pub mod contribution_graph;
-pub mod login_card;
-pub mod profile_card;
 pub mod skeleton;
-pub mod stats_display;
-pub mod xp_history;
-pub mod xp_notification;
 
-pub use badge_grid::BadgeGrid;
-pub use challenge_card::ChallengeCard;
-pub use contribution_graph::ContributionGraph;
-pub use login_card::{LoginCard, LoginState};
-pub use profile_card::ProfileCard;
 pub use skeleton::HomeSkeleton;
-pub use stats_display::StatsDisplay;
-pub use xp_history::XpHistoryPage;
-pub use xp_notification::{LevelUpModal, MultipleBadgesNotification, XpNotification};
+pub use crate::components::features::auth::LoginCard;
+pub use crate::components::features::gamification::{
+    BadgeGrid, ChallengeCard, ContributionGraph, ProfileCard, StatsDisplay, XpNotification,
+};
+pub use crate::components::features::gamification::xp_notification::{LevelUpModal, MultipleBadgesNotification};
+
+// Re-export LoginState for home page usage
+use crate::components::features::auth::login_card::LoginState;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
