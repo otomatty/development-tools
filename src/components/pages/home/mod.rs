@@ -34,7 +34,7 @@ use crate::components::features::gamification::xp_notification::{
     LevelUpModal, MultipleBadgesNotification,
 };
 use crate::components::features::gamification::{CacheIndicator, DashboardContent, XpNotification};
-use crate::components::network_status::use_is_online;
+use crate::hooks::use_is_online;
 use crate::tauri_api;
 use crate::types::{
     AppPage, AuthState, Badge, BadgeDefinition, DeviceTokenStatus, GitHubStats, LevelInfo,

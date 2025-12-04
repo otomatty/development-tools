@@ -61,8 +61,8 @@ pub use display::{Avatar, AvatarSize, ProgressBar, ProgressBarVariant};
 pub use dropdown::{DropdownMenu, DropdownMenuDivider, DropdownMenuItem};
 // Feedback
 pub use feedback::{
-    InlineLoading, InlineToast, Loading, LoadingOverlay, LoadingSize, SaveStatusIndicator, Toast,
-    ToastType,
+    InlineLoading, InlineToast, Loading, LoadingOverlay, LoadingSize, OfflineBanner,
+    SaveStatusIndicator, Toast, ToastType,
 };
 // Form
 pub use form::{

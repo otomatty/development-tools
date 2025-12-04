@@ -1,10 +1,8 @@
 pub mod animated_emoji;
-pub mod animation_context;
 pub mod features;
 pub mod home;
 pub mod icons;
 pub mod issues;
-pub mod network_status;
 pub mod pages;
 pub mod settings;
 pub mod sidebar;
@@ -14,12 +12,16 @@ pub mod ui;
 // TODO: [DEBT] Remove these re-exports after migrating all usages to ui/ path
 pub mod confirm_dialog;
 pub mod dropdown_menu;
-// TODO: [DEBT] skeleton module was removed, but declaration remained. Need to check if skeleton component is needed.
-// pub mod skeleton;
+// TODO: [DEBT] animation_context and network_status modules are deprecated.
+// Use crate::contexts and crate::hooks instead.
+// These are kept for backward compatibility during migration.
+pub mod animation_context;
+pub mod network_status;
 
 pub use animated_emoji::{
     AnimatedEmoji, AnimatedEmojiWithIntensity, AnimationIntensity, EmojiType,
 };
+// TODO: [DEBT] Remove these re-exports after migrating all usages to contexts/ and hooks/
 pub use animation_context::{
     use_animation_context, use_animation_context_or_default, AnimationContext,
 };
@@ -34,10 +36,13 @@ pub use features::issues::{
     IssueDetailStatusChange, KanbanBoard, LinkRepositoryModal, StatusChangeEvent,
 };
 pub use features::tools::{LogViewer, ResultView, ToolDetail};
+// TODO: [DEBT] Remove these re-exports after migrating all usages to contexts/ and hooks/
 pub use network_status::{
-    try_use_network_status, use_is_online, use_network_status, NetworkStatusProvider, OfflineBanner,
+    try_use_network_status, use_is_online, use_network_status, NetworkStatusProvider,
 };
+// OfflineBanner is now in ui::feedback, re-exported here for backward compatibility
 pub use sidebar::Sidebar;
+pub use ui::feedback::OfflineBanner;
 
 // Page components - re-exported from pages module for backward compatibility
 pub use pages::{

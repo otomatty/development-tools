@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::use_animation_context_or_default;
+use crate::hooks::use_animation_context_or_default;
 
 /// Supported animated emoji types
 #[derive(Clone, Copy, PartialEq, Debug)]

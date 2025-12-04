@@ -7,10 +7,9 @@ use wasm_bindgen::prelude::*;
 use crate::components::pages::{
     HomePage, MockServerPage, ProjectDashboardPage, ProjectsPage, SettingsPage, XpHistoryPage,
 };
-use crate::components::{
-    AnimationContext, LogViewer, NetworkStatusProvider, OfflineBanner, ResultView, Sidebar,
-    ToolDetail,
-};
+use crate::components::ui::feedback::OfflineBanner;
+use crate::components::{LogViewer, ResultView, Sidebar, ToolDetail};
+use crate::contexts::{AnimationContext, NetworkStatusProvider};
 use crate::tauri_api;
 use crate::types::{
     AppPage, AuthState, LogEntry, LogEvent, OptionValues, ToolConfig, ToolInfo, ToolResult,
