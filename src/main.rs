@@ -1,5 +1,7 @@
 mod app;
 mod components;
+mod contexts;
+mod hooks;
 mod tauri_api;
 mod types;
 mod utils;

@@ -35,7 +35,9 @@
 //! - Parent Issue: #115
 
 mod loading;
+mod offline_banner;
 mod toast;
 
 pub use loading::{InlineLoading, Loading, LoadingOverlay, LoadingSize};
+pub use offline_banner::OfflineBanner;
 pub use toast::{InlineToast, SaveStatusIndicator, Toast, ToastType};
