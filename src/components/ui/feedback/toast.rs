@@ -1,6 +1,16 @@
 //! Toast notification component
 //!
 //! Displays temporary success/error/info messages that auto-hide.
+//!
+//! DEPENDENCY MAP:
+//!
+//! Parents (Files that import this component):
+//!   ├─ src/components/ui/feedback/mod.rs
+//!   ├─ src/components/settings/settings_page.rs
+//!   └─ src/components/settings/data_management.rs
+//! Related Documentation:
+//!   ├─ Spec: ./feedback.spec.md
+//!   └─ Issue: #115 Phase 2 フォーム・フィードバックコンポーネントの移動
 
 use leptos::prelude::*;
 

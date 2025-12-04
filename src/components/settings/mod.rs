@@ -6,8 +6,6 @@ pub mod notification_settings;
 pub mod settings_page;
 pub mod settings_reset;
 pub mod sync_settings;
-pub mod toast;
-pub mod toggle_switch;
 
 pub use account_settings::AccountSettings;
 pub use app_info::AppInfoSection;
@@ -17,5 +15,8 @@ pub use notification_settings::NotificationSettings;
 pub use settings_page::SettingsPage;
 pub use settings_reset::SettingsResetSection;
 pub use sync_settings::SyncSettings;
-pub use toast::{InlineToast, SaveStatusIndicator, Toast, ToastType};
-pub use toggle_switch::{LabeledToggle, ToggleSwitch, ToggleSwitchSize};
+
+// Re-export from new locations for backward compatibility
+// TODO: [DEBT] Update usages to import directly from ui/feedback and ui/form
+pub use super::ui::feedback::{InlineToast, SaveStatusIndicator, Toast, ToastType};
+pub use super::ui::form::{LabeledToggle, ToggleSwitch, ToggleSwitchSize};

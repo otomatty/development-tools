@@ -9,12 +9,13 @@
 //! Dependencies:
 //!   ├─ src/types/issue.rs
 //!   ├─ src/tauri_api.rs
-//!   └─ src/components/icons.rs
+//!   ├─ src/components/icons.rs
+//!   └─ src/components/ui/dialog/modal.rs
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::components::icons::Icon;
+use crate::components::ui::dialog::{Modal, ModalBody, ModalFooter, ModalHeader, ModalSize};
 use crate::tauri_api;
 use crate::types::issue::CachedIssue;
 
@@ -22,7 +23,8 @@ use crate::types::issue::CachedIssue;
 #[component]
 pub fn CreateIssueModal(
     project_id: i64,
-    on_close: impl Fn() + 'static + Copy,
+    #[prop(into)] visible: Signal<bool>,
+    on_close: impl Fn() + 'static + Clone + Send + Sync,
     on_created: impl Fn(CachedIssue) + 'static + Copy,
 ) -> impl IntoView {
     let (title, set_title) = signal(String::new());
@@ -32,6 +34,10 @@ pub fn CreateIssueModal(
     let (creating, set_creating) = signal(false);
     let (error, set_error) = signal(Option::<String>::None);
     let (created_issue, set_created_issue) = signal(Option::<CachedIssue>::None);
+
+    // Store on_close for use in ChildrenFn
+    let on_close_stored = StoredValue::new(on_close.clone());
+    let on_close_callback = Callback::new(move |_: ()| on_close_stored.get_value()());
 
     // Watch for successful creation
     Effect::new(move |_| {
@@ -81,21 +87,19 @@ pub fn CreateIssueModal(
     };
 
     view! {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div class="bg-dt-card border border-slate-700/50 rounded-lg w-full max-w-lg mx-4">
-                // Header
-                <div class="p-4 border-b border-slate-700/50 flex items-center justify-between">
-                    <h2 class="text-lg font-semibold text-dt-text">"Create New Issue"</h2>
-                    <button
-                        class="p-1 text-dt-text-sub hover:text-dt-text"
-                        on:click=move |_| on_close()
-                    >
-                        <Icon name="x".to_string() class="w-5 h-5".to_string() />
-                    </button>
-                </div>
+        <Modal
+            visible=visible
+            on_close=on_close.clone()
+            size=ModalSize::Large
+        >
+            // Header
+            <ModalHeader on_close=on_close_callback>
+                <h2 class="text-lg font-semibold text-dt-text">"Create New Issue"</h2>
+            </ModalHeader>
 
-                // Form
-                <div class="p-4 space-y-4">
+            // Form
+            <ModalBody>
+                <div class="space-y-4">
                     // Error message
                     <Show when=move || error.get().is_some()>
                         <div class="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
@@ -163,24 +167,24 @@ pub fn CreateIssueModal(
                         </div>
                     </div>
                 </div>
+            </ModalBody>
 
-                // Footer
-                <div class="p-4 border-t border-slate-700/50 flex justify-end gap-3">
-                    <button
-                        class="px-4 py-2 text-dt-text-sub hover:text-dt-text transition-colors"
-                        on:click=move |_| on_close()
-                    >
-                        "Cancel"
-                    </button>
-                    <button
-                        class="px-4 py-2 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-                        disabled=move || creating.get() || title.get().trim().is_empty()
-                        on:click=create_issue
-                    >
-                        {move || if creating.get() { "Creating..." } else { "Create Issue" }}
-                    </button>
-                </div>
-            </div>
-        </div>
+            // Footer
+            <ModalFooter>
+                <button
+                    class="px-4 py-2 text-dt-text-sub hover:text-dt-text transition-colors"
+                    on:click=move |_| on_close_stored.get_value()()
+                >
+                    "Cancel"
+                </button>
+                <button
+                    class="px-4 py-2 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                    disabled=move || creating.get() || title.get().trim().is_empty()
+                    on:click=create_issue
+                >
+                    {move || if creating.get() { "Creating..." } else { "Create Issue" }}
+                </button>
+            </ModalFooter>
+        </Modal>
     }
 }

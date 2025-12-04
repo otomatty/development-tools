@@ -1,3 +1,20 @@
+//! Option Form component
+//!
+//! A form component for tool options with various input types.
+//!
+//! DEPENDENCY MAP:
+//!
+//! Parents (Files that import this component):
+//!   ├─ src/components/ui/form/mod.rs
+//!   └─ src/components/tool_detail.rs
+//! Dependencies (Modules this component uses):
+//!   ├─ src/components/icons.rs
+//!   ├─ src/tauri_api.rs
+//!   └─ src/types/tool.rs
+//! Related Documentation:
+//!   ├─ Spec: ./form.spec.md
+//!   └─ Issue: #115 Phase 2 フォーム・フィードバックコンポーネントの移動
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 

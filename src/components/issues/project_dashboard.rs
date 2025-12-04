@@ -309,22 +309,30 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
             </div>
 
             // Link Repository Modal
-            <Show when=move || show_link_modal.get()>
-                <LinkRepositoryModal
-                    project_id=project_id
-                    on_close=move || set_show_link_modal.set(false)
-                    on_linked=on_repo_linked
-                />
-            </Show>
+            {
+                let visible = Memo::new(move |_| show_link_modal.get());
+                view! {
+                    <LinkRepositoryModal
+                        project_id=project_id
+                        visible=visible
+                        on_close=move || set_show_link_modal.set(false)
+                        on_linked=on_repo_linked
+                    />
+                }
+            }
 
             // Create Issue Modal
-            <Show when=move || show_create_issue_modal.get()>
-                <CreateIssueModal
-                    project_id=project_id
-                    on_close=move || set_show_create_issue_modal.set(false)
-                    on_created=on_issue_created
-                />
-            </Show>
+            {
+                let visible = Memo::new(move |_| show_create_issue_modal.get());
+                view! {
+                    <CreateIssueModal
+                        project_id=project_id
+                        visible=visible
+                        on_close=move || set_show_create_issue_modal.set(false)
+                        on_created=on_issue_created
+                    />
+                }
+            }
 
             // GitHub Actions Setup Modal
             <Show when=move || show_actions_modal.get()>
@@ -386,41 +394,35 @@ pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>)
             </Show>
 
             // Issue Detail Modal
-            <Show when=move || selected_issue.get().is_some()>
-                {move || {
-                    let issue = selected_issue.get().unwrap();
-                    let (close_modal_trigger, set_close_modal_trigger) = signal(false);
-                    let (detail_status_change, set_detail_status_change) = signal(Option::<IssueDetailStatusChange>::None);
+            {move || {
+                let issue = selected_issue.get();
+                let visible = Memo::new(move |_| selected_issue.get().is_some());
+                let (detail_status_change, set_detail_status_change) = signal(Option::<IssueDetailStatusChange>::None);
 
-                    // Watch for close trigger
-                    Effect::new(move |_| {
-                        if close_modal_trigger.get() {
-                            set_selected_issue.set(None);
-                        }
-                    });
+                // Watch for status change from detail modal
+                Effect::new(move |_| {
+                    if let Some(event) = detail_status_change.get() {
+                        // Trigger status change via the existing signal
+                        set_status_change_event.set(Some(StatusChangeEvent {
+                            issue_number: event.issue_number,
+                            new_status: event.new_status,
+                        }));
+                        // Close the modal after status change
+                        set_selected_issue.set(None);
+                    }
+                });
 
-                    // Watch for status change from detail modal
-                    Effect::new(move |_| {
-                        if let Some(event) = detail_status_change.get() {
-                            // Trigger status change via the existing signal
-                            set_status_change_event.set(Some(StatusChangeEvent {
-                                issue_number: event.issue_number,
-                                new_status: event.new_status,
-                            }));
-                            // Close the modal after status change
-                            set_selected_issue.set(None);
-                        }
-                    });
-
+                issue.map(|issue| {
                     view! {
                         <IssueDetailModal
                             issue=issue
-                            on_close_signal=set_close_modal_trigger
+                            visible=visible
+                            on_close=move || set_selected_issue.set(None)
                             status_change_signal=set_detail_status_change
                         />
                     }
-                }}
-            </Show>
+                })
+            }}
         </div>
     }
 }

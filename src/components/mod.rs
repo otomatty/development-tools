@@ -6,7 +6,6 @@ pub mod issues;
 pub mod log_viewer;
 pub mod mock_server;
 pub mod network_status;
-pub mod option_form;
 pub mod result_view;
 pub mod settings;
 pub mod sidebar;
@@ -17,7 +16,8 @@ pub mod ui;
 // TODO: [DEBT] Remove these re-exports after migrating all usages to ui/ path
 pub mod confirm_dialog;
 pub mod dropdown_menu;
-pub mod skeleton;
+// TODO: [DEBT] skeleton module was removed, but declaration remained. Need to check if skeleton component is needed.
+// pub mod skeleton;
 
 pub use animated_emoji::{
     AnimatedEmoji, AnimatedEmojiWithIntensity, AnimationIntensity, EmojiType,
@@ -40,3 +40,19 @@ pub use tool_detail::ToolDetail;
 
 // UI components (new paths)
 pub use ui::{Card, CardVariant, Modal};
+// Button components
+pub use ui::button::{Button, ButtonSize, ButtonVariant, IconButton};
+// Badge components
+pub use ui::badge::{Badge, BadgeSize, BadgeVariant, DynamicBadge, Status, StatusBadge};
+// Alert components
+pub use ui::alert::{Alert, AlertVariant, Banner};
+// Layout components
+pub use ui::layout::{EmptyState, PageHeader, PageHeaderAction};
+// Display components
+pub use ui::display::{Avatar, AvatarSize, ProgressBar, ProgressBarVariant};
+// Accordion components
+pub use ui::accordion::{Accordion, AccordionItem, AccordionSection};
+// Form components (new paths) - re-exported for backward compatibility
+pub use ui::form::{LabeledToggle, OptionForm, ToggleSwitch, ToggleSwitchSize};
+// Feedback components (new paths) - re-exported for backward compatibility
+pub use ui::feedback::{InlineToast, SaveStatusIndicator, Toast, ToastType};

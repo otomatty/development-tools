@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::components::icons::{Icon, Spinner};
-use crate::components::option_form::OptionForm;
+use crate::components::ui::form::OptionForm;
 use crate::types::{OptionValues, ToolConfig, ToolStatus};
 
 /// ツール詳細コンポーネント
