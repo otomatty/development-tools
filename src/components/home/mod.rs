@@ -4,12 +4,14 @@
 
 pub mod skeleton;
 
-pub use skeleton::HomeSkeleton;
 pub use crate::components::features::auth::LoginCard;
+pub use crate::components::features::gamification::xp_notification::{
+    LevelUpModal, MultipleBadgesNotification,
+};
 pub use crate::components::features::gamification::{
     BadgeGrid, ChallengeCard, ContributionGraph, ProfileCard, StatsDisplay, XpNotification,
 };
-pub use crate::components::features::gamification::xp_notification::{LevelUpModal, MultipleBadgesNotification};
+pub use skeleton::HomeSkeleton;
 
 // Re-export LoginState for home page usage
 use crate::components::features::auth::login_card::LoginState;
