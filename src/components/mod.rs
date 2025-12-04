@@ -40,6 +40,18 @@ pub use tool_detail::ToolDetail;
 
 // UI components (new paths)
 pub use ui::{Card, CardVariant, Modal};
+// Button components
+pub use ui::button::{Button, ButtonSize, ButtonVariant, IconButton};
+// Badge components
+pub use ui::badge::{Badge, BadgeSize, BadgeVariant, DynamicBadge, Status, StatusBadge};
+// Alert components
+pub use ui::alert::{Alert, AlertVariant, Banner};
+// Layout components
+pub use ui::layout::{EmptyState, PageHeader, PageHeaderAction};
+// Display components
+pub use ui::display::{Avatar, AvatarSize, ProgressBar, ProgressBarVariant};
+// Accordion components
+pub use ui::accordion::{Accordion, AccordionItem, AccordionSection};
 // Form components (new paths) - re-exported for backward compatibility
 pub use ui::form::{LabeledToggle, OptionForm, ToggleSwitch, ToggleSwitchSize};
 // Feedback components (new paths) - re-exported for backward compatibility
