@@ -28,7 +28,10 @@ use crate::types::{
 
 /// Project dashboard component
 #[component]
-pub fn ProjectDashboard(project_id: i64, set_current_page: WriteSignal<AppPage>) -> impl IntoView {
+pub fn ProjectDashboardPage(
+    project_id: i64,
+    set_current_page: WriteSignal<AppPage>,
+) -> impl IntoView {
     let (project, set_project) = signal(Option::<Project>::None);
     let (kanban, set_kanban) = signal(KanbanBoardType::default());
     let (loading, set_loading) = signal(true);

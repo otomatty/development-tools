@@ -5,6 +5,7 @@ pub mod home;
 pub mod icons;
 pub mod issues;
 pub mod network_status;
+pub mod pages;
 pub mod settings;
 pub mod sidebar;
 pub mod ui;
@@ -26,21 +27,22 @@ pub use confirm_dialog::ConfirmDialog;
 pub use dropdown_menu::{DropdownMenu, DropdownMenuDivider, DropdownMenuItem};
 pub use features::auth::LoginCard;
 pub use features::gamification::{
-    BadgeGrid, ChallengeCard, ContributionGraph, ProfileCard, StatsDisplay, XpHistoryPage,
-    XpNotification,
+    BadgeGrid, ChallengeCard, ContributionGraph, ProfileCard, StatsDisplay, XpNotification,
 };
 pub use features::issues::{
     CreateIssueModal, CreateProjectModal, IssueCard, IssueClickEvent, IssueDetailModal,
-    IssueDetailStatusChange, KanbanBoard, LinkRepositoryModal, ProjectDashboard, ProjectsPage,
-    StatusChangeEvent,
+    IssueDetailStatusChange, KanbanBoard, LinkRepositoryModal, StatusChangeEvent,
 };
-pub use features::mock_server::MockServerPage;
 pub use features::tools::{LogViewer, ResultView, ToolDetail};
-pub use home::HomePage;
 pub use network_status::{
     try_use_network_status, use_is_online, use_network_status, NetworkStatusProvider, OfflineBanner,
 };
 pub use sidebar::Sidebar;
+
+// Page components - re-exported from pages module for backward compatibility
+pub use pages::{
+    HomePage, MockServerPage, ProjectDashboardPage, ProjectsPage, SettingsPage, XpHistoryPage,
+};
 
 // UI components (new paths)
 pub use ui::{Card, CardVariant, Modal};
