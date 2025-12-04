@@ -8,6 +8,11 @@
 //!   - src/components/ (various components)
 //! Dependencies:
 //!   - leptos
+//!
+//! 注意: このモジュールの多くの機能はまだ使用されていません。
+//! 将来的な統合のために準備されています。
+
+#![allow(dead_code)]
 
 use leptos::prelude::*;
 
@@ -146,7 +151,20 @@ pub fn use_toast() -> UseToast {
     }
 }
 
+// TODO: [FEATURE] ToastContext は将来的に src/contexts/toast_context.rs に移動予定
+// contexts/ はグローバル状態の保持、hooks/ はコンテキストの取得・操作という責務分離に従うべき
+// 現時点では ToastContext はまだ使用されていないため、一時的にここに配置
+
+// TODO: [FEATURE] use_toast フックに自動非表示機能を追加予定
+// duration_ms フィールドを活用し、gloo-timers クレートを使用してタイムアウト管理を実装する
+// 参考: https://docs.rs/gloo-timers/
+
 /// トーストコンテキスト（グローバルトースト用）
+///
+/// 注意: このコンテキストはまだ使用されていません。
+/// 将来的に contexts/ ディレクトリに移動し、ToastProvider コンポーネントと
+/// 統合する予定です。
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct ToastContext {
     /// 現在のトーストメッセージ
@@ -195,11 +213,13 @@ impl Default for ToastContext {
 }
 
 /// グローバルトーストコンテキストを取得
+#[allow(dead_code)]
 pub fn use_toast_context() -> Option<ToastContext> {
     use_context::<ToastContext>()
 }
 
 /// グローバルトーストコンテキストを取得（必須版）
+#[allow(dead_code)]
 pub fn use_toast_context_or_panic() -> ToastContext {
     use_context::<ToastContext>().expect("ToastContext must be provided")
 }

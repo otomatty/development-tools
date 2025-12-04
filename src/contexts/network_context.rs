@@ -14,9 +14,8 @@
 //!   - UI: src/components/ui/feedback/offline_banner.rs
 //!   - Spec: src/components/network_status.spec.md
 
+use leptos::ev;
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
 
 use crate::types::NetworkState;
 
@@ -70,37 +69,18 @@ pub fn NetworkStatusProvider(children: Children) -> impl IntoView {
     let (state, set_state) = signal(NetworkState::new(initial_online));
 
     // イベントリスナーを設定
-    Effect::new(move |_| {
-        let window = match web_sys::window() {
-            Some(w) => w,
-            None => return,
-        };
+    // Leptos の window_event_listener を使用することで、
+    // コンポーネントのライフサイクルに合わせた自動クリーンアップが行われる
+    let set_state_online = set_state;
+    let _ = window_event_listener(ev::online, move |_| {
+        set_state_online.update(|s| s.set_online());
+        web_sys::console::log_1(&"Network: Online".into());
+    });
 
-        // online イベントハンドラー
-        let set_state_online = set_state;
-        let on_online: Closure<dyn Fn()> = Closure::new(move || {
-            set_state_online.update(|s| s.set_online());
-            web_sys::console::log_1(&"Network: Online".into());
-        });
-
-        // offline イベントハンドラー
-        let set_state_offline = set_state;
-        let on_offline: Closure<dyn Fn()> = Closure::new(move || {
-            set_state_offline.update(|s| s.set_offline());
-            web_sys::console::log_1(&"Network: Offline".into());
-        });
-
-        // イベントリスナーを登録
-        let _ =
-            window.add_event_listener_with_callback("online", on_online.as_ref().unchecked_ref());
-        let _ =
-            window.add_event_listener_with_callback("offline", on_offline.as_ref().unchecked_ref());
-
-        // TODO: [BUG] イベントリスナーのメモリリーク（アプリルートでのみ使用のため影響軽微）
-        // on_cleanupでremove_event_listenerを呼ぶべきだが、Closureのライフタイム管理が複雑
-        // クロージャをリークして永続化（コンポーネントのライフタイム中は必要）
-        on_online.forget();
-        on_offline.forget();
+    let set_state_offline = set_state;
+    let _ = window_event_listener(ev::offline, move |_| {
+        set_state_offline.update(|s| s.set_offline());
+        web_sys::console::log_1(&"Network: Offline".into());
     });
 
     // コンテキストを提供

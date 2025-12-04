@@ -100,6 +100,6 @@ pub fn get_body_animation_class(enabled: bool) -> &'static str {
     if enabled {
         ""
     } else {
-        "no-animations"
+        "no-animation"
     }
 }
