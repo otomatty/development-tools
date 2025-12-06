@@ -1,0 +1,123 @@
+// Challenge-related types
+
+/// チャレンジ情報
+export interface ChallengeInfo {
+  id: number;
+  userId: number;
+  challengeType: string;
+  targetMetric: string;
+  targetValue: number;
+  currentValue: number;
+  rewardXp: number;
+  startDate: string;
+  endDate: string;
+  status: string;
+  completedAt: string | null;
+  // Computed fields
+  progressPercent: number;
+  remainingTimeHours: number;
+  isCompleted: boolean;
+  isExpired: boolean;
+}
+
+/// チャレンジ作成リクエスト
+export interface CreateChallengeRequest {
+  challengeType: string;
+  targetMetric: string;
+  targetValue: number;
+  rewardXp: number | null;
+}
+
+/// チャレンジ統計
+export interface ChallengeStats {
+  totalCompleted: number;
+  consecutiveWeeklyCompletions: number;
+  activeCount: number;
+}
+
+/// チャレンジタイプの選択肢
+export const CHALLENGE_TYPES: [string, string][] = [
+  ['daily', 'デイリー'],
+  ['weekly', 'ウィークリー'],
+];
+
+/// ターゲットメトリクスの選択肢
+export const TARGET_METRICS: [string, string, string][] = [
+  ['commits', 'コミット', '📝'],
+  ['prs', 'PR', '🔀'],
+  ['reviews', 'レビュー', '👀'],
+  ['issues', 'Issue', '🐛'],
+];
+
+/// Get display name for challenge type
+export function challengeTypeLabel(challengeType: string): string {
+  switch (challengeType) {
+    case 'daily':
+      return 'デイリー';
+    case 'weekly':
+      return 'ウィークリー';
+    default:
+      return 'その他';
+  }
+}
+
+/// Get display name for target metric
+export function targetMetricLabel(targetMetric: string): string {
+  switch (targetMetric) {
+    case 'commits':
+      return 'コミット';
+    case 'prs':
+      return 'PR';
+    case 'reviews':
+      return 'レビュー';
+    case 'issues':
+      return 'Issue';
+    default:
+      return 'その他';
+  }
+}
+
+/// Get icon for target metric
+export function targetMetricIcon(targetMetric: string): string {
+  switch (targetMetric) {
+    case 'commits':
+      return '📝';
+    case 'prs':
+      return '🔀';
+    case 'reviews':
+      return '👀';
+    case 'issues':
+      return '🐛';
+    default:
+      return '🎯';
+  }
+}
+
+/// Get status label
+export function statusLabel(status: string): string {
+  switch (status) {
+    case 'active':
+      return '進行中';
+    case 'completed':
+      return '達成';
+    case 'failed':
+      return '失敗';
+    default:
+      return '不明';
+  }
+}
+
+/// Format remaining time as human-readable string
+export function remainingTimeLabel(remainingTimeHours: number): string {
+  if (remainingTimeHours <= 0) {
+    return '終了';
+  }
+
+  if (remainingTimeHours >= 24) {
+    const days = Math.floor(remainingTimeHours / 24);
+    return `残り ${days}日`;
+  } else {
+    return `残り ${remainingTimeHours}時間`;
+  }
+}
+

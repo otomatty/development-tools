@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.sugaiakimasa.development-tools",
   "build": {
-    "beforeDevCommand": "trunk serve",
+    "beforeDevCommand": "bun run dev:frontend",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build",
+    "beforeBuildCommand": "bun run build:frontend",
     "frontendDist": "../dist"
   },
   "app": {
