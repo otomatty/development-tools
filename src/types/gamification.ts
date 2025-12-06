@@ -333,6 +333,21 @@ export interface RateLimitInfo {
   isCritical: boolean;
 }
 
+/// Rate limit structure (used in RateLimitDetailed)
+export interface RateLimit {
+  limit: number;
+  remaining: number;
+  reset: number;
+  used: number;
+}
+
+/// Detailed rate limit information from GitHub API
+export interface RateLimitDetailed {
+  core: RateLimit;
+  search: RateLimit;
+  graphql: RateLimit;
+}
+
 /// REST APIの使用率（%）
 export function restUsagePercent(rateLimit: RateLimitInfo): number {
   if (rateLimit.restLimit === 0) {
