@@ -35,7 +35,7 @@ export interface ToolOption {
   type: OptionType;
   description: string;
   required: boolean;
-  default: any | null;
+  default: unknown | null;
   placeholder: string | null;
   options: string[] | null;
   /// パスの種類 ("file", "directory", "any") - Pathタイプの場合のみ使用
@@ -88,7 +88,7 @@ export interface ToolResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
-  parsedResult: any | null;
+  parsedResult: unknown | null;
 }
 
 /// ログストリーム

@@ -280,6 +280,9 @@ export function statsPeriodDays(period: StatsPeriod): number {
       return 90;
     case 'year':
       return 365;
+    default:
+      const exhaustiveCheck: never = period;
+      throw new Error(`Unhandled period: ${exhaustiveCheck}`);
   }
 }
 
@@ -294,6 +297,9 @@ export function statsPeriodLabel(period: StatsPeriod): string {
       return '四半期';
     case 'year':
       return '年間';
+    default:
+      const exhaustiveCheck: never = period;
+      throw new Error(`Unhandled period: ${exhaustiveCheck}`);
   }
 }
 
@@ -368,8 +374,14 @@ export function repositories(stats: DailyCodeStats): string[] {
     return [];
   }
   try {
-    return JSON.parse(stats.repositoriesJson);
-  } catch {
+    const parsed = JSON.parse(stats.repositoriesJson);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+      return parsed;
+    }
+    console.error('Parsed repositoriesJson is not a string array:', parsed);
+    return [];
+  } catch (error) {
+    console.error('Failed to parse repositoriesJson', error);
     return [];
   }
 }

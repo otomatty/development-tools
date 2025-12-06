@@ -195,8 +195,14 @@ export function getIssueLabels(issue: CachedIssue): string[] {
     return [];
   }
   try {
-    return JSON.parse(issue.labelsJson);
-  } catch {
+    const parsed = JSON.parse(issue.labelsJson);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+      return parsed;
+    }
+    console.error('Parsed labelsJson is not a string array:', parsed);
+    return [];
+  } catch (error) {
+    console.error('Failed to parse labelsJson', error);
     return [];
   }
 }

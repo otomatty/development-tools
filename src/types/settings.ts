@@ -9,10 +9,6 @@
 /// for serialization to ensure compatibility.
 export type NotificationMethod = 'app_only' | 'os_only' | 'both' | 'none';
 
-export function notificationMethodAsStr(method: NotificationMethod): string {
-  return method;
-}
-
 export function notificationMethodFromStr(s: string): NotificationMethod {
   switch (s) {
     case 'app_only':
@@ -45,7 +41,7 @@ export function notificationMethodLabel(method: NotificationMethod): string {
 export interface UserSettings {
   id: number;
   userId: number;
-  notificationMethod: string;
+  notificationMethod: NotificationMethod;
   notifyXpGain: boolean;
   notifyLevelUp: boolean;
   notifyBadgeEarned: boolean;
@@ -61,7 +57,7 @@ export interface UserSettings {
 
 /// 設定更新リクエスト
 export interface UpdateSettingsRequest {
-  notificationMethod: string;
+  notificationMethod: NotificationMethod;
   notifyXpGain: boolean;
   notifyLevelUp: boolean;
   notifyBadgeEarned: boolean;
@@ -91,7 +87,6 @@ export interface AppInfo {
   version: string;
   buildDate: string;
   tauriVersion: string;
-  leptosVersion: string;
   rustVersion: string;
 }
 

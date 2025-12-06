@@ -14,7 +14,7 @@ export * from './settings';
 export * from './tool';
 
 /// オプション値のマップ
-export type OptionValues = Record<string, any>;
+export type OptionValues = Record<string, unknown>;
 
 /// アプリのページ
 export enum AppPage {
@@ -37,5 +37,10 @@ export type AppPageType = AppPage | ProjectDetailPage;
 
 /// Check if page is ProjectDetail
 export function isProjectDetailPage(page: AppPageType): page is ProjectDetailPage {
-  return typeof page === 'object' && 'type' in page && page.type === 'ProjectDetail';
+  return (
+    page !== null &&
+    typeof page === 'object' &&
+    'type' in page &&
+    page.type === 'ProjectDetail'
+  );
 }
