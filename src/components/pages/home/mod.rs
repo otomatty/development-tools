@@ -3,6 +3,10 @@
 //! The main home page that displays user profile, stats, badges, and contribution graph.
 //! This page component is responsible for layout and orchestrating feature components.
 //!
+//! Performance Optimizations:
+//! - Phase 1: Parallel API calls in load_user_data (Issue #124)
+//! - Phase 2: Deferred startup sync (Issue #125) - Load UI first, sync in background
+//!
 //! DEPENDENCY MAP:
 //! Parents (Files that import this page):
 //!   ├─ src/components/pages/mod.rs
@@ -18,11 +22,14 @@
 //!   ├─ features/gamification/home_data_loader.rs - load_user_data
 //!   └─ features/gamification/xp_notification.rs - XpNotification, LevelUpModal, MultipleBadgesNotification
 //! Related Documentation:
-//!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
+//!   ├─ Issue #117: Home page gamification
+//!   ├─ Phase 1 Performance: https://github.com/otomatty/development-tools/issues/124
+//!   └─ Phase 2 Performance: https://github.com/otomatty/development-tools/issues/125
 
 pub mod loading;
 pub mod utils;
 
+use futures::join;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -106,38 +113,52 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                             let should_sync_on_startup = settings.sync_on_startup;
                             set_notification_settings.set(Some(settings));
 
+                            // Phase 2 Optimization: Load user data first to display UI immediately,
+                            // then perform sync_on_startup asynchronously in the background.
+                            // This ensures users see cached data quickly instead of waiting for sync.
+
+                            // 1. Load user data first (display UI immediately with cached data)
+                            load_user_data(
+                                set_github_stats,
+                                set_level_info,
+                                set_user_stats,
+                                set_badges,
+                                set_error,
+                                set_data_from_cache,
+                                set_cache_timestamp,
+                            )
+                            .await;
+
+                            // 2. Perform startup sync asynchronously in the background
+                            // (no longer blocks UI display)
                             if should_sync_on_startup {
-                                web_sys::console::log_1(
-                                    &"Startup sync: Syncing GitHub stats...".into(),
-                                );
-                                if let Ok(sync_result) = tauri_api::sync_github_stats().await {
-                                    set_user_stats.set(Some(sync_result.user_stats.clone()));
-                                    set_stats_diff.set(sync_result.stats_diff.clone());
-                                    handle_sync_result_notifications(
-                                        &sync_result,
-                                        notification_settings,
-                                        set_xp_event,
-                                        set_level_up_event,
-                                        set_new_badges_event,
+                                spawn_local(async move {
+                                    web_sys::console::log_1(
+                                        &"Startup sync: Syncing GitHub stats in background..."
+                                            .into(),
                                     );
-                                }
+                                    if let Ok(sync_result) = tauri_api::sync_github_stats().await {
+                                        set_user_stats.set(Some(sync_result.user_stats.clone()));
+                                        set_stats_diff.set(sync_result.stats_diff.clone());
+                                        // Note: We don't update set_data_from_cache and set_cache_timestamp here
+                                        // to avoid race conditions with load_user_data. The cache state is
+                                        // managed exclusively by load_user_data based on the API response.
+                                        handle_sync_result_notifications(
+                                            &sync_result,
+                                            notification_settings,
+                                            set_xp_event,
+                                            set_level_up_event,
+                                            set_new_badges_event,
+                                        );
+                                        web_sys::console::log_1(&"Startup sync: Complete".into());
+                                    }
+                                });
                             }
                         }
                         Err(e) => {
                             set_error.set(Some(format!("設定の読み込みに失敗しました: {}", e)));
                         }
                     }
-
-                    load_user_data(
-                        set_github_stats,
-                        set_level_info,
-                        set_user_stats,
-                        set_badges,
-                        set_error,
-                        set_data_from_cache,
-                        set_cache_timestamp,
-                    )
-                    .await;
                 }
             }
             Err(e) => {
@@ -252,12 +273,22 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                                 set_level_up_event,
                                 set_new_badges_event,
                             );
-                            if let Ok(info) = tauri_api::get_level_info().await {
-                                set_level_info.set(info);
-                            }
-                            if let Ok(b) = tauri_api::get_badges().await {
-                                set_badges.set(b);
-                            }
+
+                            // Phase 1 Optimization: Parallel API calls during auto-sync
+                            // Load level_info and badges concurrently using futures::join!
+                            let set_level_info_clone = set_level_info.clone();
+                            let set_badges_clone = set_badges.clone();
+                            spawn_local(async move {
+                                let (level_result, badges_result) =
+                                    join!(tauri_api::get_level_info(), tauri_api::get_badges());
+
+                                if let Ok(info) = level_result {
+                                    set_level_info_clone.set(info);
+                                }
+                                if let Ok(b) = badges_result {
+                                    set_badges_clone.set(b);
+                                }
+                            });
                         }
                     }
 
@@ -419,34 +450,34 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                 // Cache indicator
                 <CacheIndicator data_from_cache=data_from_cache cache_timestamp=cache_timestamp />
 
-                // Loading state
-                <Show when=move || loading.get()>
-                    <HomeSkeleton />
-                </Show>
-
-                // Content
-                <Show when=move || !loading.get()>
-                    <Show
-                        when=move || auth_state.get().is_logged_in
-                        fallback=move || view! {
+                // Content (Phase 3: Suspense per section for progressive loading)
+                // We display DashboardContent immediately instead of waiting for loading.get()
+                // This allows each section to render independently with its own Suspense boundary
+                <Show
+                    when=move || auth_state.get().is_logged_in
+                    fallback=move || view! {
+                        <Show when=move || loading.get()>
+                            <HomeSkeleton />
+                        </Show>
+                        <Show when=move || !loading.get()>
                             <LoginCard
                                 login_state=login_state
                                 on_login=on_login
                                 on_cancel=on_cancel_login
                                 on_open_url=on_open_url
                             />
-                        }
-                    >
-                        <DashboardContent
-                            auth_state=auth_state
-                            level_info=level_info
-                            user_stats=user_stats
-                            github_stats=github_stats
-                            stats_diff=stats_diff
-                            on_logout=on_logout
-                            set_current_page=set_current_page
-                        />
-                    </Show>
+                        </Show>
+                    }
+                >
+                    <DashboardContent
+                        auth_state=auth_state
+                        level_info=level_info
+                        user_stats=user_stats
+                        github_stats=github_stats
+                        stats_diff=stats_diff
+                        on_logout=on_logout
+                        set_current_page=set_current_page
+                    />
                 </Show>
             </div>
         </div>
