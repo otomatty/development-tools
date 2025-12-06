@@ -12,7 +12,8 @@ edition = "2021"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "development_tools_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# WASMビルド用の設定（Trunk移行時に削除予定）
+# crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
