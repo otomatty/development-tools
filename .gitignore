@@ -2,6 +2,9 @@
 /dist/
 /target/
 
+# Vite
+.vite/
+
 # Rust
 Cargo.lock
 

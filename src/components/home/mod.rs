@@ -7,9 +7,13 @@
 //! Children:
 //!   └─ skeleton.rs - Home page skeleton loader
 //! Related Documentation:
-//!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
+//!   ├─ Issue #117: Home page gamification
+//!   └─ Phase 3 Performance: https://github.com/otomatty/development-tools/issues/126
 
 pub mod skeleton;
 
-// Re-export skeleton for use in pages/home_page.rs
-pub use skeleton::HomeSkeleton;
+// Re-export skeletons for use in dashboard_content.rs and other components
+pub use skeleton::{
+    BadgeGridSkeleton, ChallengeCardSkeleton, ContributionGraphSkeleton, HomeSkeleton,
+    ProfileCardSkeleton, StatsDisplaySkeleton,
+};

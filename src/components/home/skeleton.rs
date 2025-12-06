@@ -344,3 +344,70 @@ pub fn ContributionGraphSkeleton() -> impl IntoView {
         </SkeletonCard>
     }
 }
+
+/// Challenge card skeleton
+#[component]
+pub fn ChallengeCardSkeleton() -> impl IntoView {
+    view! {
+        <SkeletonCard class="border-gm-accent-gold/20">
+            // Header with title and refresh button
+            <div class="flex items-center justify-between mb-4">
+                // Title
+                <div class="flex items-center gap-2">
+                    <Skeleton
+                        width="1.5rem"
+                        height="1.5rem"
+                        rounded="rounded"
+                    />
+                    <Skeleton
+                        width="6rem"
+                        height="1.25rem"
+                        rounded="rounded"
+                    />
+                </div>
+
+                // Refresh button placeholder
+                <Skeleton
+                    width="2rem"
+                    height="2rem"
+                    rounded="rounded-lg"
+                />
+            </div>
+
+            // Challenge items
+            <div class="space-y-3">
+                {(0..2).map(|_| {
+                    view! {
+                        <div class="p-4 rounded-xl border border-gm-accent-gold/20 bg-gm-bg-secondary/50 space-y-2">
+                            // Challenge header
+                            <div class="flex items-start justify-between">
+                                <Skeleton
+                                    width="8rem"
+                                    height="1rem"
+                                    rounded="rounded"
+                                />
+                                <Skeleton
+                                    width="2rem"
+                                    height="1rem"
+                                    rounded="rounded"
+                                />
+                            </div>
+                            // Progress bar
+                            <Skeleton
+                                width="100%"
+                                height="0.5rem"
+                                rounded="rounded-full"
+                            />
+                            // Footer info
+                            <Skeleton
+                                width="6rem"
+                                height="0.75rem"
+                                rounded="rounded"
+                            />
+                        </div>
+                    }
+                }).collect_view()}
+            </div>
+        </SkeletonCard>
+    }
+}

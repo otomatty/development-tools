@@ -1,12 +1,16 @@
 {
   "scripts": {
     "dev": "tauri dev",
-    "dev:frontend": "trunk serve",
+    "dev:frontend": "vite",
     "build": "tauri build",
-    "build:frontend": "trunk build",
+    "build:frontend": "vite build",
+    "preview": "vite preview",
     "build:debug": "tauri build --debug",
     "build:css": "tailwindcss -i ./input.css -o ./styles.css --minify",
     "watch:css": "tailwindcss -i ./input.css -o ./styles.css --watch",
+    "typecheck": "tsc --noEmit",
+    "dev:leptos": "trunk serve",
+    "build:leptos": "trunk build",
     "tauri:icon": "tauri icon",
     "tauri:info": "tauri info",
     "tauri:signer": "tauri signer generate -w ~/.tauri/development-tools.key",
@@ -17,9 +21,16 @@
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@solidjs/router": "^0.15.4",
+    "solid-js": "^1.9.10"
+  },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "tailwindcss": "3"
+    "@types/node": "^24.10.1",
+    "tailwindcss": "3",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6",
+    "vite-plugin-solid": "^2.11.10"
   }
 }
