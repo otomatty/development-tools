@@ -12,7 +12,3 @@
 export * from './commands';
 export * from './events';
 
-// Re-export for convenience
-export { auth, settings, projects, repositories, issues, tools, mockServer, gamification, challenges, github, cache } from './commands';
-export { events } from './events';
-

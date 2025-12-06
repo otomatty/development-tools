@@ -49,6 +49,9 @@ import type {
   CodeStatsSyncResult,
   CodeStatsResponse,
   RateLimitInfo,
+  RateLimitDetailed,
+  ContributionCalendar,
+  BadgeWithProgress,
   CachedResponse,
   CacheStats,
 } from '@/types';
@@ -187,8 +190,8 @@ export const projects = {
   /**
    * Get a single project by ID
    */
-  get: (projectId: number): Promise<Project> =>
-    invoke<Project>('get_project', { projectId }),
+  get: (project_id: number): Promise<Project> =>
+    invoke<Project>('get_project', { project_id }),
 
   /**
    * Create a new project
@@ -199,14 +202,14 @@ export const projects = {
   /**
    * Update a project
    */
-  update: (projectId: number, name: string, description?: string | null): Promise<Project> =>
-    invoke<Project>('update_project', { projectId, name, description }),
+  update: (project_id: number, name: string, description?: string | null): Promise<Project> =>
+    invoke<Project>('update_project', { project_id, name, description }),
 
   /**
    * Delete a project
    */
-  delete: (projectId: number): Promise<void> =>
-    invoke<void>('delete_project', { projectId }),
+  delete: (project_id: number): Promise<void> =>
+    invoke<void>('delete_project', { project_id }),
 };
 
 export const repositories = {
@@ -219,52 +222,52 @@ export const repositories = {
   /**
    * Link a repository to a project
    */
-  link: (projectId: number, owner: string, repo: string): Promise<Project> =>
-    invoke<Project>('link_repository', { projectId, owner, repo }),
+  link: (project_id: number, owner: string, repo: string): Promise<Project> =>
+    invoke<Project>('link_repository', { project_id, owner, repo }),
 };
 
 export const issues = {
   /**
    * Setup GitHub Actions for automatic status updates
    */
-  setupGitHubActions: (projectId: number): Promise<string> =>
-    invoke<string>('setup_github_actions', { projectId }),
+  setupGitHubActions: (project_id: number): Promise<string> =>
+    invoke<string>('setup_github_actions', { project_id }),
 
   /**
    * Sync issues from GitHub to local cache
    */
-  syncProjectIssues: (projectId: number): Promise<CachedIssue[]> =>
-    invoke<CachedIssue[]>('sync_project_issues', { projectId }),
+  syncProjectIssues: (project_id: number): Promise<CachedIssue[]> =>
+    invoke<CachedIssue[]>('sync_project_issues', { project_id }),
 
   /**
    * Get cached issues for a project
    */
-  getProjectIssues: (projectId: number, status?: string | null): Promise<CachedIssue[]> =>
-    invoke<CachedIssue[]>('get_project_issues', { projectId, status }),
+  getProjectIssues: (project_id: number, status?: string | null): Promise<CachedIssue[]> =>
+    invoke<CachedIssue[]>('get_project_issues', { project_id, status }),
 
   /**
    * Get issues as kanban board
    */
-  getKanbanBoard: (projectId: number): Promise<KanbanBoard> =>
-    invoke<KanbanBoard>('get_kanban_board', { projectId }),
+  getKanbanBoard: (project_id: number): Promise<KanbanBoard> =>
+    invoke<KanbanBoard>('get_kanban_board', { project_id }),
 
   /**
    * Update issue status (also updates on GitHub)
    */
-  updateStatus: (projectId: number, issueNumber: number, newStatus: string): Promise<CachedIssue> =>
-    invoke<CachedIssue>('update_issue_status', { projectId, issueNumber, newStatus }),
+  updateStatus: (project_id: number, issue_number: number, new_status: string): Promise<CachedIssue> =>
+    invoke<CachedIssue>('update_issue_status', { project_id, issue_number, new_status }),
 
   /**
    * Create a new issue (on GitHub and cache locally)
    */
   create: (
-    projectId: number,
+    project_id: number,
     title: string,
     body?: string | null,
     status?: string | null,
     priority?: string | null,
   ): Promise<CachedIssue> =>
-    invoke<CachedIssue>('create_github_issue', { projectId, title, body, status, priority }),
+    invoke<CachedIssue>('create_github_issue', { project_id, title, body, status, priority }),
 };
 
 // ============================================================================
@@ -281,24 +284,24 @@ export const tools = {
   /**
    * Get tool configuration
    */
-  getConfig: (toolName: string): Promise<ToolConfig> =>
-    invoke<ToolConfig>('get_tool_config', { toolName }),
+  getConfig: (tool_name: string): Promise<ToolConfig> =>
+    invoke<ToolConfig>('get_tool_config', { tool_name }),
 
   /**
    * Run a tool
    */
-  run: (toolName: string, options: Record<string, unknown>): Promise<void> =>
-    invoke<void>('run_tool', { toolName, options }),
+  run: (tool_name: string, options: Record<string, unknown>): Promise<void> =>
+    invoke<void>('run_tool', { tool_name, options }),
 
   /**
    * Select a path using native dialog
    */
   selectPath: (
-    pathType: string,
+    path_type: string,
     title?: string | null,
-    defaultPath?: string | null,
+    default_path?: string | null,
   ): Promise<string | null> =>
-    invoke<string | null>('select_path', { pathType, title, defaultPath }),
+    invoke<string | null>('select_path', { path_type, title, default_path }),
 };
 
 // ============================================================================
@@ -387,8 +390,8 @@ export const gamification = {
   /**
    * Add XP to current user (for testing/admin purposes)
    */
-  addXp: (amount: number, actionType: string, description?: string | null): Promise<UserStats> =>
-    invoke<UserStats>('add_xp', { amount, actionType, description }),
+  addXp: (amount: number, action_type: string, description?: string | null): Promise<UserStats> =>
+    invoke<UserStats>('add_xp', { amount, action_type, description }),
 
   /**
    * Get user's badges
@@ -399,8 +402,8 @@ export const gamification = {
   /**
    * Award a badge to current user
    */
-  awardBadge: (badgeType: string, badgeId: string): Promise<boolean> =>
-    invoke<boolean>('award_badge', { badgeType, badgeId }),
+  awardBadge: (badge_type: string, badge_id: string): Promise<boolean> =>
+    invoke<boolean>('award_badge', { badge_type, badge_id }),
 
   /**
    * Get recent XP history
@@ -435,8 +438,8 @@ export const challenges = {
   /**
    * Get challenges by type (daily/weekly)
    */
-  getByType: (challengeType: string): Promise<ChallengeInfo[]> =>
-    invoke<ChallengeInfo[]>('get_challenges_by_type', { challengeType }),
+  getByType: (challenge_type: string): Promise<ChallengeInfo[]> =>
+    invoke<ChallengeInfo[]>('get_challenges_by_type', { challenge_type }),
 
   /**
    * Create a custom challenge
@@ -447,14 +450,14 @@ export const challenges = {
   /**
    * Delete a challenge
    */
-  delete: (challengeId: number): Promise<void> =>
-    invoke<void>('delete_challenge', { challengeId }),
+  delete: (challenge_id: number): Promise<void> =>
+    invoke<void>('delete_challenge', { challenge_id }),
 
   /**
    * Update challenge progress manually (for testing/admin)
    */
-  updateProgress: (challengeId: number, currentValue: number): Promise<ChallengeInfo> =>
-    invoke<ChallengeInfo>('update_challenge_progress', { challengeId, currentValue }),
+  updateProgress: (challenge_id: number, current_value: number): Promise<ChallengeInfo> =>
+    invoke<ChallengeInfo>('update_challenge_progress', { challenge_id, current_value }),
 
   /**
    * Get challenge completion stats
@@ -495,26 +498,26 @@ export const github = {
   /**
    * Get contribution calendar
    */
-  getContributionCalendar: (): Promise<unknown> =>
-    invoke<unknown>('get_contribution_calendar'),
+  getContributionCalendar: (): Promise<ContributionCalendar> =>
+    invoke<ContributionCalendar>('get_contribution_calendar'),
 
   /**
    * Get badges with progress information
    */
-  getBadgesWithProgress: (): Promise<unknown[]> =>
-    invoke<unknown[]>('get_badges_with_progress'),
+  getBadgesWithProgress: (): Promise<BadgeWithProgress[]> =>
+    invoke<BadgeWithProgress[]>('get_badges_with_progress'),
 
   /**
    * Get badges that are close to being earned
    */
-  getNearCompletionBadges: (thresholdPercent?: number | null): Promise<unknown[]> =>
-    invoke<unknown[]>('get_near_completion_badges', { thresholdPercent }),
+  getNearCompletionBadges: (threshold_percent?: number | null): Promise<BadgeWithProgress[]> =>
+    invoke<BadgeWithProgress[]>('get_near_completion_badges', { threshold_percent }),
 
   /**
    * Sync code statistics from GitHub
    */
-  syncCodeStats: (forceFullSync?: boolean | null): Promise<CodeStatsSyncResult> =>
-    invoke<CodeStatsSyncResult>('sync_code_stats', { forceFullSync }),
+  syncCodeStats: (force_full_sync?: boolean | null): Promise<CodeStatsSyncResult> =>
+    invoke<CodeStatsSyncResult>('sync_code_stats', { force_full_sync }),
 
   /**
    * Get code statistics summary for display
@@ -525,8 +528,8 @@ export const github = {
   /**
    * Get detailed rate limit information
    */
-  getRateLimitInfo: (): Promise<RateLimitInfo> =>
-    invoke<RateLimitInfo>('get_rate_limit_info'),
+  getRateLimitInfo: (): Promise<RateLimitDetailed> =>
+    invoke<RateLimitDetailed>('get_rate_limit_info'),
 
   /**
    * Get GitHub stats with cache fallback
