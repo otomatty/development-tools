@@ -25,6 +25,9 @@
     "@solidjs/router": "^0.15.4",
     "solid-js": "^1.9.10"
   },
+  "_comments": {
+    "@solidjs/router": "Used in Phase2-3 (Issue #135) - Routing implementation"
+  },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/node": "^24.10.1",

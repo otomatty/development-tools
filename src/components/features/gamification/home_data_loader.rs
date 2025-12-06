@@ -13,8 +13,6 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 use crate::tauri_api;
 use crate::types::{Badge, GitHubStats, LevelInfo, UserStats};
@@ -37,17 +35,12 @@ pub async fn load_user_data(
     set_data_from_cache: WriteSignal<bool>,
     set_cache_timestamp: WriteSignal<Option<String>>,
 ) {
-    // Counter to track completed tasks (for parallel execution tracking)
-    // This helps ensure we know when all tasks are complete
-    let completed_tasks = Arc::new(AtomicUsize::new(0));
-
     // Load GitHub stats with cache fallback (Task 1/4)
     {
         let set_github_stats = set_github_stats.clone();
         let set_data_from_cache = set_data_from_cache.clone();
         let set_cache_timestamp = set_cache_timestamp.clone();
         let set_error = set_error.clone();
-        let completed_tasks = completed_tasks.clone();
 
         spawn_local(async move {
             match tauri_api::get_github_stats_with_cache().await {
@@ -70,46 +63,45 @@ pub async fn load_user_data(
                     set_error.set(Some(format!("Failed to load GitHub stats: {}", e)));
                 }
             }
-            completed_tasks.fetch_add(1, Ordering::SeqCst);
         });
     }
 
     // Load level info (Task 2/4)
     {
         let set_level_info = set_level_info.clone();
-        let completed_tasks = completed_tasks.clone();
-
         spawn_local(async move {
-            if let Ok(info) = tauri_api::get_level_info().await {
-                set_level_info.set(info);
+            match tauri_api::get_level_info().await {
+                Ok(info) => set_level_info.set(info),
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Failed to get level info: {}", e).into());
+                }
             }
-            completed_tasks.fetch_add(1, Ordering::SeqCst);
         });
     }
 
     // Load user stats (Task 3/4)
     {
         let set_user_stats = set_user_stats.clone();
-        let completed_tasks = completed_tasks.clone();
-
         spawn_local(async move {
-            if let Ok(stats) = tauri_api::get_user_stats().await {
-                set_user_stats.set(stats);
+            match tauri_api::get_user_stats().await {
+                Ok(stats) => set_user_stats.set(stats),
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Failed to get user stats: {}", e).into());
+                }
             }
-            completed_tasks.fetch_add(1, Ordering::SeqCst);
         });
     }
 
     // Load badges (Task 4/4)
     {
         let set_badges = set_badges.clone();
-        let completed_tasks = completed_tasks.clone();
-
         spawn_local(async move {
-            if let Ok(b) = tauri_api::get_badges().await {
-                set_badges.set(b);
+            match tauri_api::get_badges().await {
+                Ok(b) => set_badges.set(b),
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Failed to get badges: {}", e).into());
+                }
             }
-            completed_tasks.fetch_add(1, Ordering::SeqCst);
         });
     }
 }

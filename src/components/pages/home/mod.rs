@@ -29,6 +29,7 @@
 pub mod loading;
 pub mod utils;
 
+use futures::join;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -139,8 +140,9 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                                     if let Ok(sync_result) = tauri_api::sync_github_stats().await {
                                         set_user_stats.set(Some(sync_result.user_stats.clone()));
                                         set_stats_diff.set(sync_result.stats_diff.clone());
-                                        set_data_from_cache.set(false);
-                                        set_cache_timestamp.set(None);
+                                        // Note: We don't update set_data_from_cache and set_cache_timestamp here
+                                        // to avoid race conditions with load_user_data. The cache state is
+                                        // managed exclusively by load_user_data based on the API response.
                                         handle_sync_result_notifications(
                                             &sync_result,
                                             notification_settings,
@@ -273,21 +275,17 @@ pub fn HomePage(set_current_page: WriteSignal<AppPage>) -> impl IntoView {
                             );
 
                             // Phase 1 Optimization: Parallel API calls during auto-sync
-                            // Load level_info and badges concurrently instead of sequentially
-                            let level_future = tauri_api::get_level_info();
-                            let badges_future = tauri_api::get_badges();
-
-                            // Execute both in parallel using spawn_local
+                            // Load level_info and badges concurrently using futures::join!
                             let set_level_info_clone = set_level_info.clone();
-                            spawn_local(async move {
-                                if let Ok(info) = level_future.await {
-                                    set_level_info_clone.set(info);
-                                }
-                            });
-
                             let set_badges_clone = set_badges.clone();
                             spawn_local(async move {
-                                if let Ok(b) = badges_future.await {
+                                let (level_result, badges_result) =
+                                    join!(tauri_api::get_level_info(), tauri_api::get_badges());
+
+                                if let Ok(info) = level_result {
+                                    set_level_info_clone.set(info);
+                                }
+                                if let Ok(b) = badges_result {
                                     set_badges_clone.set(b);
                                 }
                             });
