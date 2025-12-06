@@ -139,9 +139,9 @@ jobs:
           path: tarpaulin-report.html
           retention-days: 14
 
-  # WASM フロントエンドのビルド確認
-  build-frontend:
-    name: Build Frontend (WASM)
+  # WASM フロントエンドのビルド確認（Leptos/Trunk）
+  build-frontend-leptos:
+    name: Build Frontend (Leptos/WASM)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -171,8 +171,33 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-wasm-
 
-      - name: Build frontend
-        run: trunk build
+      - name: Build CSS
+        run: bun run build:css
+
+      - name: Build frontend (Leptos)
+        run: bun run build:leptos
+
+  # Solid.js フロントエンドのビルド確認（Vite）
+  build-frontend-solidjs:
+    name: Build Frontend (Solid.js/Vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install npm dependencies
+        run: bun install
+
+      - name: Build CSS
+        run: bun run build:css
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Build frontend (Solid.js)
+        run: bun run build:frontend
 
   # Tauri アプリのビルド確認（Ubuntu のみ、軽量チェック用）
   build-tauri:
