@@ -21,13 +21,18 @@ Development Tools のシステムアーキテクチャについて説明しま�
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                       Frontend (Leptos/WASM)                             │
+│          Frontend (Solid.js + Leptos/WASM - 段階的移行中)                │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
 │  │   HomePage  │  │ ToolDetail  │  │MockServerPage│ │  SettingsPage   │ │
 │  │(Gamification)│ │  (Runner)   │  │             │  │                 │ │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘ │
 │         │                │                │                   │          │
 │         └────────────────┴────────────────┴───────────────────┘          │
+│                                   │                                      │
+│  ┌────────────────────────────────┴──────────────────────────────────┐ │
+│  │  UI Components (Solid.js) - Phase 3-1実装済み                      │ │
+│  │  Button, Input, Modal, DropdownMenu, Toast                        │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
 │                                   │                                      │
 │                            tauri_api.rs                                  │
 │                      (Tauri IPC Wrapper)                                 │
@@ -94,22 +99,55 @@ Development Tools のシステムアーキテクチャについて説明しま�
 
 ### 技術スタック
 
-- **Leptos 0.7**: Rust ベースのリアクティブフレームワーク
-- **WASM**: WebAssembly にコンパイル
+- **Solid.js**: TypeScript ベースのリアクティブフレームワーク（Phase 2-3で移行）
+- **Leptos 0.7**: Rust ベースのリアクティブフレームワーク（段階的に移行中）
+- **WASM**: WebAssembly にコンパイル（Leptosコンポーネント用）
 - **Tailwind CSS**: ユーティリティファースト CSS
 
 ### ディレクトリ構造
 
 ```
 src/
-├── app.rs                    # メインアプリケーションコンポーネント
-├── main.rs                   # エントリーポイント
+├── App.tsx                   # メインアプリケーションコンポーネント（Solid.js）
+├── main.tsx                  # エントリーポイント（Solid.js）
+├── app.rs                    # メインアプリケーションコンポーネント（Leptos、段階的に移行中）
+├── main.rs                   # エントリーポイント（Leptos）
 ├── tauri_api.rs              # Tauri IPC呼び出しラッパー
+├── pages/                    # ページコンポーネント（Solid.js）
+│   ├── Home/
+│   ├── Projects/
+│   ├── Settings/
+│   └── ...
 ├── components/
-│   ├── mod.rs                # コンポーネント公開
+│   ├── mod.rs                # コンポーネント公開（Leptos）
+│   ├── ui/                   # UIコンポーネント（Leptos + Solid.js）
+│   │   ├── button/           # Button, IconButton（Solid.js版実装済み）
+│   │   │   ├── Button.tsx
+│   │   │   ├── Button.spec.md
+│   │   │   ├── button.rs     # Leptos版（段階的に削除予定）
+│   │   │   └── index.ts
+│   │   ├── form/             # Input, TextArea, LabeledInput（Solid.js版実装済み）
+│   │   │   ├── Input.tsx
+│   │   │   ├── Input.spec.md
+│   │   │   ├── input.rs      # Leptos版（段階的に削除予定）
+│   │   │   └── index.ts
+│   │   ├── dialog/           # Modal関連（Solid.js版実装済み）
+│   │   │   ├── Modal.tsx
+│   │   │   ├── Modal.spec.md
+│   │   │   ├── modal.rs       # Leptos版（段階的に削除予定）
+│   │   │   └── index.ts
+│   │   ├── dropdown/         # DropdownMenu（Solid.js版実装済み）
+│   │   │   ├── DropdownMenu.tsx
+│   │   │   ├── DropdownMenu.spec.md
+│   │   │   ├── dropdown_menu.rs # Leptos版（段階的に削除予定）
+│   │   │   └── index.ts
+│   │   └── feedback/         # Toast（Solid.js版実装済み）
+│   │       ├── Toast.tsx
+│   │       ├── Toast.spec.md
+│   │       ├── toast.rs       # Leptos版（段階的に削除予定）
+│   │       └── index.ts
 │   ├── animation_context.rs  # アニメーション状態管理
 │   ├── confirm_dialog.rs     # 確認ダイアログ
-│   ├── dropdown_menu.rs      # ドロップダウンメニュー
 │   ├── icons.rs              # SVGアイコン
 │   ├── log_viewer.rs         # ログ表示
 │   ├── option_form.rs        # ツールオプションフォーム
@@ -127,19 +165,39 @@ src/
 │   ├── settings/             # 設定ページ
 │   ├── mock_server/          # モックサーバーUI
 │   └── skeleton/             # ローディングスケルトン
+├── stores/                   # Solid.jsストア（状態管理）
+│   ├── animationStore.ts
+│   ├── authStore.ts
+│   ├── navigationStore.ts
+│   └── ...
+├── hooks/                    # Solid.jsフック
+│   ├── useToast.ts           # Toast用フック（新規作成）
+│   └── ...
 └── types/
-    ├── mod.rs                # 型定義公開
-    ├── auth.rs               # 認証関連型
-    ├── challenge.rs          # チャレンジ関連型
-    ├── gamification.rs       # ゲーミフィケーション関連型
-    ├── mock_server.rs        # モックサーバー関連型
-    ├── settings.rs           # 設定関連型
-    └── tool.rs               # ツール関連型
+    ├── index.ts              # 型定義公開（TypeScript）
+    ├── ui.ts                 # UIコンポーネント用型定義（新規作成）
+    ├── auth.ts               # 認証関連型
+    ├── challenge.ts          # チャレンジ関連型
+    ├── gamification.ts       # ゲーミフィケーション関連型
+    ├── mock-server.ts        # モックサーバー関連型
+    ├── settings.ts           # 設定関連型
+    └── tool.ts               # ツール関連型
 ```
 
 ### 状態管理
 
-Leptos のシグナルを使用：
+**Solid.js（新規）**:
+
+```typescript
+// リアクティブな状態
+const [count, setCount] = createSignal(0);
+
+// ストアによるグローバル状態
+import { useAnimation } from './stores/animationStore';
+const animation = useAnimation();
+```
+
+**Leptos（段階的に移行中）**:
 
 ```rust
 // リアクティブな状態
@@ -152,6 +210,24 @@ let ctx = use_context::<AnimationContext>();
 
 ### ページ遷移
 
+**Solid.js（Phase 2-3で実装済み）**:
+
+`@solidjs/router` を使用したルーティング：
+
+```typescript
+import { Router, Routes, Route } from '@solidjs/router';
+
+<Router>
+  <Routes>
+    <Route path="/" component={Home} />
+    <Route path="/projects" component={Projects} />
+    <Route path="/settings" component={Settings} />
+  </Routes>
+</Router>
+```
+
+**Leptos（段階的に移行中）**:
+
 `AppPage` enum によるシンプルなルーティング：
 
 ```rust
@@ -161,6 +237,52 @@ pub enum AppPage {
     MockServer, // モックサーバー
     Settings,   // 設定
 }
+```
+
+### UIコンポーネント（Phase 3-1で実装済み）
+
+基本UIコンポーネントはSolid.js版が実装済み：
+
+- **Button / IconButton**: 6バリアント、3サイズ、isLoading対応
+- **Input / TextArea / LabeledInput**: 6種類のinputType、3サイズ対応
+- **Modal / ModalHeader / ModalBody / ModalFooter**: Portal対応、ESCキー、オーバーレイクリック対応
+- **DropdownMenu / DropdownMenuItem / DropdownMenuDivider**: Context API使用、ESCキー対応
+- **Toast / InlineToast**: 4タイプ対応、自動非表示対応
+
+使用方法：
+
+```typescript
+import { Button } from './components/ui/button';
+import { Input, LabeledInput } from './components/ui/form';
+import { Modal, ModalHeader, ModalBody, ModalFooter } from './components/ui/dialog';
+import { DropdownMenu, DropdownMenuItem } from './components/ui/dropdown';
+import { Toast, useToast } from './components/ui/feedback';
+
+// Button使用例
+<Button variant="primary" size="md" onClick={handleClick}>
+  Click Me
+</Button>
+
+// Input使用例
+const [value, setValue] = createSignal('');
+<LabeledInput
+  value={value}
+  onInput={setValue}
+  label="Username"
+  required
+/>
+
+// Modal使用例
+const [isOpen, setIsOpen] = createSignal(false);
+<Modal visible={isOpen} onClose={() => setIsOpen(false)}>
+  <ModalHeader onClose={() => setIsOpen(false)}>Title</ModalHeader>
+  <ModalBody>Content</ModalBody>
+  <ModalFooter>Actions</ModalFooter>
+</Modal>
+
+// Toast使用例
+const toast = useToast();
+toast.success("保存しました");
 ```
 
 ---
