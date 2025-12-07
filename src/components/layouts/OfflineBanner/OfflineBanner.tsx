@@ -16,15 +16,20 @@ import { Icon } from '@/components/icons';
 
 /**
  * Format ISO 8601 timestamp to human-readable format
- * Example: "2025-11-30T12:34:56.789Z" -> "12:34"
+ * Converts to local time and returns HH:MM format.
+ * Example: "2025-11-30T12:34:56.789Z" -> "21:34" (JST)
+ * 
+ * @param isoString - ISO 8601 timestamp string
+ * @returns Formatted time string (HH:MM) or original string if invalid
  */
 function formatTimestamp(isoString: string): string {
-  const timePart = isoString.split('T')[1];
-  if (timePart) {
-    const time = timePart.substring(0, 5);
-    return time;
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) {
+    return isoString; // Fallback for invalid date format
   }
-  return isoString;
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
 }
 
 /**

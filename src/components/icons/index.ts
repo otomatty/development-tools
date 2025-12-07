@@ -7,5 +7,6 @@
  *   - Issue: https://github.com/otomatty/development-tools/issues/137
  */
 
-export { Icon, type IconProps } from './Icon';
+export { Icon } from './Icon';
+export type { IconProps } from '@/types/ui';
 

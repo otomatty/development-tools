@@ -9,7 +9,7 @@
  *   - Sidebar: ./Sidebar.tsx
  */
 
-import { Component, Show } from 'solid-js';
+import { Component } from 'solid-js';
 import { A, useLocation } from '@solidjs/router';
 import { Icon } from '@/components/icons';
 

@@ -9,16 +9,9 @@
  *   - lucide-solid: https://lucide.dev/guide/packages/lucide-solid
  */
 
-import { Component, Show } from 'solid-js';
-import type { IconProps as LucideIconProps } from 'lucide-solid';
+import { Component } from 'solid-js';
 import * as LucideIcons from 'lucide-solid';
-
-export interface IconProps {
-  name: string;
-  class?: string;
-  size?: number | string;
-  strokeWidth?: number;
-}
+import type { IconProps } from '@/types/ui';
 
 /**
  * Maps existing icon names to lucide-solid icon component names
@@ -101,11 +94,11 @@ export const Icon: Component<IconProps> = (props) => {
   };
 
   const defaultClass = 'w-5 h-5';
-  const class = () => props.class || defaultClass;
+  const iconClass = () => props.class || defaultClass;
   const size = () => {
     if (props.size) return props.size;
     // Extract size from class if present (e.g., "w-6 h-6" -> 24)
-    const match = class().match(/w-(\d+)/);
+    const match = iconClass().match(/w-(\d+)/);
     if (match) {
       return parseInt(match[1]) * 4; // Tailwind spacing unit (1 = 4px)
     }
@@ -116,8 +109,8 @@ export const Icon: Component<IconProps> = (props) => {
 
   return (
     <IconComponent
-      class={class()}
-      size={typeof size() === 'number' ? size() : undefined}
+      class={iconClass()}
+      size={size()}
       stroke-width={props.strokeWidth || 2}
     />
   );

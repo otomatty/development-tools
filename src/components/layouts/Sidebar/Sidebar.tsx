@@ -10,7 +10,7 @@
  *   - Navigation Store: src/stores/navigationStore.ts
  */
 
-import { Component, Show } from 'solid-js';
+import { Component } from 'solid-js';
 import { A, useLocation } from '@solidjs/router';
 import { Icon } from '@/components/icons';
 import { SidebarItem } from './SidebarItem';
@@ -86,6 +86,7 @@ export const Sidebar: Component = () => {
                 : 'text-slate-400 hover:bg-slate-800 hover:text-dt-text'
             }`}
             title="Settings"
+            aria-label="Settings"
           >
             <Icon name="settings" class="w-5 h-5" />
           </A>
