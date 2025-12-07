@@ -32,6 +32,14 @@ createEffect(() => {
 });
 
 /**
+ * Set animation enabled state
+ * This updates the store directly (settings will be synced via the effect above)
+ */
+const setEnabled = (enabled: boolean) => {
+  setAnimationStore('enabled', enabled);
+};
+
+/**
  * Animation hook
  *
  * Provides animation state that is automatically synced with settings store.
@@ -40,6 +48,7 @@ createEffect(() => {
 export const useAnimation = () => {
   return {
     store: animationStore,
+    setEnabled,
   };
 };
 

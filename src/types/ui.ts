@@ -149,6 +149,49 @@ export interface ToastContextValue {
 }
 
 // ============================================================================
+// ToggleSwitch Types
+// ============================================================================
+
+export type ToggleSwitchSize = 'small' | 'medium' | 'large';
+
+export interface ToggleSwitchProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+  enabled: boolean;
+  onToggle?: () => void;
+  labelId?: string;
+  size?: ToggleSwitchSize;
+  disabled?: boolean;
+}
+
+// ============================================================================
+// ConfirmDialog Types
+// ============================================================================
+
+export interface ConfirmDialogProps {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  visible: boolean | (() => boolean);
+  onConfirm: () => void;
+  onCancel: () => void;
+  closeOnOverlay?: boolean;
+}
+
+// ============================================================================
+// Accordion Types
+// ============================================================================
+
+export interface AccordionSectionProps {
+  title: string;
+  icon?: string;
+  expanded: boolean | (() => boolean);
+  onToggle?: () => void;
+  children: JSX.Element;
+  maxHeight?: string;
+  class?: string;
+}
+
+// ============================================================================
 // Icon Types
 // ============================================================================
 
