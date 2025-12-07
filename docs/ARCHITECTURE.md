@@ -120,6 +120,24 @@ src/
 │   └── ...
 ├── components/
 │   ├── mod.rs                # コンポーネント公開（Leptos）
+│   ├── icons/                # アイコンコンポーネント（Solid.js版実装済み）
+│   │   ├── Icon.tsx          # lucide-solidを使用したアイコンコンポーネント
+│   │   └── index.ts
+│   ├── layouts/              # レイアウトコンポーネント（Solid.js版実装済み）
+│   │   ├── Sidebar/          # サイドバーナビゲーション
+│   │   │   ├── Sidebar.tsx
+│   │   │   ├── SidebarItem.tsx
+│   │   │   ├── Sidebar.spec.md
+│   │   │   └── index.ts
+│   │   ├── MainLayout/       # メインレイアウト
+│   │   │   ├── MainLayout.tsx
+│   │   │   ├── MainLayout.spec.md
+│   │   │   └── index.ts
+│   │   ├── OfflineBanner/    # オフラインバナー
+│   │   │   ├── OfflineBanner.tsx
+│   │   │   ├── OfflineBanner.spec.md
+│   │   │   └── index.ts
+│   │   └── index.ts
 │   ├── ui/                   # UIコンポーネント（Leptos + Solid.js）
 │   │   ├── button/           # Button, IconButton（Solid.js版実装済み）
 │   │   │   ├── Button.tsx
@@ -148,11 +166,11 @@ src/
 │   │       └── index.ts
 │   ├── animation_context.rs  # アニメーション状態管理
 │   ├── confirm_dialog.rs     # 確認ダイアログ
-│   ├── icons.rs              # SVGアイコン
+│   ├── icons.rs              # SVGアイコン（Leptos版、段階的に削除予定）
 │   ├── log_viewer.rs         # ログ表示
 │   ├── option_form.rs        # ツールオプションフォーム
 │   ├── result_view.rs        # 実行結果表示
-│   ├── sidebar.rs            # サイドバーナビゲーション
+│   ├── sidebar.rs            # サイドバーナビゲーション（Leptos版、段階的に削除予定）
 │   ├── tool_detail.rs        # ツール詳細・実行画面
 │   ├── home/                 # ホーム画面（ゲーミフィケーション）
 │   │   ├── badge_grid.rs     # バッジ一覧
@@ -238,6 +256,16 @@ pub enum AppPage {
     Settings,   // 設定
 }
 ```
+
+### レイアウトコンポーネント（Phase 3-2で実装済み）
+
+レイアウトコンポーネントはSolid.js版が実装済み：
+
+- **MainLayout**: アプリ全体のレイアウト（Sidebar + メインコンテンツエリア）
+- **Sidebar**: メインナビゲーション（@solidjs/routerと統合）
+- **SidebarItem**: ナビゲーション項目（アクティブ状態のハイライト対応）
+- **OfflineBanner**: オフライン時の警告バナー（ネットワーク状態表示）
+- **Icon**: lucide-solidを使用したアイコンコンポーネント（既存アイコン名との互換性を保持）
 
 ### UIコンポーネント（Phase 3-1で実装済み）
 

@@ -15,6 +15,7 @@ import { Router, Route, Routes, useLocation, useParams } from '@solidjs/router';
 import { lazy, createEffect } from 'solid-js';
 import type { Component } from 'solid-js';
 import { syncNavigationFromUrl } from './stores/navigationStore';
+import { MainLayout } from './components/layouts';
 
 // Lazy-load all pages for better performance
 const Home = lazy(() => import('./pages/Home'));
@@ -49,16 +50,18 @@ const App: Component = () => {
   return (
     <Router>
       <RouterSync />
-      <Routes>
-        <Route path="/" component={Home} />
-        <Route path="/projects" component={Projects} />
-        <Route path="/projects/:id" component={ProjectDashboard} />
-        <Route path="/issues" component={Issues} />
-        <Route path="/mock-server" component={MockServer} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/xp-history" component={XpHistory} />
-        <Route path="*" component={NotFound} />
-      </Routes>
+      <MainLayout>
+        <Routes>
+          <Route path="/" component={Home} />
+          <Route path="/projects" component={Projects} />
+          <Route path="/projects/:id" component={ProjectDashboard} />
+          <Route path="/issues" component={Issues} />
+          <Route path="/mock-server" component={MockServer} />
+          <Route path="/settings" component={Settings} />
+          <Route path="/xp-history" component={XpHistory} />
+          <Route path="*" component={NotFound} />
+        </Routes>
+      </MainLayout>
     </Router>
   );
 };
