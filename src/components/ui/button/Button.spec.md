@@ -2,8 +2,7 @@
 
 ## Related Files
 
-- Implementation: `src/components/ui/button/Button.tsx`
-- IconButton: `src/components/ui/button/IconButton.tsx`
+- Implementation: `src/components/ui/button/Button.tsx` (includes Button and IconButton)
 - Types: `src/types/ui.ts`
 - Original (Leptos): `src/components/ui/button/button.rs`
 

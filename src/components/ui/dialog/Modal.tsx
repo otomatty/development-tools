@@ -55,6 +55,8 @@ export const Modal: Component<ModalProps> = (props) => {
   const borderClass = () => props.borderClass || 'border border-slate-700/50';
 
   // Handle ESC key
+  // TODO: [IMPROVE] 複数のモーダルが同時に開かれている場合、ESCキーで全てのモーダルが閉じてしまう問題
+  // 最前面のモーダルのみが反応するように、グローバルなモーダルスタック管理を導入する必要がある
   onMount(() => {
     if (closeOnEscape()) {
       const handleKeyDown = (e: KeyboardEvent) => {

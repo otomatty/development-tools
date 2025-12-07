@@ -19,7 +19,6 @@ import {
   onMount,
   onCleanup,
   splitProps,
-  JSX,
 } from 'solid-js';
 import type {
   DropdownMenuProps,
@@ -54,6 +53,8 @@ export const DropdownMenu: Component<DropdownMenuProps> = (props) => {
   const toggleMenu = () => setIsOpen((prev) => !prev);
 
   // Handle ESC key
+  // TODO: [IMPROVE] 複数のドロップダウンメニューが開いている場合、ESCキーで全てのメニューが閉じてしまう問題
+  // 最前面のメニューのみが反応するように、グローバルな状態管理やイベント処理フラグを導入する必要がある
   onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen()) {

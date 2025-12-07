@@ -2,9 +2,7 @@
 
 ## Related Files
 
-- Implementation: `src/components/ui/form/Input.tsx`
-- TextArea: `src/components/ui/form/TextArea.tsx`
-- LabeledInput: `src/components/ui/form/LabeledInput.tsx`
+- Implementation: `src/components/ui/form/Input.tsx` (includes Input, TextArea, and LabeledInput)
 - Types: `src/types/ui.ts`
 - Original (Leptos): `src/components/ui/form/input.rs`
 

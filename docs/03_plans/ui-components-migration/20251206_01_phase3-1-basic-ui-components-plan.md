@@ -38,7 +38,7 @@ Button、Input、Modal等の基本的なUIコンポーネントをLeptos（Rust�
 | コンポーネント | 現在のパス | 新規パス | 説明 |
 | -------------- | ---------- | -------- | ---- |
 | **Button** | `src/components/ui/button/button.rs` | `src/components/ui/button/Button.tsx` | 各種バリアント、サイズ対応 |
-| **IconButton** | `src/components/ui/button/button.rs` | `src/components/ui/button/IconButton.tsx` | アイコン専用ボタン |
+| **IconButton** | `src/components/ui/button/button.rs` | `src/components/ui/button/Button.tsx` | アイコン専用ボタン（Button.tsx内に実装） |
 | **Input** | `src/components/ui/form/input.rs` | `src/components/ui/form/Input.tsx` | テキスト入力 |
 | **TextArea** | `src/components/ui/form/input.rs` | `src/components/ui/form/TextArea.tsx` | 複数行入力 |
 | **LabeledInput** | `src/components/ui/form/input.rs` | `src/components/ui/form/LabeledInput.tsx` | ラベル付き入力 |
@@ -74,8 +74,7 @@ Button、Input、Modal等の基本的なUIコンポーネントをLeptos（Rust�
 ```
 src/components/ui/
 ├── button/
-│   ├── Button.tsx              # 🆕 Solid.js版
-│   ├── IconButton.tsx          # 🆕 Solid.js版
+│   ├── Button.tsx              # 🆕 Solid.js版（Button, IconButtonを含む）
 │   ├── Button.spec.md          # 🆕 仕様書
 │   ├── button.rs               # 既存（Leptos版、後で削除）
 │   ├── button.spec.md          # 既存（Leptos版仕様書）
@@ -138,9 +137,8 @@ src/components/ui/
 | タスク | ファイル | 内容 | ステータス |
 | ------ | -------- | ---- | ---------- |
 | P2-01 | `src/components/ui/button/Button.spec.md` | 仕様書作成 | ✅ 完了 |
-| P2-02 | `src/components/ui/button/Button.tsx` | Buttonコンポーネント実装 | ✅ 完了 |
-| P2-03 | `src/components/ui/button/IconButton.tsx` | IconButtonコンポーネント実装 | ✅ 完了 |
-| P2-04 | `src/components/ui/button/index.ts` | エクスポート設定 | ✅ 完了 |
+| P2-02 | `src/components/ui/button/Button.tsx` | Button, IconButtonコンポーネント実装 | ✅ 完了 |
+| P2-03 | `src/components/ui/button/index.ts` | エクスポート設定 | ✅ 完了 |
 | P2-05 | テスト | 既存のLeptos版と同等の動作確認 | ✅ 完了 |
 
 ### Phase 3: Inputコンポーネント（1日）✅
@@ -601,7 +599,7 @@ Phase 3-1完了後：
 
 ---
 
-## 11. 参考資料
+## 12. 参考資料
 
 - [Solid.js Documentation](https://www.solidjs.com/)
 - [Solid.js JSX Guide](https://www.solidjs.com/docs/latest/api#jsx)

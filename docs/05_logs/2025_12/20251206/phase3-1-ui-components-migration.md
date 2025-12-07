@@ -29,8 +29,7 @@ Button、Input、Modal、DropdownMenu、Toast等の基本的なUIコンポーネ
 
 ### Phase 2: Buttonコンポーネント ✅
 
-- `Button.tsx` を実装（6バリアント、3サイズ、isLoading、leftIcon/rightIcon対応）
-- `IconButton.tsx` を実装（アクセシビリティ対応）
+- `Button.tsx` を実装（Button, IconButtonを含む。6バリアント、3サイズ、isLoading、leftIcon/rightIcon対応）
 - `Button.spec.md` を作成
 
 **作成ファイル:**

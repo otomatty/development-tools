@@ -11,7 +11,7 @@
  */
 
 import { Component, Show, onMount, onCleanup, splitProps } from 'solid-js';
-import type { ToastProps, ToastType } from '../../../types/ui';
+import type { ToastProps, ToastType, InlineToastProps } from '../../../types/ui';
 
 // ============================================================================
 // Toast Type Styles
@@ -116,13 +116,6 @@ export const Toast: Component<ToastProps> = (props) => {
 // ============================================================================
 // InlineToast Component
 // ============================================================================
-
-export interface InlineToastProps {
-  message: string;
-  type?: ToastType;
-  visible: boolean | (() => boolean);
-  class?: string;
-}
 
 export const InlineToast: Component<InlineToastProps> = (props) => {
   const [local, others] = splitProps(props, ['message', 'type', 'visible', 'class']);

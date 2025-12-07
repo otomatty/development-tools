@@ -2,10 +2,7 @@
 
 ## Related Files
 
-- Implementation: `src/components/ui/dialog/Modal.tsx`
-- ModalHeader: `src/components/ui/dialog/ModalHeader.tsx`
-- ModalBody: `src/components/ui/dialog/ModalBody.tsx`
-- ModalFooter: `src/components/ui/dialog/ModalFooter.tsx`
+- Implementation: `src/components/ui/dialog/Modal.tsx` (includes Modal, ModalHeader, ModalBody, and ModalFooter)
 - Types: `src/types/ui.ts`
 - Original (Leptos): `src/components/ui/dialog/modal.rs`
 

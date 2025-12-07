@@ -10,25 +10,14 @@
  *   - Original (Leptos): ./input.rs
  */
 
-import { Component, splitProps, createSignal, Show } from 'solid-js';
+import { Component, splitProps, createUniqueId, Show } from 'solid-js';
 import type {
   InputProps,
   TextAreaProps,
   LabeledInputProps,
   InputType,
   InputSize,
-} from '../../types/ui';
-
-// ============================================================================
-// Unique ID Generator
-// ============================================================================
-
-let idCounter = 0;
-
-function generateUniqueId(prefix: string): string {
-  const id = idCounter++;
-  return `${prefix.toLowerCase().replace(/\s+/g, '-')}-${id}`;
-}
+} from '../../../types/ui';
 
 // ============================================================================
 // Input Size Classes
@@ -73,7 +62,7 @@ export const Input: Component<InputProps> = (props) => {
   };
 
   const handleInput = (e: Event) => {
-    const target = e.target as HTMLInputElement;
+    const target = e.currentTarget as HTMLInputElement;
     setValue(target.value);
   };
 
@@ -125,7 +114,7 @@ export const TextArea: Component<TextAreaProps> = (props) => {
   };
 
   const handleInput = (e: Event) => {
-    const target = e.target as HTMLTextAreaElement;
+    const target = e.currentTarget as HTMLTextAreaElement;
     setValue(target.value);
   };
 
@@ -163,12 +152,12 @@ export const LabeledInput: Component<LabeledInputProps> = (props) => {
   ]);
 
   // Generate unique ID for label-input association
-  const [inputId] = createSignal(generateUniqueId(`input-${local.label}`));
+  const inputId = createUniqueId();
   const required = () => local.required ?? false;
 
   return (
     <div class="flex flex-col gap-1">
-      <label for={inputId()} class="text-sm font-medium text-dt-text-main">
+      <label for={inputId} class="text-sm font-medium text-dt-text-main">
         {local.label}
         <Show when={required()}>
           <span class="text-red-500 ml-1">*</span>
@@ -186,7 +175,7 @@ export const LabeledInput: Component<LabeledInputProps> = (props) => {
         placeholder={local.placeholder}
         disabled={local.disabled}
         size={local.size}
-        id={inputId()}
+        id={inputId}
         {...others}
       />
     </div>

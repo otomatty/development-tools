@@ -134,7 +134,7 @@ src/
 │   │   ├── dialog/           # Modal関連（Solid.js版実装済み）
 │   │   │   ├── Modal.tsx
 │   │   │   ├── Modal.spec.md
-│   │   │   ├── modal.rs       # Leptos版（段階的に削除予定）
+│   │   │   ├── modal.rs      # Leptos版（段階的に削除予定）
 │   │   │   └── index.ts
 │   │   ├── dropdown/         # DropdownMenu（Solid.js版実装済み）
 │   │   │   ├── DropdownMenu.tsx
@@ -144,7 +144,7 @@ src/
 │   │   └── feedback/         # Toast（Solid.js版実装済み）
 │   │       ├── Toast.tsx
 │   │       ├── Toast.spec.md
-│   │       ├── toast.rs       # Leptos版（段階的に削除予定）
+│   │       ├── toast.rs      # Leptos版（段階的に削除予定）
 │   │       └── index.ts
 │   ├── animation_context.rs  # アニメーション状態管理
 │   ├── confirm_dialog.rs     # 確認ダイアログ
