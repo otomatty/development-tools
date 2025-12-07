@@ -10,7 +10,7 @@
  *   - Original (Leptos): ./login_card.rs
  */
 
-import { Component, Show, createSignal, onCleanup } from 'solid-js';
+import { Component, Show, Switch, Match, createSignal, onCleanup } from 'solid-js';
 import { useNetworkStatus } from '../../../stores/networkStore';
 import { useAuth } from '../../../stores/authStore';
 import { auth as authApi } from '../../../lib/tauri/commands';
@@ -283,6 +283,15 @@ export const LoginCard: Component = () => {
   const [loginState, setLoginState] = createSignal<LoginState>({ type: 'Initial' });
   const [pollingInterval, setPollingInterval] = createSignal<number | null>(null);
 
+  // Helper function to stop polling
+  const stopPolling = () => {
+    const id = pollingInterval();
+    if (id !== null) {
+      clearInterval(id);
+      setPollingInterval(null);
+    }
+  };
+
   // Handle login with Device Flow
   const onLogin = async () => {
     setLoginState({ type: 'Starting' });
@@ -313,24 +322,15 @@ export const LoginCard: Component = () => {
             // Success - refresh auth state
             await auth.fetchAuthState();
             setLoginState({ type: 'Initial' });
-            if (pollingInterval() !== null) {
-              clearInterval(pollingInterval()!);
-              setPollingInterval(null);
-            }
+            stopPolling();
           } else if (status.status === 'error') {
             setLoginState({ type: 'Error', message: status.message });
-            if (pollingInterval() !== null) {
-              clearInterval(pollingInterval()!);
-              setPollingInterval(null);
-            }
+            stopPolling();
           }
           // If status is 'pending', continue polling
         } catch (e) {
           setLoginState({ type: 'Error', message: `Polling failed: ${e}` });
-          if (pollingInterval() !== null) {
-            clearInterval(pollingInterval()!);
-            setPollingInterval(null);
-          }
+          stopPolling();
         }
       }, 5000); // Poll every 5 seconds
 
@@ -342,10 +342,7 @@ export const LoginCard: Component = () => {
 
   // Handle cancel
   const onCancel = async () => {
-    if (pollingInterval() !== null) {
-      clearInterval(pollingInterval()!);
-      setPollingInterval(null);
-    }
+    stopPolling();
     try {
       await authApi.cancelDeviceFlow();
     } catch (e) {
@@ -356,9 +353,7 @@ export const LoginCard: Component = () => {
 
   // Cleanup polling interval on unmount
   onCleanup(() => {
-    if (pollingInterval() !== null) {
-      clearInterval(pollingInterval()!);
-    }
+    stopPolling();
   });
 
   const state = () => loginState();
@@ -374,43 +369,31 @@ export const LoginCard: Component = () => {
         </div>
 
         {/* Dynamic content based on login state */}
-        <Show
-          when={state().type === 'Initial'}
-          fallback={
-            <Show
-              when={state().type === 'Starting'}
-              fallback={
-                <Show
-                  when={state().type === 'WaitingForCode'}
-                  fallback={
-                    <Show
-                      when={state().type === 'Polling'}
-                      fallback={
-                        state().type === 'Error' && (
-                          <ErrorView message={state().message} onRetry={onLogin} />
-                        )
-                      }
-                    >
-                      <PollingView onCancel={onCancel} />
-                    </Show>
-                  }
-                >
-                  {state().type === 'WaitingForCode' && (
-                    <WaitingForCodeView
-                      userCode={state().userCode}
-                      verificationUri={state().verificationUri}
-                      onCancel={onCancel}
-                      onOpenUrl={onOpenUrl}
-                    />
-                  )}
-                </Show>
-              }
-            >
-              <StartingView />
-            </Show>
-          }
-        >
-          <InitialView onLogin={onLogin} />
+        <Show when={state()} keyed>
+          {(s) => (
+            <Switch>
+              <Match when={s.type === 'Initial'}>
+                <InitialView onLogin={onLogin} />
+              </Match>
+              <Match when={s.type === 'Starting'}>
+                <StartingView />
+              </Match>
+              <Match when={s.type === 'WaitingForCode'}>
+                <WaitingForCodeView
+                  userCode={s.userCode}
+                  verificationUri={s.verificationUri}
+                  onCancel={onCancel}
+                  onOpenUrl={onOpenUrl}
+                />
+              </Match>
+              <Match when={s.type === 'Polling'}>
+                <PollingView onCancel={onCancel} />
+              </Match>
+              <Match when={s.type === 'Error'}>
+                <ErrorView message={s.message} onRetry={onLogin} />
+              </Match>
+            </Switch>
+          )}
         </Show>
       </div>
     </div>

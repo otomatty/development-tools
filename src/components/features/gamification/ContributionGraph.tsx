@@ -9,7 +9,7 @@
  *   - Original (Leptos): ./contribution_graph.rs
  */
 
-import { Component, createSignal, createResource, Show, For, createEffect } from 'solid-js';
+import { Component, createSignal, createResource, Show, For, createMemo } from 'solid-js';
 import { Icon } from '../../icons';
 import { gamification } from '../../../lib/tauri/commands';
 import type { GitHubStats, ContributionCalendar, ContributionDay } from '../../../types';
@@ -34,7 +34,6 @@ const formatDate = (dateStr: string): string => {
 };
 
 export const ContributionGraph: Component<ContributionGraphProps> = (props) => {
-  const [showCodeLines, setShowCodeLines] = createSignal(false);
   const [hoveredDate, setHoveredDate] = createSignal<string | null>(null);
   const [hoverPosition, setHoverPosition] = createSignal<[number, number]>([0, 0]);
   const [isSyncing, setIsSyncing] = createSignal(false);
@@ -65,7 +64,8 @@ export const ContributionGraph: Component<ContributionGraphProps> = (props) => {
 
   const handleMouseEnter = (e: MouseEvent, date: string) => {
     setHoveredDate(date);
-    setHoverPosition([e.pageX, e.pageY]);
+    // Use clientX/clientY for better positioning relative to viewport
+    setHoverPosition([e.clientX, e.clientY]);
   };
 
   const handleMouseLeave = () => {
@@ -73,6 +73,20 @@ export const ContributionGraph: Component<ContributionGraphProps> = (props) => {
   };
 
   const contributionCalendar = () => calendar();
+
+  // Create a memoized map for efficient date lookup
+  const contributionMap = createMemo(() => {
+    const cal = calendar();
+    if (!cal) return new Map<string, ContributionDay>();
+
+    const map = new Map<string, ContributionDay>();
+    for (const week of cal.weeks) {
+      for (const day of week.contributionDays) {
+        map.set(day.date, day);
+      }
+    }
+    return map;
+  });
 
   return (
     <div class="p-6 bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-success/20 relative">
@@ -196,11 +210,7 @@ export const ContributionGraph: Component<ContributionGraphProps> = (props) => {
           <div class="text-sm text-white font-medium">{formatDate(hoveredDate()!)}</div>
           <div class="text-xs text-dt-text-sub">
             {(() => {
-              const cal = contributionCalendar();
-              if (!cal) return '0 contributions';
-              const day = cal.weeks
-                .flatMap((w) => w.contributionDays)
-                .find((d) => d.date === hoveredDate());
+              const day = contributionMap().get(hoveredDate()!);
               return `${day?.contributionCount ?? 0} contributions`;
             })()}
           </div>

@@ -15,7 +15,7 @@ import { DashboardContent, XpNotification } from '../../components/features/gami
 import { useAuth } from '../../stores/authStore';
 import { useSettings } from '../../stores/settingsStore';
 import { gamification } from '../../lib/tauri/commands';
-import type { GitHubStats, LevelInfo, UserStats, StatsDiffResult, XpGainedEvent } from '../../types';
+import type { GitHubStats, LevelInfo, UserStats, XpGainedEvent } from '../../types';
 
 // Home skeleton loader
 const HomeSkeleton: Component = () => (
@@ -32,7 +32,6 @@ const HomeSkeleton: Component = () => (
 
 export const Home: Component = () => {
   const auth = useAuth();
-  const settings = useSettings();
   const [xpEvent, setXpEvent] = createSignal<XpGainedEvent | null>(null);
   const [loading, setLoading] = createSignal(true);
 
@@ -76,14 +75,9 @@ export const Home: Component = () => {
     }
   );
 
-  const [statsDiff] = createResource(
-    () => auth.store.state.isLoggedIn,
-    async (isLoggedIn) => {
-      if (!isLoggedIn) return null;
-      // Stats diff is typically available after sync
-      return null;
-    }
-  );
+  // TODO: [FEATURE] Implement stats diff resource when sync result tracking is available
+  // Stats diff is typically available after sync, but currently not implemented
+  // const [statsDiff] = createResource(...)
 
   // Initial data load
   onMount(async () => {
@@ -107,7 +101,7 @@ export const Home: Component = () => {
             levelInfo={levelInfo()}
             userStats={userStats()}
             githubStats={githubStats()}
-            statsDiff={statsDiff()}
+            statsDiff={null}
           />
         </Show>
       </Show>

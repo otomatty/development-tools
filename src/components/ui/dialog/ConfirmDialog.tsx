@@ -8,7 +8,7 @@
  *   - Original (Leptos): ./confirm_dialog.rs
  */
 
-import { Component, Show } from 'solid-js';
+import { Component } from 'solid-js';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './Modal';
 import type { ConfirmDialogProps } from '../../../types/ui';
 

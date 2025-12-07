@@ -14,6 +14,9 @@ import { Modal, ModalHeader, ModalBody } from '../../ui/dialog';
 import { gamification } from '../../../lib/tauri/commands';
 import type { BadgeWithProgress } from '../../../types';
 
+// Threshold for near-completion badges (percentage)
+const NEAR_COMPLETION_THRESHOLD = 50;
+
 // Individual earned badge item (compact)
 const BadgeItem: Component<{ badge: BadgeWithProgress; onClick: () => void }> = (props) => {
   const rarityClass = () => {
@@ -290,7 +293,7 @@ export const BadgeGrid: Component = () => {
 
   const earned = () => badges()?.filter((b) => b.earned) ?? [];
   const nearCompletion = () =>
-    badges()?.filter((b) => !b.earned && (b.progress?.progressPercent ?? 0) >= 50) ?? [];
+    badges()?.filter((b) => !b.earned && (b.progress?.progressPercent ?? 0) >= NEAR_COMPLETION_THRESHOLD) ?? [];
   const totalCount = () => badges()?.length ?? 0;
   const earnedCount = () => earned().length;
 

@@ -19,7 +19,6 @@ export const NotificationSettings: Component = () => {
   const settingsStore = useSettings();
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
-  const [successMessage, setSuccessMessage] = createSignal<string | null>(null);
   const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
   const [timeoutId, setTimeoutId] = createSignal<number | null>(null);
 
@@ -166,12 +165,6 @@ export const NotificationSettings: Component = () => {
         </div>
       </Show>
 
-      {/* Success message */}
-      <Show when={successMessage()}>
-        <div class="p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-green-200 text-sm">
-          {successMessage()}
-        </div>
-      </Show>
 
       {/* Settings form */}
       <Show when={settings() && !loading()}>

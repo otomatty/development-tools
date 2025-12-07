@@ -123,7 +123,14 @@ export const SyncSettings: Component = () => {
 
       // Update last sync time
       const now = new Date();
-      const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      const timeStr = now.toLocaleString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
       setLastSyncTime(timeStr);
 
       const xpMsg = syncResult.xpGained > 0 ? ` (+${syncResult.xpGained} XP)` : '';

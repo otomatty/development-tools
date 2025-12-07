@@ -9,7 +9,7 @@
  *   - Original (Leptos): ./challenge_card.rs
  */
 
-import { Component, createSignal, onMount, Show } from 'solid-js';
+import { Component, createResource, Show, For } from 'solid-js';
 import { useNetworkStatus } from '../../../stores/networkStore';
 import { Icon } from '../../icons';
 import { challenges as challengeApi } from '../../../lib/tauri/commands';
@@ -149,37 +149,14 @@ const ChallengeSkeleton: Component = () => {
 
 export const ChallengeCard: Component = () => {
   const network = useNetworkStatus();
-  const [challenges, setChallenges] = createSignal<ChallengeInfo[]>([]);
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
-
-  // Load challenges on mount
-  onMount(async () => {
-    setLoading(true);
-    try {
-      const c = await challengeApi.getActive();
-      setChallenges(c);
-      setError(null);
-    } catch (e) {
-      console.error('Failed to load challenges:', e);
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  });
+  const [challenges, { refetch }] = createResource(challengeApi.getActive);
 
   // Reload challenges function - only works when online
   const reloadChallenges = async () => {
     if (!network.isOnline()) {
       return;
     }
-    try {
-      const c = await challengeApi.getActive();
-      setChallenges(c);
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    }
+    refetch();
   };
 
   return (
@@ -210,7 +187,7 @@ export const ChallengeCard: Component = () => {
       </div>
 
       {/* Loading state */}
-      <Show when={loading()}>
+      <Show when={challenges.loading}>
         <div class="space-y-3">
           <ChallengeSkeleton />
           <ChallengeSkeleton />
@@ -218,16 +195,16 @@ export const ChallengeCard: Component = () => {
       </Show>
 
       {/* Error state */}
-      <Show when={error()}>
+      <Show when={challenges.error}>
         <div class="p-3 bg-gm-error/20 border border-gm-error/50 rounded-lg text-gm-error text-sm">
-          {error()}
+          {String(challenges.error)}
         </div>
       </Show>
 
       {/* Challenges list */}
-      <Show when={!loading() && !error()}>
+      <Show when={!challenges.loading && !challenges.error}>
         <Show
-          when={challenges().length > 0}
+          when={challenges() && challenges()!.length > 0}
           fallback={
             <div class="text-center py-8 text-gm-text-secondary">
               <div class="text-4xl mb-2">🎮</div>
@@ -237,9 +214,9 @@ export const ChallengeCard: Component = () => {
           }
         >
           <div class="space-y-3">
-            {challenges().map((challenge) => (
-              <ChallengeItem challenge={challenge} />
-            ))}
+            <For each={challenges()}>
+              {(challenge) => <ChallengeItem challenge={challenge} />}
+            </For>
           </div>
         </Show>
       </Show>

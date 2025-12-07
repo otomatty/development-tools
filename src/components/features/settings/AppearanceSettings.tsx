@@ -68,8 +68,9 @@ export const AppearanceSettings: Component = () => {
     }
 
     // Clear previous timeout if exists
-    if (debounceHandle() !== null) {
-      clearTimeout(debounceHandle()!);
+    const id = debounceHandle();
+    if (id !== null) {
+      clearTimeout(id);
       setDebounceHandle(null);
     }
 
@@ -80,13 +81,15 @@ export const AppearanceSettings: Component = () => {
     }, 500);
 
     setDebounceHandle(handle);
-  });
 
-  // Cleanup timeout on component unmount
-  onCleanup(() => {
-    if (debounceHandle() !== null) {
-      clearTimeout(debounceHandle()!);
-    }
+    // Cleanup timeout on effect re-execution or unmount
+    onCleanup(() => {
+      const cleanupId = debounceHandle();
+      if (cleanupId !== null) {
+        clearTimeout(cleanupId);
+        setDebounceHandle(null);
+      }
+    });
   });
 
   const settings = () => settingsStore.store.settings;

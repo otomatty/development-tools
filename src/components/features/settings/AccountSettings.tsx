@@ -25,12 +25,17 @@ export const AccountSettings: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [successMessage, setSuccessMessage] = createSignal<string | null>(null);
 
-  // Format date helper - extract date part from RFC3339 string
+  // Format date helper - extract date part from RFC3339 string, with validation
   const formatDate = (dateStr: string | null | undefined): string => {
     if (!dateStr) return '不明';
-    // RFC3339 format: "2024-11-26T15:30:00Z" -> extract "2024-11-26"
-    const datePart = dateStr.split('T')[0];
-    return datePart || '不明';
+    // Try to parse the date string
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '不明';
+    // Format as YYYY-MM-DD
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   // Handle token validation

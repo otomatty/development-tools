@@ -9,8 +9,7 @@
  *   - Original (Leptos): ../settings/data_management.rs
  */
 
-import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
-import { createResource } from 'solid-js';
+import { Component, Show, createSignal, createResource, onCleanup } from 'solid-js';
 import { useNetworkStatus } from '../../../stores/networkStore';
 import { settings as settingsApi, cache as cacheApi } from '../../../lib/tauri/commands';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '../../ui/dialog';
@@ -36,13 +35,15 @@ const formatBytes = (bytes: number): string => {
 };
 
 // Reset confirmation dialog component with "RESET" input confirmation
+const CONFIRMATION_TEXT = 'RESET';
+
 const ResetConfirmDialog: Component<{
   visible: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }> = (props) => {
   const [inputValue, setInputValue] = createSignal('');
-  const isConfirmEnabled = () => inputValue() === 'RESET';
+  const isConfirmEnabled = () => inputValue() === CONFIRMATION_TEXT;
 
   createEffect(() => {
     if (!props.visible) {
@@ -106,13 +107,13 @@ const ResetConfirmDialog: Component<{
 
           <div class="space-y-2">
             <label for="reset-confirm-input" class="text-white text-sm font-gaming">
-              続行するには「<span class="text-red-400 font-bold">RESET</span>」と入力してください：
+              続行するには「<span class="text-red-400 font-bold">{CONFIRMATION_TEXT}</span>」と入力してください：
             </label>
             <Input
               id="reset-confirm-input"
               value={inputValue()}
               onInput={(value) => setInputValue(value)}
-              placeholder="RESET"
+              placeholder={CONFIRMATION_TEXT}
               class="w-full px-4 py-3 bg-gm-bg-primary border-2 border-red-500/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500 placeholder-red-300/30 font-mono tracking-wider"
             />
           </div>
@@ -141,10 +142,6 @@ const ResetConfirmDialog: Component<{
 
 export const DataManagement: Component = () => {
   const network = useNetworkStatus();
-  const [dbInfo, setDbInfo] = createSignal<DatabaseInfo | null>(null);
-  const [cacheStats, setCacheStats] = createSignal<CacheStats | null>(null);
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
   const [successMessage, setSuccessMessage] = createSignal<string | null>(null);
   const [clearingCache, setClearingCache] = createSignal(false);
   const [cleaningExpired, setCleaningExpired] = createSignal(false);
@@ -153,10 +150,32 @@ export const DataManagement: Component = () => {
   const [showResetDialog, setShowResetDialog] = createSignal(false);
   const [successMsgHandle, setSuccessMsgHandle] = createSignal<number | null>(null);
 
+  // Load database info
+  const [dbInfo, { refetch: refetchDbInfo }] = createResource(async () => {
+    try {
+      return await settingsApi.getDatabaseInfo();
+    } catch (e) {
+      console.error('Failed to load database info:', e);
+      throw new Error(`データベース情報の取得に失敗しました: ${e}`);
+    }
+  });
+
+  // Load cache stats
+  const [cacheStats, { refetch: refetchCacheStats }] = createResource(async () => {
+    try {
+      return await cacheApi.getStats();
+    } catch (e) {
+      // Don't throw error for cache stats - it's okay if not logged in
+      console.warn('Failed to load cache stats:', e);
+      return null;
+    }
+  });
+
   // Helper to clear success message timeout
   const clearSuccessTimeout = () => {
-    if (successMsgHandle() !== null) {
-      clearTimeout(successMsgHandle()!);
+    const id = successMsgHandle();
+    if (id !== null) {
+      clearTimeout(id);
       setSuccessMsgHandle(null);
     }
   };
@@ -173,44 +192,13 @@ export const DataManagement: Component = () => {
     setSuccessMsgHandle(handle);
   };
 
-  // Load database info and cache stats on mount
-  createEffect(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Fetch both database info and cache stats in parallel
-      const [dbResult, cacheResult] = await Promise.allSettled([
-        settingsApi.getDatabaseInfo(),
-        cacheApi.getStats(),
-      ]);
-
-      if (dbResult.status === 'fulfilled') {
-        setDbInfo(dbResult.value);
-      } else {
-        setError(`データベース情報の取得に失敗しました: ${dbResult.reason}`);
-      }
-
-      // Cache stats - don't show error if not logged in
-      if (cacheResult.status === 'fulfilled') {
-        setCacheStats(cacheResult.value);
-      }
-    } catch (e) {
-      setError(`データ情報の取得に失敗しました: ${e}`);
-    } finally {
-      setLoading(false);
-    }
-  });
-
   // Refresh database info helper
   const refreshDatabaseInfo = async (context: string) => {
     try {
-      const info = await settingsApi.getDatabaseInfo();
-      setDbInfo(info);
-      return info;
+      await refetchDbInfo();
+      return dbInfo();
     } catch (e) {
       const errorMsg = `${context}は完了しましたが、情報のリフレッシュに失敗しました: ${e}`;
-      setError(errorMsg);
       throw new Error(errorMsg);
     }
   };
@@ -230,12 +218,7 @@ export const DataManagement: Component = () => {
       await refreshDatabaseInfo('キャッシュクリア');
 
       // Also refresh cache stats
-      try {
-        const stats = await cacheApi.getStats();
-        setCacheStats(stats);
-      } catch {
-        // Ignore cache stats errors
-      }
+      refetchCacheStats();
     } catch (e) {
       setError(`キャッシュのクリアに失敗しました: ${e}`);
     } finally {
@@ -260,12 +243,7 @@ export const DataManagement: Component = () => {
       await refreshDatabaseInfo('キャッシュクリーンアップ');
 
       // Also refresh cache stats
-      try {
-        const stats = await cacheApi.getStats();
-        setCacheStats(stats);
-      } catch {
-        // Ignore cache stats errors
-      }
+      refetchCacheStats();
     } catch (e) {
       setError(`クリーンアップに失敗しました: ${e}`);
     } finally {
@@ -290,7 +268,8 @@ export const DataManagement: Component = () => {
 
       // Generate filename with timestamp
       const now = new Date();
-      const filename = `development-tools-export-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}.json`;
+      const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5); // Format: YYYY-MM-DDTHH-MM-SS
+      const filename = `development-tools-export-${timestamp}.json`;
       a.download = filename;
 
       // Trigger download
@@ -341,14 +320,14 @@ export const DataManagement: Component = () => {
       />
 
       {/* Loading state */}
-      <Show when={loading()}>
+      <Show when={dbInfo.loading}>
         <div class="text-center py-8 text-dt-text-sub">データ情報を読み込み中...</div>
       </Show>
 
       {/* Error message */}
-      <Show when={error()}>
+      <Show when={dbInfo.error}>
         <div class="p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 text-sm">
-          {error()}
+          {String(dbInfo.error)}
         </div>
       </Show>
 
@@ -359,7 +338,7 @@ export const DataManagement: Component = () => {
         </div>
       </Show>
 
-      <Show when={!loading()}>
+      <Show when={!dbInfo.loading && !dbInfo.error}>
         {/* Cache section */}
         <div class="space-y-3">
           <h3 class="text-lg font-gaming font-bold text-white flex items-center gap-2">
