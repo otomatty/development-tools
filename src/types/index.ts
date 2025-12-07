@@ -21,9 +21,11 @@ export enum AppPage {
   Home = 'Home',
   Tools = 'Tools',
   Projects = 'Projects',
+  Issues = 'Issues',
   MockServer = 'MockServer',
   Settings = 'Settings',
   XpHistory = 'XpHistory',
+  NotFound = 'NotFound',
 }
 
 /// ProjectDetail page with project ID

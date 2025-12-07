@@ -18,25 +18,26 @@ interface AnimationStore {
 }
 
 const [animationStore, setAnimationStore] = createStore<AnimationStore>({
-  enabled: true, // Default: animations enabled
+  enabled: true, // Default: animations enabled (will be synced from settings when loaded)
+});
+
+// Initialize settings and sync effect once at module scope
+const settings = useSettings();
+
+// Sync animation state from settings
+createEffect(() => {
+  if (settings.store.settings) {
+    setAnimationStore('enabled', settings.store.settings.animationsEnabled);
+  }
 });
 
 /**
  * Animation hook
  *
- * Provides animation state and automatically syncs with settings store.
- * When settings change, animation state is updated accordingly.
+ * Provides animation state that is automatically synced with settings store.
+ * Animation state is synced once at module load to avoid duplicate effects.
  */
 export const useAnimation = () => {
-  const settings = useSettings();
-
-  // Sync animation state from settings
-  createEffect(() => {
-    if (settings.store.settings) {
-      setAnimationStore('enabled', settings.store.settings.animationsEnabled);
-    }
-  });
-
   return {
     store: animationStore,
   };

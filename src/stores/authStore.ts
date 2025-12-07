@@ -11,7 +11,6 @@
  */
 
 import { createStore } from 'solid-js/store';
-import { onMount } from 'solid-js';
 import type { AuthState } from '@/types';
 import { auth as authApi } from '@/lib/tauri/commands';
 
@@ -31,41 +30,46 @@ const [authStore, setAuthStore] = createStore<AuthStore>({
 });
 
 /**
+ * Fetch authentication state from Tauri backend
+ * This is called once at module load to initialize the store.
+ */
+const fetchAuthState = async () => {
+  try {
+    setAuthStore('isLoading', true);
+    setAuthStore('error', null);
+    const state = await authApi.getState();
+    setAuthStore('state', state);
+    setAuthStore('isLoading', false);
+  } catch (e) {
+    setAuthStore('error', String(e));
+    setAuthStore('isLoading', false);
+  }
+};
+
+/**
+ * Logout current user
+ */
+const logout = async () => {
+  try {
+    setAuthStore('error', null);
+    await authApi.logout();
+    setAuthStore('state', { isLoggedIn: false, user: null });
+  } catch (e) {
+    setAuthStore('error', String(e));
+    throw e;
+  }
+};
+
+// Fetch authentication state immediately at module load (singleton pattern)
+fetchAuthState();
+
+/**
  * Authentication hook
  *
  * Provides authentication state and methods for login/logout.
- * Automatically fetches authentication state on mount.
+ * Authentication state is automatically fetched once at module load.
  */
 export const useAuth = () => {
-  const fetchAuthState = async () => {
-    try {
-      setAuthStore('isLoading', true);
-      setAuthStore('error', null);
-      const state = await authApi.getState();
-      setAuthStore('state', state);
-      setAuthStore('isLoading', false);
-    } catch (e) {
-      setAuthStore('error', String(e));
-      setAuthStore('isLoading', false);
-    }
-  };
-
-  const logout = async () => {
-    try {
-      setAuthStore('error', null);
-      await authApi.logout();
-      setAuthStore('state', { isLoggedIn: false, user: null });
-    } catch (e) {
-      setAuthStore('error', String(e));
-      throw e;
-    }
-  };
-
-  // Fetch authentication state on mount
-  onMount(() => {
-    fetchAuthState();
-  });
-
   return {
     store: authStore,
     fetchAuthState,

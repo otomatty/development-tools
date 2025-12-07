@@ -9,39 +9,37 @@
  *   - Types: src/types/network.ts (NetworkState, newNetworkState, setOnline, setOffline)
  */
 
-import { createSignal, onMount, onCleanup } from 'solid-js';
+import { createSignal } from 'solid-js';
 import type { NetworkState } from '@/types';
 import { newNetworkState, setOnline, setOffline } from '@/types/network';
 
 /**
- * Network status hook
+ * Singleton network state and listeners
+ * Network status is managed in a single global instance to avoid duplicate event listeners.
+ */
+const [networkState, setNetworkState] = createSignal<NetworkState>(
+  newNetworkState(navigator.onLine)
+);
+
+const handleOnline = () => {
+  setNetworkState((prev) => setOnline(prev));
+};
+
+const handleOffline = () => {
+  setNetworkState((prev) => setOffline(prev));
+};
+
+// Only add listeners once at module load (singleton pattern)
+window.addEventListener('online', handleOnline);
+window.addEventListener('offline', handleOffline);
+
+/**
+ * Network status hook (singleton)
  *
- * Provides network connectivity state and monitors online/offline events.
- * Automatically sets up event listeners on mount and cleans up on unmount.
+ * Returns the shared network connectivity state.
+ * Event listeners are set up once at module load to avoid duplicates.
  */
 export const useNetworkStatus = () => {
-  const [networkState, setNetworkState] = createSignal<NetworkState>(
-    newNetworkState(navigator.onLine)
-  );
-
-  onMount(() => {
-    const handleOnline = () => {
-      setNetworkState((prev) => setOnline(prev));
-    };
-
-    const handleOffline = () => {
-      setNetworkState((prev) => setOffline(prev));
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    onCleanup(() => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    });
-  });
-
   return {
     networkState,
     isOnline: () => networkState().isOnline,

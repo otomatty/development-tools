@@ -13,6 +13,7 @@
 
 import { Router, Route, Routes, useLocation, useParams } from '@solidjs/router';
 import { lazy, createEffect } from 'solid-js';
+import type { Component } from 'solid-js';
 import { syncNavigationFromUrl } from './stores/navigationStore';
 
 // Lazy-load all pages for better performance
@@ -23,6 +24,7 @@ const Issues = lazy(() => import('./pages/Issues'));
 const MockServer = lazy(() => import('./pages/MockServer'));
 const Settings = lazy(() => import('./pages/Settings'));
 const XpHistory = lazy(() => import('./pages/XpHistory'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 /**
  * Router Sync Component
@@ -30,19 +32,20 @@ const XpHistory = lazy(() => import('./pages/XpHistory'));
  * Syncs navigation store with router URL changes.
  * This component must be inside Router context.
  */
-function RouterSync() {
+const RouterSync: Component = () => {
   const location = useLocation();
   const params = useParams();
 
   // Sync navigation store with URL changes
   createEffect(() => {
-    syncNavigationFromUrl(location.pathname, params());
+    // Spread params to ensure reactivity on any param change
+    syncNavigationFromUrl(location.pathname, { ...params });
   });
 
   return null;
-}
+};
 
-const App = () => {
+const App: Component = () => {
   return (
     <Router>
       <RouterSync />
@@ -54,17 +57,7 @@ const App = () => {
         <Route path="/mock-server" component={MockServer} />
         <Route path="/settings" component={Settings} />
         <Route path="/xp-history" component={XpHistory} />
-        <Route
-          path="*"
-          element={
-            <div class="min-h-screen bg-dt-bg text-dt-text flex items-center justify-center">
-              <div class="text-center">
-                <h1 class="text-4xl font-bold text-gm-accent-cyan">404</h1>
-                <p class="mt-4 text-dt-text-sub">Page Not Found</p>
-              </div>
-            </div>
-          }
-        />
+        <Route path="*" component={NotFound} />
       </Routes>
     </Router>
   );

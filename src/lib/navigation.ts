@@ -7,27 +7,22 @@
  * Related Documentation:
  *   - Issue: https://github.com/otomatty/development-tools/issues/135
  *   - Navigation Store: src/stores/navigationStore.ts
+ *   - Types: src/types/index.ts (AppPage, AppPageType, ProjectDetailPage)
  */
 
 import { useNavigate, useLocation } from '@solidjs/router';
-
-export type AppPage =
-  | 'home'
-  | 'projects'
-  | 'project-dashboard'
-  | 'issues'
-  | 'mock-server'
-  | 'settings'
-  | 'xp-history';
+import { AppPage, type AppPageType, type ProjectDetailPage, isProjectDetailPage } from '@/types';
 
 export const pagePaths: Record<AppPage, string> = {
-  'home': '/',
-  'projects': '/projects',
-  'project-dashboard': '/projects/:id',
-  'issues': '/issues',
-  'mock-server': '/mock-server',
-  'settings': '/settings',
-  'xp-history': '/xp-history',
+  [AppPage.Home]: '/',
+  [AppPage.Projects]: '/projects',
+  [AppPage.Issues]: '/issues',
+  [AppPage.MockServer]: '/mock-server',
+  [AppPage.Settings]: '/settings',
+  [AppPage.XpHistory]: '/xp-history',
+  [AppPage.NotFound]: '/404',
+  // Tools is not used in routing (legacy)
+  [AppPage.Tools]: '/tools',
 };
 
 /**
@@ -42,14 +37,30 @@ export const useAppNavigation = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const goTo = (page: AppPage, params?: Record<string, string>) => {
-    let path = pagePaths[page];
+  const goTo = (page: AppPageType, params?: Record<string, string>) => {
+    // Handle ProjectDetailPage
+    if (isProjectDetailPage(page)) {
+      navigate(`/projects/${page.projectId}`);
+      return;
+    }
+
+    // Handle AppPage enum
+    const path = pagePaths[page];
+    if (!path) {
+      console.warn(`[useAppNavigation] Unknown page: ${page}`);
+      navigate('/');
+      return;
+    }
+
+    // Replace params in path if provided
+    let finalPath = path;
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        path = path.replace(`:${key}`, value);
+        finalPath = finalPath.replace(`:${key}`, value);
       });
     }
-    navigate(path);
+
+    navigate(finalPath);
   };
 
   return { goTo, currentPath: location.pathname };

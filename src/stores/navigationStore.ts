@@ -11,7 +11,7 @@
  */
 
 import { createStore } from 'solid-js/store';
-import { AppPage, type AppPageType, isProjectDetailPage } from '@/types';
+import { AppPage, type AppPageType } from '@/types';
 
 interface NavigationStore {
   currentPage: AppPageType;
@@ -22,9 +22,10 @@ const [navigationStore, setNavigationStore] = createStore<NavigationStore>({
 });
 
 /**
- * Convert URL path to AppPageType
+ * Parse route path and parameters to AppPageType
+ * Handles both static routes and dynamic routes with parameters.
  */
-export function pathToPageType(pathname: string, params?: Record<string, string>): AppPageType {
+export function parseRouteToPageType(pathname: string, params?: Record<string, string>): AppPageType {
   if (pathname === '/') {
     return AppPage.Home;
   } else if (pathname === '/projects') {
@@ -33,9 +34,13 @@ export function pathToPageType(pathname: string, params?: Record<string, string>
     const projectId = parseInt(params.id, 10);
     if (!isNaN(projectId)) {
       return { type: 'ProjectDetail', projectId };
+    } else {
+      console.warn(`[navigationStore] Invalid project ID in URL: "${params.id}" (parsed as NaN)`);
+      // Invalid project ID - treat as 404
+      return AppPage.NotFound;
     }
   } else if (pathname === '/issues') {
-    return AppPage.Projects; // TODO: Add Issues page type when implemented
+    return AppPage.Issues;
   } else if (pathname === '/mock-server') {
     return AppPage.MockServer;
   } else if (pathname === '/settings') {
@@ -43,8 +48,8 @@ export function pathToPageType(pathname: string, params?: Record<string, string>
   } else if (pathname === '/xp-history') {
     return AppPage.XpHistory;
   }
-  // Default to Home
-  return AppPage.Home;
+  // Unknown path - return NotFound
+  return AppPage.NotFound;
 }
 
 /**
@@ -52,23 +57,21 @@ export function pathToPageType(pathname: string, params?: Record<string, string>
  * This should be called from within Router context
  */
 export function syncNavigationFromUrl(pathname: string, params?: Record<string, string>) {
-  const pageType = pathToPageType(pathname, params);
+  const pageType = parseRouteToPageType(pathname, params);
   setNavigationStore('currentPage', pageType);
 }
 
 /**
  * Navigation hook
  *
- * Provides current page state and method to navigate to a different page.
+ * Provides current page state.
+ * NOTE: We do not expose a setPage method here to prevent direct manipulation
+ * of navigation state without updating the URL. Always use router-based navigation
+ * (e.g., useAppNavigation().goTo() from lib/navigation.ts) to ensure state and URL stay in sync.
  */
 export const useNavigation = () => {
-  const setPage = (page: AppPageType) => {
-    setNavigationStore('currentPage', page);
-  };
-
   return {
     store: navigationStore,
-    setPage,
   };
 };
 
