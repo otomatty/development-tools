@@ -148,3 +148,14 @@ export interface ToastContextValue {
   showToast: (message: string, type?: ToastType, duration?: number) => void;
 }
 
+// ============================================================================
+// Icon Types
+// ============================================================================
+
+export interface IconProps {
+  name: string;
+  class?: string;
+  size?: number | string;
+  strokeWidth?: number;
+}
+
