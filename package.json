@@ -24,7 +24,7 @@
   "dependencies": {
     "@solidjs/router": "^0.15.4",
     "@tauri-apps/api": "^2.9.1",
-    "lucide-solid": "^0.460.0",
+    "lucide-solid": "^0.556.0",
     "solid-js": "^1.9.10"
   },
   "_comments": {
