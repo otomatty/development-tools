@@ -4,7 +4,7 @@ import solid from 'vite-plugin-solid';
 export default defineConfig({
   plugins: [solid()],
   server: {
-    port: 1420,
+    port: 1520,
     strictPort: true,
   },
   build: {

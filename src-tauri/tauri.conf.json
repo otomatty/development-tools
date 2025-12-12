@@ -5,7 +5,7 @@
   "identifier": "com.sugaiakimasa.development-tools",
   "build": {
     "beforeDevCommand": "bun run dev:frontend",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1520",
     "beforeBuildCommand": "bun run build:frontend",
     "frontendDist": "../dist"
   },
@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": null
+    "csp": null
     }
   },
   "bundle": {

@@ -14,7 +14,7 @@ import { LoginCard } from '../../components/features/auth';
 import { DashboardContent, XpNotification } from '../../components/features/gamification';
 import { useAuth } from '../../stores/authStore';
 import { useSettings } from '../../stores/settingsStore';
-import { gamification } from '../../lib/tauri/commands';
+import { gamification, github } from '../../lib/tauri/commands';
 import type { GitHubStats, LevelInfo, UserStats, XpGainedEvent } from '../../types';
 
 // Home skeleton loader
@@ -41,7 +41,7 @@ export const Home: Component = () => {
     async (isLoggedIn) => {
       if (!isLoggedIn) return null;
       try {
-        return await gamification.getGitHubStats();
+        return await github.getStats();
       } catch (e) {
         console.error('Failed to load GitHub stats:', e);
         return null;
@@ -67,7 +67,7 @@ export const Home: Component = () => {
     async (isLoggedIn) => {
       if (!isLoggedIn) return null;
       try {
-        return await gamification.getUserStats();
+        return await github.getUserStats();
       } catch (e) {
         console.error('Failed to load user stats:', e);
         return null;

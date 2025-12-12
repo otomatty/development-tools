@@ -1,7 +1,7 @@
 /**
  * Main App Component
  *
- * Sets up routing using @solidjs/router.
+ * Sets up routing using @solidjs/router v0.15.x.
  * All pages are lazy-loaded for better performance.
  * Integrates with navigation store for state synchronization.
  *
@@ -11,11 +11,18 @@
  *   - Navigation Store: src/stores/navigationStore.ts
  */
 
-import { Router, Route, Routes, useLocation, useParams } from '@solidjs/router';
-import { lazy, createEffect } from 'solid-js';
-import type { Component } from 'solid-js';
+import { Router, Route, useLocation, useParams } from '@solidjs/router';
+import { lazy, createEffect, Suspense } from 'solid-js';
+import type { Component, ParentComponent } from 'solid-js';
 import { syncNavigationFromUrl } from './stores/navigationStore';
 import { MainLayout } from './components/layouts';
+
+// Loading fallback component
+const PageLoading: Component = () => (
+  <div class="flex-1 flex items-center justify-center">
+    <div class="animate-spin rounded-full h-12 w-12 border-4 border-gm-accent-cyan border-t-transparent"></div>
+  </div>
+);
 
 // Lazy-load all pages for better performance
 const Home = lazy(() => import('./pages/Home'));
@@ -28,40 +35,46 @@ const XpHistory = lazy(() => import('./pages/XpHistory'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 /**
- * Router Sync Component
+ * Root Layout Component
  *
- * Syncs navigation store with router URL changes.
- * This component must be inside Router context.
+ * Wraps all routes with MainLayout and Suspense.
+ * Also handles navigation state synchronization.
  */
-const RouterSync: Component = () => {
+const RootLayout: ParentComponent = (props) => {
   const location = useLocation();
   const params = useParams();
 
   // Sync navigation store with URL changes
   createEffect(() => {
-    // Spread params to ensure reactivity on any param change
-    syncNavigationFromUrl(location.pathname, { ...params });
+    const safeParams: Record<string, string> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) {
+        safeParams[key] = value;
+      }
+    }
+    syncNavigationFromUrl(location.pathname, safeParams);
   });
 
-  return null;
+  return (
+    <MainLayout>
+      <Suspense fallback={<PageLoading />}>
+        {props.children}
+      </Suspense>
+    </MainLayout>
+  );
 };
 
 const App: Component = () => {
   return (
-    <Router>
-      <RouterSync />
-      <MainLayout>
-        <Routes>
-          <Route path="/" component={Home} />
-          <Route path="/projects" component={Projects} />
-          <Route path="/projects/:id" component={ProjectDashboard} />
-          <Route path="/issues" component={Issues} />
-          <Route path="/mock-server" component={MockServer} />
-          <Route path="/settings" component={Settings} />
-          <Route path="/xp-history" component={XpHistory} />
-          <Route path="*" component={NotFound} />
-        </Routes>
-      </MainLayout>
+    <Router root={RootLayout}>
+      <Route path="/" component={Home} />
+      <Route path="/projects" component={Projects} />
+      <Route path="/projects/:id" component={ProjectDashboard} />
+      <Route path="/issues" component={Issues} />
+      <Route path="/mock-server" component={MockServer} />
+      <Route path="/settings" component={Settings} />
+      <Route path="/xp-history" component={XpHistory} />
+      <Route path="*" component={NotFound} />
     </Router>
   );
 };
