@@ -90,9 +90,9 @@ export const Icon = ({ name, className, size, strokeWidth }: IconProps) => {
   const computedSize = (() => {
     if (size) return size;
     // Extract size from class if present (e.g., "w-6 h-6" -> 24)
-    const match = iconClass.match(/w-(\d+)/);
+    const match = iconClass.match(/w-(\d+(?:\.\d+)?)/);
     if (match) {
-      return parseInt(match[1]) * 4; // Tailwind spacing unit (1 = 4px)
+      return parseFloat(match[1]) * 4; // Tailwind spacing unit (1 = 4px)
     }
     return 20; // Default size
   })();

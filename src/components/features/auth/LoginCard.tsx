@@ -335,9 +335,15 @@ export const LoginCard: React.FC = () => {
           const status: DeviceTokenStatus = await authApi.pollDeviceToken();
           if (session !== pollSessionRef.current) return;
           if (status.status === 'success') {
-            await fetchAuthState();
-            setLoginState({ type: 'Initial' });
-            stopPolling();
+            try {
+              await fetchAuthState();
+              setLoginState({ type: 'Initial' });
+            } catch (e) {
+              console.error('Failed to refresh auth state:', e);
+              setLoginState({ type: 'Error', message: `認証状態の取得に失敗しました: ${e}` });
+            } finally {
+              stopPolling();
+            }
           } else if (status.status === 'error') {
             setLoginState({ type: 'Error', message: status.message });
             stopPolling();

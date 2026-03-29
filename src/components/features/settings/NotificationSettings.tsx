@@ -107,6 +107,7 @@ export const NotificationSettings: React.FC = () => {
   };
 
   const notificationOptions: NotificationMethod[] = ['app_only', 'os_only', 'both', 'none'];
+  const currentMethod = settings ? notificationMethodFromStr(settings.notificationMethod) : null;
 
   return (
     <div className="space-y-6">
@@ -123,10 +124,7 @@ export const NotificationSettings: React.FC = () => {
       )}
 
       {/* Settings form */}
-      {settings && !loading && (() => {
-        const currentMethod = notificationMethodFromStr(settings.notificationMethod);
-
-        return (
+      {settings && !loading && (
           <>
             {/* Notification method selection */}
             <div className="space-y-3">
@@ -198,8 +196,7 @@ export const NotificationSettings: React.FC = () => {
               </div>
             </div>
           </>
-        );
-      })()}
+      )}
     </div>
   );
 };
