@@ -5,7 +5,7 @@
  * All pages are lazy-loaded for better performance.
  */
 
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, matchPath } from 'react-router-dom';
 import { lazy, Suspense, useEffect } from 'react';
 import { syncNavigationFromUrl } from './stores/navigationStore';
 import { MainLayout } from './components/layouts';
@@ -34,14 +34,11 @@ const NavigationSync = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
 
   useEffect(() => {
-    // Parse params from pathname since this component is above <Routes>
-    // and useParams() would always return {} here
-    const params: Record<string, string> = {};
-    const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
-    if (projectMatch) {
-      params.id = projectMatch[1];
-    }
-    syncNavigationFromUrl(location.pathname, params);
+    const projectMatch = matchPath('/projects/:id', location.pathname);
+    syncNavigationFromUrl(
+      location.pathname,
+      projectMatch?.params.id ? { id: projectMatch.params.id } : undefined,
+    );
   }, [location.pathname]);
 
   return <>{children}</>;
