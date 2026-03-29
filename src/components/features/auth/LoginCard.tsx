@@ -10,7 +10,7 @@
  *   - Original (Leptos): ./login_card.rs
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNetworkStatus } from '../../../stores/networkStore';
 import { useAuth } from '../../../stores/authStore';
 import { auth as authApi } from '../../../lib/tauri/commands';
@@ -114,15 +114,30 @@ const WaitingForCodeView: React.FC<{
   onOpenUrl: (url: string) => void;
 }> = ({ userCode, verificationUri, onCancel, onOpenUrl }) => {
   const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<number | null>(null);
+
+  // Cleanup copy timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Copy to clipboard function
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(userCode);
       setCopied(true);
+      // Clear any existing timeout
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
       // Reset after 2 seconds
-      setTimeout(() => {
+      copyTimeoutRef.current = window.setTimeout(() => {
         setCopied(false);
+        copyTimeoutRef.current = null;
       }, 2000);
     } catch (e) {
       console.error('Failed to copy to clipboard:', e);
@@ -276,15 +291,15 @@ const ErrorView: React.FC<{ message: string; onRetry: () => void }> = ({ message
 export const LoginCard: React.FC = () => {
   const fetchAuthState = useAuth((s) => s.fetchAuthState);
   const [loginState, setLoginState] = useState<LoginState>({ type: 'Initial' });
-  const [pollingInterval, setPollingInterval] = useState<number | null>(null);
+  const pollingIntervalRef = useRef<number | null>(null);
 
   // Helper function to stop polling
   const stopPolling = useCallback(() => {
-    if (pollingInterval !== null) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
+    if (pollingIntervalRef.current !== null) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
     }
-  }, [pollingInterval]);
+  }, []);
 
   // Handle login with Device Flow
   const onLogin = async () => {
@@ -317,21 +332,21 @@ export const LoginCard: React.FC = () => {
             await fetchAuthState();
             setLoginState({ type: 'Initial' });
             clearInterval(interval);
-            setPollingInterval(null);
+            pollingIntervalRef.current = null;
           } else if (status.status === 'error') {
             setLoginState({ type: 'Error', message: status.message });
             clearInterval(interval);
-            setPollingInterval(null);
+            pollingIntervalRef.current = null;
           }
           // If status is 'pending', continue polling
         } catch (e) {
           setLoginState({ type: 'Error', message: `Polling failed: ${e}` });
           clearInterval(interval);
-          setPollingInterval(null);
+          pollingIntervalRef.current = null;
         }
       }, 5000); // Poll every 5 seconds
 
-      setPollingInterval(interval);
+      pollingIntervalRef.current = interval;
     } catch (e) {
       setLoginState({ type: 'Error', message: `Failed to open URL: ${e}` });
     }
@@ -351,11 +366,11 @@ export const LoginCard: React.FC = () => {
   // Cleanup polling interval on unmount
   useEffect(() => {
     return () => {
-      if (pollingInterval !== null) {
-        clearInterval(pollingInterval);
+      if (pollingIntervalRef.current !== null) {
+        clearInterval(pollingIntervalRef.current);
       }
     };
-  }, [pollingInterval]);
+  }, []);
 
   const renderContent = () => {
     switch (loginState.type) {

@@ -27,8 +27,12 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({ levelInfo, userStats }
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/');
+    try {
+      await logout();
+      navigate('/');
+    } catch (e) {
+      console.error('Failed to logout:', e);
+    }
   };
 
   const handleSettings = () => {

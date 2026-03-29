@@ -12,19 +12,22 @@
 import { create } from 'zustand';
 import { useSettings } from './settingsStore';
 
+const initialEnabled = useSettings.getState().settings?.animationsEnabled ?? true;
+
 interface AnimationStore {
   enabled: boolean;
   setEnabled: (enabled: boolean) => void;
 }
 
 export const useAnimation = create<AnimationStore>((set) => ({
-  enabled: true,
+  enabled: initialEnabled,
   setEnabled: (enabled: boolean) => set({ enabled }),
 }));
 
 // Sync with settings store after settings load
 useSettings.subscribe((state) => {
-  if (state.settings) {
-    useAnimation.getState().setEnabled(state.settings.animationsEnabled);
+  const enabled = state.settings?.animationsEnabled;
+  if (enabled !== undefined) {
+    useAnimation.setState({ enabled });
   }
 });

@@ -20,7 +20,6 @@ export const NotificationSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const initialLoadCompleteRef = useRef(false);
-  const debounceHandleRef = useRef<number | null>(null);
 
   // Load settings on mount
   useEffect(() => {
@@ -102,15 +101,6 @@ export const NotificationSettings: React.FC = () => {
       setError(`設定の保存に失敗しました: ${e}`);
     });
   };
-
-  // Cleanup timeout on component unmount
-  useEffect(() => {
-    return () => {
-      if (debounceHandleRef.current !== null) {
-        clearTimeout(debounceHandleRef.current);
-      }
-    };
-  }, []);
 
   const notificationOptions: NotificationMethod[] = ['app_only', 'os_only', 'both', 'none'];
 

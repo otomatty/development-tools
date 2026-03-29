@@ -22,8 +22,6 @@ interface XpNotificationProps {
 export const XpNotification: React.FC<XpNotificationProps> = ({ event, onClose }) => {
   const enabled = useAnimation((s) => s.enabled);
 
-  const visible = event !== null;
-
   const breakdownItems = useMemo(() => {
     if (!event) return [];
     const bd = event.xpBreakdown;
@@ -41,7 +39,7 @@ export const XpNotification: React.FC<XpNotificationProps> = ({ event, onClose }
 
   const showBreakdown = breakdownItems.length > 0;
 
-  if (!visible) return null;
+  if (!event) return null;
 
   return (
     <div
@@ -71,7 +69,7 @@ export const XpNotification: React.FC<XpNotificationProps> = ({ event, onClose }
               enabled ? 'animate-pulse' : ''
             }`}
           >
-            +{event!.xpGained} XP
+            +{event.xpGained} XP
           </span>
         </div>
 
@@ -88,11 +86,11 @@ export const XpNotification: React.FC<XpNotificationProps> = ({ event, onClose }
         )}
 
         {/* Level up indicator */}
-        {event!.levelUp && (
+        {event.levelUp && (
           <div className="mt-3 pt-3 border-t border-slate-700/50 text-center">
             <div className="flex items-center justify-center gap-2 text-gm-accent-gold font-bold">
               <AnimatedEmoji emoji="Party" size="text-xl" />
-              <span>Level Up! Lv.{event!.oldLevel} → Lv.{event!.newLevel}</span>
+              <span>Level Up! Lv.{event.oldLevel} → Lv.{event.newLevel}</span>
             </div>
           </div>
         )}

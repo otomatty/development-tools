@@ -9,19 +9,17 @@
  *   - Original (Leptos): ../settings/appearance_settings.rs
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSettings } from '../../../stores/settingsStore';
 import { useAnimation } from '../../../stores/animationStore';
 import { ToggleSwitch } from '../../ui/form';
 
 export const AppearanceSettings: React.FC = () => {
   const { settings, isLoading, error: storeError, updateSettings } = useSettings();
-  const animationEnabled = useAnimation((s) => s.enabled);
   const setAnimationEnabled = useAnimation((s) => s.setEnabled);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const initialLoadCompleteRef = useRef(false);
-  const debounceHandleRef = useRef<number | null>(null);
+  const initialLoadCompleteRef = React.useRef(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -54,15 +52,6 @@ export const AppearanceSettings: React.FC = () => {
       setError(`設定の保存に失敗しました: ${e}`);
     });
   };
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceHandleRef.current !== null) {
-        clearTimeout(debounceHandleRef.current);
-      }
-    };
-  }, []);
 
   return (
     <div className="space-y-6">

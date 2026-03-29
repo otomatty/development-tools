@@ -25,7 +25,6 @@ export const SyncSettings: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const initialLoadCompleteRef = useRef(false);
-  const debounceHandleRef = useRef<number | null>(null);
   const successMsgHandleRef = useRef<number | null>(null);
 
   // Load sync intervals
@@ -149,9 +148,6 @@ export const SyncSettings: React.FC = () => {
   // Cleanup timeouts on component unmount
   useEffect(() => {
     return () => {
-      if (debounceHandleRef.current !== null) {
-        clearTimeout(debounceHandleRef.current);
-      }
       if (successMsgHandleRef.current !== null) {
         clearTimeout(successMsgHandleRef.current);
       }

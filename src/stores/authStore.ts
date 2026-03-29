@@ -22,25 +22,33 @@ interface AuthStore {
   logout: () => Promise<void>;
 }
 
+let authRequestSeq = 0;
+
 export const useAuth = create<AuthStore>((set) => ({
   state: { isLoggedIn: false, user: null },
   isLoading: true,
   error: null,
   fetchAuthState: async () => {
+    const seq = ++authRequestSeq;
     try {
       set({ isLoading: true, error: null });
       const state = await authApi.getState();
+      if (seq !== authRequestSeq) return;
       set({ state, isLoading: false });
     } catch (e) {
+      if (seq !== authRequestSeq) return;
       set({ error: String(e), isLoading: false });
     }
   },
   logout: async () => {
+    const seq = ++authRequestSeq;
     try {
       set({ error: null });
       await authApi.logout();
+      if (seq !== authRequestSeq) return;
       set({ state: { isLoggedIn: false, user: null } });
     } catch (e) {
+      if (seq !== authRequestSeq) return;
       set({ error: String(e) });
       throw e;
     }

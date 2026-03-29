@@ -103,7 +103,7 @@ export const Toast = ({
       }, duration);
       return () => clearTimeout(timer);
     }
-  }, [duration, onClose]);
+  }, [message, type, duration, onClose]);
 
   const toastClass = `fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl ${styles.bgClass} border ${styles.borderClass} backdrop-blur-sm animate-slideInUp ${styles.glowClass}`;
 

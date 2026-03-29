@@ -34,7 +34,7 @@ export const SidebarItem = ({ path, label, icon, exact }: SidebarItemProps) => {
   } else if (path === '/') {
     isActive = location.pathname === '/';
   } else {
-    isActive = location.pathname.startsWith(path);
+    isActive = location.pathname === path || location.pathname.startsWith(`${path}/`);
   }
 
   const activeClass = isActive

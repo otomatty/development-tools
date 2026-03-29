@@ -80,17 +80,9 @@ const iconNameMap: Record<string, keyof typeof LucideIcons> = {
 export const Icon = ({ name, className, size, strokeWidth }: IconProps) => {
   const iconKey = iconNameMap[name];
 
-  let IconComponent: LucideIcons.LucideIcon;
-  if (!iconKey) {
-    IconComponent = LucideIcons.AlertCircle;
-  } else {
-    const resolved = LucideIcons[iconKey];
-    if (!resolved || typeof resolved !== 'function') {
-      IconComponent = LucideIcons.AlertCircle;
-    } else {
-      IconComponent = resolved as LucideIcons.LucideIcon;
-    }
-  }
+  const IconComponent =
+    (iconKey ? (LucideIcons[iconKey] as LucideIcons.LucideIcon | undefined) : undefined) ??
+    LucideIcons.AlertCircle;
 
   const defaultClass = 'w-5 h-5';
   const iconClass = className || defaultClass;

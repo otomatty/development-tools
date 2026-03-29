@@ -41,12 +41,14 @@ export const ConfirmDialog = ({
       </ModalBody>
       <ModalFooter>
         <button
+          type="button"
           className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
           onClick={onCancel}
         >
           {cancelLabel}
         </button>
         <button
+          type="button"
           className="px-4 py-2 rounded-lg bg-gm-error hover:bg-red-600 text-white transition-colors"
           onClick={onConfirm}
         >
