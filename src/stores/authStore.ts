@@ -43,13 +43,13 @@ export const useAuth = create<AuthStore>((set) => ({
   logout: async () => {
     const seq = ++authRequestSeq;
     try {
-      set({ error: null });
+      set({ isLoading: true, error: null });
       await authApi.logout();
       if (seq !== authRequestSeq) return;
-      set({ state: { isLoggedIn: false, user: null } });
+      set({ state: { isLoggedIn: false, user: null }, isLoading: false });
     } catch (e) {
       if (seq !== authRequestSeq) return;
-      set({ error: String(e) });
+      set({ error: String(e), isLoading: false });
       throw e;
     }
   },

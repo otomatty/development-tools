@@ -31,6 +31,7 @@ const HomeSkeleton = () => (
 
 export const Home = () => {
   const isLoggedIn = useAuth(s => s.state.isLoggedIn);
+  const authLoading = useAuth(s => s.isLoading);
   const [xpEvent, setXpEvent] = useState<XpGainedEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [githubStats, setGithubStats] = useState<GitHubStats | null>(null);
@@ -39,6 +40,9 @@ export const Home = () => {
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
+    // Wait for auth restoration to complete
+    if (authLoading) return;
+
     if (!isLoggedIn) {
       setLoading(false);
       return;
@@ -61,7 +65,7 @@ export const Home = () => {
     });
 
     return () => { cancelled = true; };
-  }, [isLoggedIn]);
+  }, [authLoading, isLoggedIn]);
 
   // TODO: [FEATURE] Implement stats diff resource when sync result tracking is available
   // Stats diff is typically available after sync, but currently not implemented

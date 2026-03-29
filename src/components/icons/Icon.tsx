@@ -101,7 +101,7 @@ export const Icon = ({ name, className, size, strokeWidth }: IconProps) => {
     <IconComponent
       className={iconClass}
       size={computedSize}
-      strokeWidth={strokeWidth || 2}
+      strokeWidth={strokeWidth ?? 2}
     />
   );
 };

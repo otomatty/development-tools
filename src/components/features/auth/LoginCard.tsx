@@ -292,9 +292,12 @@ export const LoginCard: React.FC = () => {
   const fetchAuthState = useAuth((s) => s.fetchAuthState);
   const [loginState, setLoginState] = useState<LoginState>({ type: 'Initial' });
   const pollingIntervalRef = useRef<number | null>(null);
+  const pollSessionRef = useRef(0);
+  const pollInFlightRef = useRef(false);
 
   // Helper function to stop polling
   const stopPolling = useCallback(() => {
+    pollSessionRef.current += 1;
     if (pollingIntervalRef.current !== null) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
@@ -324,25 +327,27 @@ export const LoginCard: React.FC = () => {
       setLoginState({ type: 'Polling' });
 
       // Start polling for token
+      const session = ++pollSessionRef.current;
       const interval = window.setInterval(async () => {
+        if (pollInFlightRef.current) return;
+        pollInFlightRef.current = true;
         try {
           const status: DeviceTokenStatus = await authApi.pollDeviceToken();
+          if (session !== pollSessionRef.current) return;
           if (status.status === 'success') {
-            // Success - refresh auth state
             await fetchAuthState();
             setLoginState({ type: 'Initial' });
-            clearInterval(interval);
-            pollingIntervalRef.current = null;
+            stopPolling();
           } else if (status.status === 'error') {
             setLoginState({ type: 'Error', message: status.message });
-            clearInterval(interval);
-            pollingIntervalRef.current = null;
+            stopPolling();
           }
-          // If status is 'pending', continue polling
         } catch (e) {
+          if (session !== pollSessionRef.current) return;
           setLoginState({ type: 'Error', message: `Polling failed: ${e}` });
-          clearInterval(interval);
-          pollingIntervalRef.current = null;
+          stopPolling();
+        } finally {
+          pollInFlightRef.current = false;
         }
       }, 5000); // Poll every 5 seconds
 

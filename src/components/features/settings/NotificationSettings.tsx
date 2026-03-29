@@ -15,6 +15,14 @@ import { ToggleSwitch } from '../../ui/form';
 import type { NotificationMethod } from '../../../types';
 import { notificationMethodFromStr, notificationMethodLabel } from '../../../types/settings';
 
+const NOTIFICATION_FIELD_MAP = {
+  xp_gain: 'notifyXpGain',
+  level_up: 'notifyLevelUp',
+  badge_earned: 'notifyBadgeEarned',
+  streak_update: 'notifyStreakUpdate',
+  streak_milestone: 'notifyStreakMilestone',
+} as const;
+
 export const NotificationSettings: React.FC = () => {
   const { settings, isLoading, error: storeError, updateSettings } = useSettings();
   const [loading, setLoading] = useState(true);
@@ -38,6 +46,7 @@ export const NotificationSettings: React.FC = () => {
   // Update notification method
   const updateNotificationMethod = (method: NotificationMethod) => {
     if (!settings) return;
+    setError(null);
 
     updateSettings({
       ...settings,
@@ -48,18 +57,11 @@ export const NotificationSettings: React.FC = () => {
   };
 
   // Toggle individual notification setting
-  const toggleNotification = (field: 'xp_gain' | 'level_up' | 'badge_earned' | 'streak_update' | 'streak_milestone') => {
+  const toggleNotification = (field: keyof typeof NOTIFICATION_FIELD_MAP) => {
     if (!settings) return;
+    setError(null);
 
-    const fieldMap = {
-      xp_gain: 'notifyXpGain',
-      level_up: 'notifyLevelUp',
-      badge_earned: 'notifyBadgeEarned',
-      streak_update: 'notifyStreakUpdate',
-      streak_milestone: 'notifyStreakMilestone',
-    } as const;
-
-    const updateKey = fieldMap[field];
+    const updateKey = NOTIFICATION_FIELD_MAP[field];
     const currentValue = settings[updateKey];
 
     updateSettings({
@@ -73,6 +75,7 @@ export const NotificationSettings: React.FC = () => {
   // Toggle all notifications on
   const toggleAllOn = () => {
     if (!settings) return;
+    setError(null);
 
     updateSettings({
       ...settings,
@@ -89,6 +92,7 @@ export const NotificationSettings: React.FC = () => {
   // Toggle all notifications off
   const toggleAllOff = () => {
     if (!settings) return;
+    setError(null);
 
     updateSettings({
       ...settings,
@@ -183,14 +187,7 @@ export const NotificationSettings: React.FC = () => {
                   { field: 'streak_update' as const, label: 'ストリーク更新通知' },
                   { field: 'streak_milestone' as const, label: 'ストリークマイルストーン' },
                 ].map(({ field, label }) => {
-                  const fieldMap = {
-                    xp_gain: 'notifyXpGain',
-                    level_up: 'notifyLevelUp',
-                    badge_earned: 'notifyBadgeEarned',
-                    streak_update: 'notifyStreakUpdate',
-                    streak_milestone: 'notifyStreakMilestone',
-                  } as const;
-                  const value = settings[fieldMap[field]] as boolean;
+                  const value = settings[NOTIFICATION_FIELD_MAP[field]] as boolean;
                   return (
                     <div key={field} className="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
                       <span className="text-white font-gaming">{label}</span>

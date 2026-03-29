@@ -16,9 +16,11 @@ import { ToggleSwitch } from '../../ui/form';
 
 export const AppearanceSettings: React.FC = () => {
   const { settings, isLoading, error: storeError, updateSettings } = useSettings();
+  const animationsEnabled = useAnimation((s) => s.enabled);
   const setAnimationEnabled = useAnimation((s) => s.setEnabled);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const initialLoadCompleteRef = React.useRef(false);
 
   // Load settings on mount
@@ -35,22 +37,30 @@ export const AppearanceSettings: React.FC = () => {
     }
   }, [isLoading, settings, storeError]);
 
-  // Toggle animations
-  const toggleAnimations = () => {
-    if (!settings) return;
+  // Toggle animations with optimistic update and rollback on failure
+  const toggleAnimations = async () => {
+    if (!settings || isSaving) return;
 
-    const newValue = !settings.animationsEnabled;
+    const previousValue = animationsEnabled;
+    const newValue = !previousValue;
+    setError(null);
 
-    // Update global animation context immediately
+    // Optimistic update
     setAnimationEnabled(newValue);
 
-    // Update settings
-    updateSettings({
-      ...settings,
-      animationsEnabled: newValue,
-    }).catch((e) => {
+    setIsSaving(true);
+    try {
+      await updateSettings({
+        ...settings,
+        animationsEnabled: newValue,
+      });
+    } catch (e) {
+      // Rollback on failure
+      setAnimationEnabled(previousValue);
       setError(`設定の保存に失敗しました: ${e}`);
-    });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -84,7 +94,7 @@ export const AppearanceSettings: React.FC = () => {
                 </span>
               </div>
               <ToggleSwitch
-                enabled={settings.animationsEnabled}
+                enabled={animationsEnabled}
                 onToggle={toggleAnimations}
                 labelId="animations-label"
               />
@@ -97,7 +107,7 @@ export const AppearanceSettings: React.FC = () => {
           </div>
 
           {/* Animation preview (when enabled) */}
-          {settings.animationsEnabled && (
+          {animationsEnabled && (
             <div className="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
               <h4 className="text-sm font-gaming font-bold text-white mb-3">プレビュー</h4>
               <div className="flex items-center justify-center gap-4">
