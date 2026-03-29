@@ -1,7 +1,7 @@
 /**
  * Input Components
  *
- * Solid.js implementation of Input, TextArea, and LabeledInput components.
+ * React implementation of Input, TextArea, and LabeledInput components.
  *
  * Related Documentation:
  *   - Issue: https://github.com/otomatty/development-tools/issues/136
@@ -10,12 +10,11 @@
  *   - Original (Leptos): ./input.rs
  */
 
-import { Component, splitProps, createUniqueId, Show } from 'solid-js';
+import { useId } from 'react';
 import type {
   InputProps,
   TextAreaProps,
   LabeledInputProps,
-  InputType,
   InputSize,
 } from '../../../types/ui';
 
@@ -36,48 +35,36 @@ const sizeClasses: Record<InputSize, string> = {
 const inputBaseClass =
   'w-full bg-gm-bg-secondary border border-gm-border rounded-md text-dt-text-main placeholder-dt-text-sub/50 focus:outline-none focus:ring-2 focus:ring-gm-accent-cyan/50 focus:border-gm-accent-cyan transition-colors duration-200';
 
-export const Input: Component<InputProps> = (props) => {
-  const [local, others] = splitProps(props, [
-    'value',
-    'onInput',
-    'inputType',
-    'size',
-    'placeholder',
-    'disabled',
-    'name',
-    'id',
-    'class',
-  ]);
-
-  const inputType = () => local.inputType ?? 'text';
-  const size = () => local.size ?? 'md';
-  const disabled = () => local.disabled ?? false;
-
-  // Handle value: can be string or Accessor<string>
-  const getValue = () => (typeof local.value === 'function' ? local.value() : local.value);
-  const setValue = (newValue: string) => {
-    if (local.onInput) {
-      local.onInput(newValue);
+export const Input = ({
+  value,
+  onInput,
+  inputType = 'text',
+  size = 'md',
+  placeholder,
+  disabled = false,
+  name,
+  id,
+  className,
+  ...others
+}: InputProps) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (onInput) {
+      onInput(e.target.value);
     }
   };
 
-  const handleInput = (e: Event) => {
-    const target = e.currentTarget as HTMLInputElement;
-    setValue(target.value);
-  };
-
-  const combinedClass = `${inputBaseClass} ${sizeClasses[size()]} ${disabled() ? 'opacity-50 cursor-not-allowed' : ''} ${local.class || ''}`.trim();
+  const combinedClass = `${inputBaseClass} ${sizeClasses[size]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className || ''}`.trim();
 
   return (
     <input
-      type={inputType()}
-      class={combinedClass}
-      placeholder={local.placeholder}
-      disabled={disabled()}
-      name={local.name}
-      id={local.id}
-      value={getValue()}
-      onInput={handleInput}
+      type={inputType}
+      className={combinedClass}
+      placeholder={placeholder}
+      disabled={disabled}
+      name={name}
+      id={id}
+      value={value}
+      onChange={handleChange}
       {...others}
     />
   );
@@ -90,45 +77,33 @@ export const Input: Component<InputProps> = (props) => {
 const textAreaBaseClass =
   'w-full bg-gm-bg-secondary border border-gm-border rounded-md text-dt-text-main placeholder-dt-text-sub/50 focus:outline-none focus:ring-2 focus:ring-gm-accent-cyan/50 focus:border-gm-accent-cyan transition-colors duration-200 px-3 py-2';
 
-export const TextArea: Component<TextAreaProps> = (props) => {
-  const [local, others] = splitProps(props, [
-    'value',
-    'onInput',
-    'placeholder',
-    'disabled',
-    'rows',
-    'resizable',
-    'class',
-  ]);
-
-  const disabled = () => local.disabled ?? false;
-  const rows = () => local.rows ?? 3;
-  const resizable = () => local.resizable ?? true;
-
-  // Handle value: can be string or Accessor<string>
-  const getValue = () => (typeof local.value === 'function' ? local.value() : local.value);
-  const setValue = (newValue: string) => {
-    if (local.onInput) {
-      local.onInput(newValue);
+export const TextArea = ({
+  value,
+  onInput,
+  placeholder,
+  disabled = false,
+  rows = 3,
+  resizable = true,
+  className,
+  ...others
+}: TextAreaProps) => {
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (onInput) {
+      onInput(e.target.value);
     }
   };
 
-  const handleInput = (e: Event) => {
-    const target = e.currentTarget as HTMLTextAreaElement;
-    setValue(target.value);
-  };
-
-  const resizeClass = resizable() ? 'resize-y' : 'resize-none';
-  const combinedClass = `${textAreaBaseClass} ${disabled() ? 'opacity-50 cursor-not-allowed' : ''} ${resizeClass} ${local.class || ''}`.trim();
+  const resizeClass = resizable ? 'resize-y' : 'resize-none';
+  const combinedClass = `${textAreaBaseClass} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${resizeClass} ${className || ''}`.trim();
 
   return (
     <textarea
-      class={combinedClass}
-      placeholder={local.placeholder}
-      rows={rows()}
-      disabled={disabled()}
-      value={getValue()}
-      onInput={handleInput}
+      className={combinedClass}
+      placeholder={placeholder}
+      rows={rows}
+      disabled={disabled}
+      value={value}
+      onChange={handleChange}
       {...others}
     />
   );
@@ -138,47 +113,41 @@ export const TextArea: Component<TextAreaProps> = (props) => {
 // LabeledInput Component
 // ============================================================================
 
-export const LabeledInput: Component<LabeledInputProps> = (props) => {
-  const [local, others] = splitProps(props, [
-    'value',
-    'onInput',
-    'label',
-    'inputType',
-    'placeholder',
-    'required',
-    'disabled',
-    'description',
-    'size',
-  ]);
-
-  // Generate unique ID for label-input association
-  const inputId = createUniqueId();
-  const required = () => local.required ?? false;
+export const LabeledInput = ({
+  value,
+  onInput,
+  label,
+  inputType,
+  placeholder,
+  required = false,
+  disabled,
+  description,
+  size,
+  ...others
+}: LabeledInputProps) => {
+  const inputId = useId();
 
   return (
-    <div class="flex flex-col gap-1">
-      <label for={inputId} class="text-sm font-medium text-dt-text-main">
-        {local.label}
-        <Show when={required()}>
-          <span class="text-red-500 ml-1">*</span>
-        </Show>
+    <div className="flex flex-col gap-1">
+      <label htmlFor={inputId} className="text-sm font-medium text-dt-text-main">
+        {label}
+        {required && <span className="text-red-500 ml-1">*</span>}
       </label>
 
-      <Show when={local.description}>
-        <span class="text-xs text-dt-text-sub">{local.description}</span>
-      </Show>
+      {description && (
+        <span className="text-xs text-dt-text-sub">{description}</span>
+      )}
 
       <Input
-        value={local.value}
-        onInput={local.onInput}
-        inputType={local.inputType}
-        placeholder={local.placeholder}
-        disabled={local.disabled}
-        size={local.size}
+        value={value}
+        onInput={onInput}
+        inputType={inputType}
+        placeholder={placeholder}
+        disabled={disabled}
+        size={size}
         id={inputId}
         {...others}
       />
     </div>
   );
 };
-

@@ -9,105 +9,77 @@
  *   - Original (Leptos): ../components/pages/home/mod.rs
  */
 
-import { Component, createSignal, createResource, Show, onMount } from 'solid-js';
+import { useState, useEffect } from 'react';
 import { LoginCard } from '../../components/features/auth';
 import { DashboardContent, XpNotification } from '../../components/features/gamification';
 import { useAuth } from '../../stores/authStore';
-import { useSettings } from '../../stores/settingsStore';
 import { gamification, github } from '../../lib/tauri/commands';
 import type { GitHubStats, LevelInfo, UserStats, XpGainedEvent } from '../../types';
 
 // Home skeleton loader
-const HomeSkeleton: Component = () => (
-  <div class="p-6 space-y-6 animate-pulse">
-    <div class="h-32 bg-slate-700 rounded-2xl"></div>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="h-64 bg-slate-700 rounded-2xl"></div>
-      <div class="h-64 bg-slate-700 rounded-2xl"></div>
+const HomeSkeleton = () => (
+  <div className="p-6 space-y-6 animate-pulse">
+    <div className="h-32 bg-slate-700 rounded-2xl"></div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="h-64 bg-slate-700 rounded-2xl"></div>
+      <div className="h-64 bg-slate-700 rounded-2xl"></div>
     </div>
-    <div class="h-48 bg-slate-700 rounded-2xl"></div>
-    <div class="h-64 bg-slate-700 rounded-2xl"></div>
+    <div className="h-48 bg-slate-700 rounded-2xl"></div>
+    <div className="h-64 bg-slate-700 rounded-2xl"></div>
   </div>
 );
 
-export const Home: Component = () => {
-  const auth = useAuth();
-  const [xpEvent, setXpEvent] = createSignal<XpGainedEvent | null>(null);
-  const [loading, setLoading] = createSignal(true);
+export const Home = () => {
+  const isLoggedIn = useAuth(s => s.state.isLoggedIn);
+  const [xpEvent, setXpEvent] = useState<XpGainedEvent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [githubStats, setGithubStats] = useState<GitHubStats | null>(null);
+  const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [dataLoading, setDataLoading] = useState(false);
 
-  // Load user data
-  const [githubStats] = createResource(
-    () => auth.store.state.isLoggedIn,
-    async (isLoggedIn) => {
-      if (!isLoggedIn) return null;
-      try {
-        return await github.getStats();
-      } catch (e) {
-        console.error('Failed to load GitHub stats:', e);
-        return null;
-      }
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setLoading(false);
+      return;
     }
-  );
 
-  const [levelInfo] = createResource(
-    () => auth.store.state.isLoggedIn,
-    async (isLoggedIn) => {
-      if (!isLoggedIn) return null;
-      try {
-        return await gamification.getLevelInfo();
-      } catch (e) {
-        console.error('Failed to load level info:', e);
-        return null;
-      }
-    }
-  );
-
-  const [userStats] = createResource(
-    () => auth.store.state.isLoggedIn,
-    async (isLoggedIn) => {
-      if (!isLoggedIn) return null;
-      try {
-        return await github.getUserStats();
-      } catch (e) {
-        console.error('Failed to load user stats:', e);
-        return null;
-      }
-    }
-  );
+    setDataLoading(true);
+    Promise.all([
+      github.getStats().catch(e => { console.error('Failed to load GitHub stats:', e); return null; }),
+      gamification.getLevelInfo().catch(e => { console.error('Failed to load level info:', e); return null; }),
+      github.getUserStats().catch(e => { console.error('Failed to load user stats:', e); return null; }),
+    ]).then(([stats, level, uStats]) => {
+      setGithubStats(stats);
+      setLevelInfo(level);
+      setUserStats(uStats);
+      setDataLoading(false);
+      setLoading(false);
+    });
+  }, [isLoggedIn]);
 
   // TODO: [FEATURE] Implement stats diff resource when sync result tracking is available
   // Stats diff is typically available after sync, but currently not implemented
-  // const [statsDiff] = createResource(...)
 
-  // Initial data load
-  onMount(async () => {
-    setLoading(false);
-  });
-
-  const isLoggedIn = () => auth.store.state.isLoggedIn;
-  const isLoading = () => loading() || (isLoggedIn() && (githubStats.loading || levelInfo.loading || userStats.loading));
+  const isLoading = loading || (isLoggedIn && dataLoading);
 
   return (
-    <div class="flex-1 overflow-y-auto p-6">
-      <Show
-        when={!isLoading()}
-        fallback={<HomeSkeleton />}
-      >
-        <Show
-          when={isLoggedIn()}
-          fallback={<LoginCard />}
-        >
-          <DashboardContent
-            levelInfo={levelInfo()}
-            userStats={userStats()}
-            githubStats={githubStats()}
-            statsDiff={null}
-          />
-        </Show>
-      </Show>
+    <div className="flex-1 overflow-y-auto p-6">
+      {isLoading ? (
+        <HomeSkeleton />
+      ) : isLoggedIn ? (
+        <DashboardContent
+          levelInfo={levelInfo}
+          userStats={userStats}
+          githubStats={githubStats}
+          statsDiff={null}
+        />
+      ) : (
+        <LoginCard />
+      )}
 
       {/* XP Notification */}
-      <XpNotification event={xpEvent()} onClose={() => setXpEvent(null)} />
+      <XpNotification event={xpEvent} onClose={() => setXpEvent(null)} />
     </div>
   );
 };

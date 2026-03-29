@@ -1,7 +1,7 @@
 /**
  * Animation Store
  *
- * Manages animation settings using Solid.js stores.
+ * Manages animation settings using zustand.
  * Synchronizes with settings store to reflect user preferences.
  *
  * Related Documentation:
@@ -9,46 +9,24 @@
  *   - Settings Store: src/stores/settingsStore.ts
  */
 
-import { createStore } from 'solid-js/store';
-import { createEffect } from 'solid-js';
-import { useSettings } from './settingsStore';
+import { create } from 'zustand';
 
 interface AnimationStore {
   enabled: boolean;
+  setEnabled: (enabled: boolean) => void;
 }
 
-const [animationStore, setAnimationStore] = createStore<AnimationStore>({
-  enabled: true, // Default: animations enabled (will be synced from settings when loaded)
-});
+export const useAnimation = create<AnimationStore>((set) => ({
+  enabled: true,
+  setEnabled: (enabled: boolean) => set({ enabled }),
+}));
 
-// Initialize settings and sync effect once at module scope
-const settings = useSettings();
+// Sync with settings store after settings load
+// This is done via a zustand subscription instead of Solid.js createEffect
+import { useSettings } from './settingsStore';
 
-// Sync animation state from settings
-createEffect(() => {
-  if (settings.store.settings) {
-    setAnimationStore('enabled', settings.store.settings.animationsEnabled);
+useSettings.subscribe((state) => {
+  if (state.settings) {
+    useAnimation.getState().setEnabled(state.settings.animationsEnabled);
   }
 });
-
-/**
- * Set animation enabled state
- * This updates the store directly (settings will be synced via the effect above)
- */
-const setEnabled = (enabled: boolean) => {
-  setAnimationStore('enabled', enabled);
-};
-
-/**
- * Animation hook
- *
- * Provides animation state that is automatically synced with settings store.
- * Animation state is synced once at module load to avoid duplicate effects.
- */
-export const useAnimation = () => {
-  return {
-    store: animationStore,
-    setEnabled,
-  };
-};
-

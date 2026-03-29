@@ -11,7 +11,8 @@
 
 export { AnimatedEmoji } from './AnimatedEmoji';
 export { AnimatedEmojiWithIntensity } from './AnimatedEmojiWithIntensity';
-export type { AnimatedEmojiProps, AnimatedEmojiWithIntensityProps } from './AnimatedEmoji';
+export type { AnimatedEmojiProps } from './AnimatedEmoji';
+export type { AnimatedEmojiWithIntensityProps } from './AnimatedEmojiWithIntensity';
 export type { EmojiType, AnimationIntensity } from './types';
 export { EMOJI_METADATA, buildEmojiClasses, getIntensityModifier } from './types';
 

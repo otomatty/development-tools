@@ -1,7 +1,7 @@
 /**
  * Profile Card Component
  *
- * Solid.js implementation of ProfileCard component.
+ * React implementation of ProfileCard component.
  * Displays user profile, level, and XP progress.
  *
  * Related Documentation:
@@ -9,8 +9,8 @@
  *   - Original (Leptos): ./profile_card.rs
  */
 
-import { Component, Show } from 'solid-js';
-import { useNavigate } from '@solidjs/router';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DropdownMenu, DropdownMenuItem } from '../../ui/dropdown';
 import { Icon } from '../../icons';
 import { useAuth } from '../../../stores/authStore';
@@ -21,12 +21,13 @@ interface ProfileCardProps {
   userStats?: UserStats | null;
 }
 
-export const ProfileCard: Component<ProfileCardProps> = (props) => {
-  const auth = useAuth();
+export const ProfileCard: React.FC<ProfileCardProps> = ({ levelInfo, userStats }) => {
+  const logout = useAuth((s) => s.logout);
+  const user = useAuth((s) => s.state.user);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await auth.logout();
+    await logout();
     navigate('/');
   };
 
@@ -34,109 +35,92 @@ export const ProfileCard: Component<ProfileCardProps> = (props) => {
     navigate('/settings');
   };
 
-  const user = () => auth.store.state.user;
-  const levelInfo = () => props.levelInfo;
-  const userStats = () => props.userStats;
-
   return (
-    <div class="p-6 bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-cyan/20 shadow-lg">
-      <div class="flex items-start justify-between">
+    <div className="p-6 bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-cyan/20 shadow-lg">
+      <div className="flex items-start justify-between">
         {/* User info section */}
-        <div class="flex items-center gap-6">
+        <div className="flex items-center gap-6">
           {/* Avatar */}
-          <div class="relative">
-            <Show
-              when={user()}
-              fallback={
-                <div class="w-20 h-20 rounded-xl bg-gm-bg-secondary border-2 border-gm-accent-cyan flex items-center justify-center">
-                  <span class="text-3xl">👤</span>
-                </div>
-              }
-            >
-              {(u) => (
-                <img
-                  src={u().avatarUrl || ''}
-                  alt="Avatar"
-                  class="w-20 h-20 rounded-xl border-2 border-gm-accent-cyan shadow-neon-cyan"
-                />
-              )}
-            </Show>
+          <div className="relative">
+            {user ? (
+              <img
+                src={user.avatarUrl || ''}
+                alt="Avatar"
+                className="w-20 h-20 rounded-xl border-2 border-gm-accent-cyan shadow-neon-cyan"
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-xl bg-gm-bg-secondary border-2 border-gm-accent-cyan flex items-center justify-center">
+                <span className="text-3xl">👤</span>
+              </div>
+            )}
 
             {/* Level badge */}
-            <Show when={levelInfo()}>
-              {(info) => (
-                <div class="absolute -bottom-2 -right-2 px-2 py-1 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-lg text-white font-gaming text-sm font-bold shadow-neon-cyan">
-                  Lv. {info().currentLevel}
-                </div>
-              )}
-            </Show>
+            {levelInfo && (
+              <div className="absolute -bottom-2 -right-2 px-2 py-1 bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-lg text-white font-gaming text-sm font-bold shadow-neon-cyan">
+                Lv. {levelInfo.currentLevel}
+              </div>
+            )}
           </div>
 
           {/* Username and XP */}
-          <div class="space-y-2">
-            <h2 class="text-2xl font-gaming font-bold text-white">
-              {user()?.username || 'User'}
+          <div className="space-y-2">
+            <h2 className="text-2xl font-gaming font-bold text-white">
+              {user?.username || 'User'}
             </h2>
 
             {/* XP Progress Bar */}
-            <Show when={levelInfo()}>
-              {(info) => (
-                <div class="space-y-1">
-                  <div class="flex items-center justify-between text-sm">
-                    <span class="text-gm-accent-cyan font-gaming-mono">{info().totalXp} XP</span>
-                    <span class="text-dt-text-sub">{info().xpToNextLevel} to next level</span>
-                  </div>
-                  <div class="w-64 h-3 bg-gm-bg-secondary rounded-full overflow-hidden">
-                    <div
-                      class="h-full bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-full transition-all duration-500"
-                      style={{ width: `${info().progressPercent}%` }}
-                    />
-                  </div>
+            {levelInfo && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gm-accent-cyan font-gaming-mono">{levelInfo.totalXp} XP</span>
+                  <span className="text-dt-text-sub">{levelInfo.xpToNextLevel} to next level</span>
                 </div>
-              )}
-            </Show>
+                <div className="w-64 h-3 bg-gm-bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple rounded-full transition-all duration-500"
+                    style={{ width: `${levelInfo.progressPercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Stats quick view */}
-        <div class="flex items-center gap-6">
+        <div className="flex items-center gap-6">
           {/* Streak */}
-          <Show when={userStats()}>
-            {(stats) => (
-              <div class="text-center">
-                <div class="flex items-center gap-2 text-gm-warning">
-                  <span class="text-2xl">🔥</span>
-                  <span class="text-3xl font-gaming-mono font-bold">{stats().currentStreak}</span>
-                </div>
-                <div class="text-xs text-dt-text-sub">Day Streak</div>
+          {userStats && (
+            <div className="text-center">
+              <div className="flex items-center gap-2 text-gm-warning">
+                <span className="text-2xl">🔥</span>
+                <span className="text-3xl font-gaming-mono font-bold">{userStats.currentStreak}</span>
               </div>
-            )}
-          </Show>
+              <div className="text-xs text-dt-text-sub">Day Streak</div>
+            </div>
+          )}
 
           {/* Total Commits */}
-          <Show when={userStats()}>
-            {(stats) => (
-              <div class="text-center">
-                <div class="flex items-center gap-2 text-gm-success">
-                  <span class="text-2xl">⭐</span>
-                  <span class="text-3xl font-gaming-mono font-bold">{stats().totalCommits}</span>
-                </div>
-                <div class="text-xs text-dt-text-sub">Commits</div>
+          {userStats && (
+            <div className="text-center">
+              <div className="flex items-center gap-2 text-gm-success">
+                <span className="text-2xl">⭐</span>
+                <span className="text-3xl font-gaming-mono font-bold">{userStats.totalCommits}</span>
               </div>
-            )}
-          </Show>
+              <div className="text-xs text-dt-text-sub">Commits</div>
+            </div>
+          )}
 
           {/* Actions dropdown menu (Settings, Logout) */}
           <DropdownMenu
-            trigger={() => <Icon name="more-vertical" class="w-5 h-5" />}
+            trigger={() => <Icon name="more-vertical" className="w-5 h-5" />}
             align="right"
           >
             <DropdownMenuItem onClick={handleSettings}>
-              <Icon name="settings" class="w-4 h-4" />
+              <Icon name="settings" className="w-4 h-4" />
               <span>Settings</span>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout} danger>
-              <Icon name="logout" class="w-4 h-4" />
+              <Icon name="logout" className="w-4 h-4" />
               <span>Logout</span>
             </DropdownMenuItem>
           </DropdownMenu>
@@ -145,4 +129,3 @@ export const ProfileCard: Component<ProfileCardProps> = (props) => {
     </div>
   );
 };
-

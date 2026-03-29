@@ -1,7 +1,7 @@
 /**
  * Stats Display Component
  *
- * Solid.js implementation of StatsDisplay component.
+ * React implementation of StatsDisplay component.
  * Shows detailed statistics in a grid layout.
  *
  * Related Documentation:
@@ -9,7 +9,7 @@
  *   - Original (Leptos): ./stats_display.rs
  */
 
-import { Component, Show, createMemo } from 'solid-js';
+import React, { useMemo } from 'react';
 import { AnimatedEmoji, AnimatedEmojiWithIntensity } from '../../ui/animated-emoji';
 import type { GitHubStats, UserStats, StatsDiffResult } from '../../../types';
 
@@ -35,24 +35,23 @@ function getNextMilestone(currentStreak: number): [number, string] | null {
 }
 
 // Streak section component with prominent display
-const StreakSection: Component<{ userStats?: UserStats | null }> = (props) => {
-  const currentStreak = () => props.userStats?.currentStreak ?? 0;
-  const longestStreak = () => props.userStats?.longestStreak ?? 0;
+const StreakSection: React.FC<{ userStats?: UserStats | null }> = ({ userStats }) => {
+  const currentStreak = userStats?.currentStreak ?? 0;
+  const longestStreak = userStats?.longestStreak ?? 0;
 
-  const nextMilestoneInfo = createMemo(() => {
-    const streak = currentStreak();
-    const milestone = getNextMilestone(streak);
+  const nextMilestoneInfo = useMemo(() => {
+    const milestone = getNextMilestone(currentStreak);
     if (!milestone) return null;
     const [days, name] = milestone;
-    const daysLeft = days - streak;
+    const daysLeft = days - currentStreak;
     return { daysLeft, name };
-  });
+  }, [currentStreak]);
 
   return (
-    <div class="p-6 bg-gradient-to-br from-orange-900/30 via-gm-bg-card/80 to-red-900/20 backdrop-blur-sm rounded-2xl border border-orange-500/30 shadow-lg shadow-orange-500/10">
-      <div class="flex items-center justify-between">
+    <div className="p-6 bg-gradient-to-br from-orange-900/30 via-gm-bg-card/80 to-red-900/20 backdrop-blur-sm rounded-2xl border border-orange-500/30 shadow-lg shadow-orange-500/10">
+      <div className="flex items-center justify-between">
         {/* Left side: Current streak with animated flame */}
-        <div class="flex items-center gap-4">
+        <div className="flex items-center gap-4">
           <AnimatedEmojiWithIntensity
             emoji="Fire"
             size="text-5xl"
@@ -61,53 +60,48 @@ const StreakSection: Component<{ userStats?: UserStats | null }> = (props) => {
             thresholds={[1, 7, 30]}
           />
           <div>
-            <div class="text-4xl font-gaming-mono font-bold text-orange-400">
-              {currentStreak()}
-              <span class="text-lg text-orange-300/70"> days</span>
+            <div className="text-4xl font-gaming-mono font-bold text-orange-400">
+              {currentStreak}
+              <span className="text-lg text-orange-300/70"> days</span>
             </div>
-            <div class="text-sm text-dt-text-sub">Current Streak</div>
+            <div className="text-sm text-dt-text-sub">Current Streak</div>
           </div>
         </div>
 
         {/* Right side: Best streak and next milestone */}
-        <div class="text-right space-y-2">
-          <div class="flex items-center gap-2 justify-end">
-            <AnimatedEmoji emoji="Trophy" size="text-lg" class="text-badge-gold" hoverOnly={true} />
-            <span class="text-lg font-gaming-mono text-badge-gold">{longestStreak()}</span>
-            <span class="text-xs text-dt-text-sub">Best</span>
+        <div className="text-right space-y-2">
+          <div className="flex items-center gap-2 justify-end">
+            <AnimatedEmoji emoji="Trophy" size="text-lg" className="text-badge-gold" hoverOnly={true} />
+            <span className="text-lg font-gaming-mono text-badge-gold">{longestStreak}</span>
+            <span className="text-xs text-dt-text-sub">Best</span>
           </div>
 
           {/* Next milestone */}
-          <Show when={nextMilestoneInfo()}>
-            {(info) => (
-              <div class="text-xs text-dt-text-sub">
-                <span class="text-gm-accent-cyan">{info().daysLeft}</span> days to{' '}
-                <span class="text-orange-300">{info().name}</span>
-              </div>
-            )}
-          </Show>
+          {nextMilestoneInfo && (
+            <div className="text-xs text-dt-text-sub">
+              <span className="text-gm-accent-cyan">{nextMilestoneInfo.daysLeft}</span> days to{' '}
+              <span className="text-orange-300">{nextMilestoneInfo.name}</span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Progress to next milestone */}
-      <Show when={nextMilestoneInfo()}>
-        {(info) => {
-          const streak = currentStreak();
-          const target = streak + info().daysLeft;
-          const progress = target > 0 ? (streak / target) * 100 : 0;
+      {nextMilestoneInfo && (() => {
+        const target = currentStreak + nextMilestoneInfo.daysLeft;
+        const progress = target > 0 ? (currentStreak / target) * 100 : 0;
 
-          return (
-            <div class="mt-4">
-              <div class="h-2 bg-slate-700/50 rounded-full overflow-hidden">
-                <div
-                  class="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all duration-500"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
+        return (
+          <div className="mt-4">
+            <div className="h-2 bg-slate-700/50 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
             </div>
-          );
-        }}
-      </Show>
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -121,9 +115,9 @@ interface StatCardProps {
   diff?: number | null;
 }
 
-const StatCard: Component<StatCardProps> = (props) => {
-  const colorClass = () => {
-    switch (props.color) {
+const StatCard: React.FC<StatCardProps> = ({ icon, label, value, color, diff }) => {
+  const colorClass = (() => {
+    switch (color) {
       case 'cyan':
         return 'text-gm-accent-cyan';
       case 'purple':
@@ -139,65 +133,66 @@ const StatCard: Component<StatCardProps> = (props) => {
       default:
         return 'text-dt-text';
     }
+  })();
+
+  const renderDiff = () => {
+    if (diff === null || diff === undefined) return null;
+    if (diff > 0) {
+      return (
+        <span className="text-xs font-bold text-gm-success flex items-center gap-0.5">
+          ↑{diff}
+        </span>
+      );
+    } else if (diff < 0) {
+      return (
+        <span className="text-xs font-bold text-gm-error flex items-center gap-0.5">
+          ↓{Math.abs(diff)}
+        </span>
+      );
+    } else {
+      return (
+        <span className="text-xs text-slate-500 flex items-center gap-0.5">→0</span>
+      );
+    }
   };
 
   return (
-    <div class="p-4 bg-gm-bg-secondary/50 rounded-xl border border-slate-700/30 hover:border-gm-accent-cyan/30 transition-all duration-200">
-      <div class="flex items-center gap-3">
-        <span class="text-2xl">{props.icon}</span>
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            <div class={`text-xl font-gaming-mono font-bold ${colorClass()}`}>{props.value}</div>
-            <Show when={props.diff !== null && props.diff !== undefined}>
-              {(diff) => {
-                const d = diff();
-                if (d > 0) {
-                  return (
-                    <span class="text-xs font-bold text-gm-success flex items-center gap-0.5">
-                      ↑{d}
-                    </span>
-                  );
-                } else if (d < 0) {
-                  return (
-                    <span class="text-xs font-bold text-gm-error flex items-center gap-0.5">
-                      ↓{Math.abs(d)}
-                    </span>
-                  );
-                } else {
-                  return (
-                    <span class="text-xs text-slate-500 flex items-center gap-0.5">→0</span>
-                  );
-                }
-              }}
-            </Show>
+    <div className="p-4 bg-gm-bg-secondary/50 rounded-xl border border-slate-700/30 hover:border-gm-accent-cyan/30 transition-all duration-200">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{icon}</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <div className={`text-xl font-gaming-mono font-bold ${colorClass}`}>{value}</div>
+            {renderDiff()}
           </div>
-          <div class="text-xs text-dt-text-sub">{props.label}</div>
+          <div className="text-xs text-dt-text-sub">{label}</div>
         </div>
       </div>
     </div>
   );
 };
 
-export const StatsDisplay: Component<StatsDisplayProps> = (props) => {
+export const StatsDisplay: React.FC<StatsDisplayProps> = ({ githubStats, userStats, statsDiff }) => {
   const getDiff = (field: keyof StatsDiffResult): number | null => {
-    return props.statsDiff?.[field] ?? null;
+    const val = statsDiff?.[field];
+    return typeof val === 'number' ? val : null;
   };
 
   return (
-    <div class="space-y-6">
+    <div className="space-y-6">
       {/* Streak Section - Prominent display */}
-      <StreakSection userStats={props.userStats} />
+      <StreakSection userStats={userStats} />
 
       {/* Stats Grid */}
-      <div class="p-6 bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-purple/20">
-        <h3 class="text-xl font-gaming font-bold text-gm-accent-purple mb-4">📊 Statistics</h3>
+      <div className="p-6 bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-purple/20">
+        <h3 className="text-xl font-gaming font-bold text-gm-accent-purple mb-4">📊 Statistics</h3>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           {/* Commits */}
           <StatCard
             icon="📝"
             label="Total Commits"
-            value={props.githubStats?.totalCommits.toString() ?? '-'}
+            value={githubStats?.totalCommits.toString() ?? '-'}
             color="cyan"
             diff={getDiff('commitsDiff')}
           />
@@ -206,7 +201,7 @@ export const StatsDisplay: Component<StatsDisplayProps> = (props) => {
           <StatCard
             icon="🔀"
             label="Pull Requests"
-            value={props.githubStats?.totalPrs.toString() ?? '-'}
+            value={githubStats?.totalPrs.toString() ?? '-'}
             color="purple"
             diff={getDiff('prsDiff')}
           />
@@ -215,7 +210,7 @@ export const StatsDisplay: Component<StatsDisplayProps> = (props) => {
           <StatCard
             icon="👁️"
             label="Code Reviews"
-            value={props.githubStats?.totalReviews.toString() ?? '-'}
+            value={githubStats?.totalReviews.toString() ?? '-'}
             color="pink"
             diff={getDiff('reviewsDiff')}
           />
@@ -224,7 +219,7 @@ export const StatsDisplay: Component<StatsDisplayProps> = (props) => {
           <StatCard
             icon="🎯"
             label="Issues"
-            value={props.githubStats?.totalIssues.toString() ?? '-'}
+            value={githubStats?.totalIssues.toString() ?? '-'}
             color="green"
             diff={getDiff('issuesDiff')}
           />
@@ -233,7 +228,7 @@ export const StatsDisplay: Component<StatsDisplayProps> = (props) => {
           <StatCard
             icon="⭐"
             label="Stars Received"
-            value={props.githubStats?.totalStarsReceived.toString() ?? '-'}
+            value={githubStats?.totalStarsReceived.toString() ?? '-'}
             color="gold"
             diff={getDiff('starsDiff')}
           />
@@ -242,7 +237,7 @@ export const StatsDisplay: Component<StatsDisplayProps> = (props) => {
           <StatCard
             icon="🌍"
             label="Languages"
-            value={props.githubStats?.languagesCount.toString() ?? '-'}
+            value={githubStats?.languagesCount.toString() ?? '-'}
             color="cyan"
           />
         </div>
@@ -250,4 +245,3 @@ export const StatsDisplay: Component<StatsDisplayProps> = (props) => {
     </div>
   );
 };
-

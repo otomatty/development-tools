@@ -1,7 +1,7 @@
 /**
  * Network Status Store
  *
- * Manages network connectivity status (online/offline) using Solid.js signals.
+ * Manages network connectivity status (online/offline) using zustand.
  * Monitors browser online/offline events and updates state accordingly.
  *
  * Related Documentation:
@@ -9,40 +9,37 @@
  *   - Types: src/types/network.ts (NetworkState, newNetworkState, setOnline, setOffline)
  */
 
-import { createSignal } from 'solid-js';
+import { create } from 'zustand';
 import type { NetworkState } from '@/types';
 import { newNetworkState, setOnline, setOffline } from '@/types/network';
 
-/**
- * Singleton network state and listeners
- * Network status is managed in a single global instance to avoid duplicate event listeners.
- */
-const [networkState, setNetworkState] = createSignal<NetworkState>(
-  newNetworkState(navigator.onLine)
-);
+interface NetworkStore {
+  networkState: NetworkState;
+  isOnline: boolean;
+}
 
-const handleOnline = () => {
-  setNetworkState((prev) => setOnline(prev));
-};
+export const useNetworkStatus = create<NetworkStore>((set) => {
+  const initial = newNetworkState(navigator.onLine);
 
-const handleOffline = () => {
-  setNetworkState((prev) => setOffline(prev));
-};
-
-// Only add listeners once at module load (singleton pattern)
-window.addEventListener('online', handleOnline);
-window.addEventListener('offline', handleOffline);
-
-/**
- * Network status hook (singleton)
- *
- * Returns the shared network connectivity state.
- * Event listeners are set up once at module load to avoid duplicates.
- */
-export const useNetworkStatus = () => {
-  return {
-    networkState,
-    isOnline: () => networkState().isOnline,
+  const handleOnline = () => {
+    set((state) => {
+      const next = setOnline(state.networkState);
+      return { networkState: next, isOnline: next.isOnline };
+    });
   };
-};
 
+  const handleOffline = () => {
+    set((state) => {
+      const next = setOffline(state.networkState);
+      return { networkState: next, isOnline: next.isOnline };
+    });
+  };
+
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('offline', handleOffline);
+
+  return {
+    networkState: initial,
+    isOnline: initial.isOnline,
+  };
+});

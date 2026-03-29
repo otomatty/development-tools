@@ -1,7 +1,7 @@
 /**
  * Stores - State Management
  *
- * Centralized state management using Solid.js stores.
+ * Centralized state management using zustand.
  * This module exports all stores for use throughout the application.
  *
  * Related Documentation:
@@ -15,4 +15,3 @@ export * from './navigationStore';
 export * from './settingsStore';
 export * from './networkStore';
 export * from './animationStore';
-

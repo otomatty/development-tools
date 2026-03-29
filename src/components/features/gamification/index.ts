@@ -1,7 +1,7 @@
 /**
  * Gamification Feature Components
  *
- * Solid.js implementation of gamification components.
+ * React implementation of gamification components.
  *
  * Related Documentation:
  *   - Issue: https://github.com/otomatty/development-tools/issues/149
@@ -14,4 +14,3 @@ export { BadgeGrid } from './BadgeGrid';
 export { ContributionGraph } from './ContributionGraph';
 export { XpNotification } from './XpNotification';
 export { DashboardContent } from './DashboardContent';
-

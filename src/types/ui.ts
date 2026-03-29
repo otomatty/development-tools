@@ -1,49 +1,38 @@
 /**
  * UI Component Type Definitions
  *
- * Type definitions for Solid.js UI components migrated from Leptos.
- *
- * Related Documentation:
- *   - Issue: https://github.com/otomatty/development-tools/issues/136
- *   - Plan: docs/03_plans/ui-components-migration/20251206_01_phase3-1-basic-ui-components-plan.md
- *   - Original (Leptos): src/components/ui/
+ * Type definitions for React UI components.
  */
 
-import type { JSX, Accessor } from 'solid-js';
+import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, TextareaHTMLAttributes } from 'react';
 
-// ============================================================================
 // Button Types
-// ============================================================================
-
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'outline';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
-export interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   disabled?: boolean;
   fullWidth?: boolean;
   isLoading?: boolean;
-  leftIcon?: JSX.Element;
-  rightIcon?: JSX.Element;
+  leftIcon?: ReactNode;
+  rightIcon?: ReactNode;
 }
 
-export interface IconButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   disabled?: boolean;
-  label: string; // Required for accessibility (aria-label)
+  label: string;
 }
 
-// ============================================================================
 // Input Types
-// ============================================================================
-
 export type InputType = 'text' | 'password' | 'number' | 'email' | 'url' | 'search';
 export type InputSize = 'sm' | 'md' | 'lg';
 
-export interface InputProps extends Omit<JSX.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onInput'> {
-  value: string | Accessor<string>;
+export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onInput' | 'size'> {
+  value: string;
   onInput?: (value: string) => void;
   inputType?: InputType;
   size?: InputSize;
@@ -53,14 +42,14 @@ export interface InputProps extends Omit<JSX.InputHTMLAttributes<HTMLInputElemen
   id?: string;
 }
 
-export interface TextAreaProps extends Omit<JSX.TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onInput'> {
-  value: string | Accessor<string>;
+export interface TextAreaProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onInput'> {
+  value: string;
   onInput?: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
   rows?: number;
   resizable?: boolean;
-  class?: string;
+  className?: string;
 }
 
 export interface LabeledInputProps extends Omit<InputProps, 'id'> {
@@ -71,90 +60,78 @@ export interface LabeledInputProps extends Omit<InputProps, 'id'> {
   size?: InputSize;
 }
 
-// ============================================================================
 // Modal Types
-// ============================================================================
-
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
 
 export interface ModalProps {
-  visible: Accessor<boolean> | boolean;
+  visible: boolean;
   onClose: () => void;
   size?: ModalSize;
   borderClass?: string;
   closeOnOverlay?: boolean;
   closeOnEscape?: boolean;
-  children: JSX.Element;
+  children: ReactNode;
 }
 
 export interface ModalHeaderProps {
-  children: JSX.Element;
+  children: ReactNode;
   onClose?: () => void;
 }
 
 export interface ModalBodyProps {
-  children: JSX.Element;
-  class?: string;
+  children: ReactNode;
+  className?: string;
 }
 
 export interface ModalFooterProps {
-  children: JSX.Element;
+  children: ReactNode;
 }
 
-// ============================================================================
 // DropdownMenu Types
-// ============================================================================
-
 export interface DropdownMenuItemProps {
-  children: JSX.Element;
+  children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   danger?: boolean;
-  class?: string;
+  className?: string;
 }
 
 export interface DropdownMenuDividerProps {
-  class?: string;
+  className?: string;
 }
 
 export interface DropdownMenuProps {
-  trigger: JSX.Element | (() => JSX.Element);
-  children: JSX.Element;
+  trigger: ReactNode | (() => ReactNode);
+  children: ReactNode;
   align?: 'left' | 'right';
-  class?: string;
+  className?: string;
 }
 
-// ============================================================================
 // Toast Types
-// ============================================================================
-
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 export interface ToastProps {
   message: string;
   type?: ToastType;
-  duration?: number; // milliseconds (0 = no auto-hide)
+  duration?: number;
   onClose?: () => void;
 }
 
 export interface InlineToastProps {
   message: string;
   type?: ToastType;
-  visible: boolean | (() => boolean);
-  class?: string;
+  visible: boolean;
+  className?: string;
 }
 
 export interface ToastContextValue {
   showToast: (message: string, type?: ToastType, duration?: number) => void;
 }
 
-// ============================================================================
 // ToggleSwitch Types
-// ============================================================================
-
 export type ToggleSwitchSize = 'small' | 'medium' | 'large';
 
-export interface ToggleSwitchProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ToggleSwitchProps {
   enabled: boolean;
   onToggle?: () => void;
   labelId?: string;
@@ -162,43 +139,33 @@ export interface ToggleSwitchProps extends JSX.ButtonHTMLAttributes<HTMLButtonEl
   disabled?: boolean;
 }
 
-// ============================================================================
 // ConfirmDialog Types
-// ============================================================================
-
 export interface ConfirmDialogProps {
   title: string;
   message: string;
   confirmLabel: string;
   cancelLabel: string;
-  visible: boolean | (() => boolean);
+  visible: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   closeOnOverlay?: boolean;
 }
 
-// ============================================================================
 // Accordion Types
-// ============================================================================
-
 export interface AccordionSectionProps {
   title: string;
   icon?: string;
-  expanded: boolean | (() => boolean);
+  expanded: boolean;
   onToggle?: () => void;
-  children: JSX.Element;
+  children: ReactNode;
   maxHeight?: string;
-  class?: string;
+  className?: string;
 }
 
-// ============================================================================
 // Icon Types
-// ============================================================================
-
 export interface IconProps {
   name: string;
-  class?: string;
+  className?: string;
   size?: number | string;
   strokeWidth?: number;
 }
-

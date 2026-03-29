@@ -1,7 +1,7 @@
 /**
  * Navigation Utility
  *
- * Provides navigation utilities for routing with @solidjs/router.
+ * Provides navigation utilities for routing with react-router-dom.
  * Integrates with navigation store for state management.
  *
  * Related Documentation:
@@ -10,8 +10,8 @@
  *   - Types: src/types/index.ts (AppPage, AppPageType, ProjectDetailPage)
  */
 
-import { useNavigate, useLocation } from '@solidjs/router';
-import { AppPage, type AppPageType, type ProjectDetailPage, isProjectDetailPage } from '@/types';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { AppPage, type AppPageType, isProjectDetailPage } from '@/types';
 
 export const pagePaths: Record<AppPage, string> = {
   [AppPage.Home]: '/',
@@ -65,4 +65,3 @@ export const useAppNavigation = () => {
 
   return { goTo, currentPath: location.pathname };
 };
-

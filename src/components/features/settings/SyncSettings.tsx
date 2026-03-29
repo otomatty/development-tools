@@ -1,7 +1,7 @@
 /**
  * Sync Settings Component
  *
- * Solid.js implementation of SyncSettings component.
+ * React implementation of SyncSettings component.
  * Allows users to configure sync intervals, background sync, and startup sync options.
  *
  * Related Documentation:
@@ -9,8 +9,7 @@
  *   - Original (Leptos): ../settings/sync_settings.rs
  */
 
-import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
-import { createResource } from 'solid-js';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSettings } from '../../../stores/settingsStore';
 import { settings as settingsApi, github as githubApi } from '../../../lib/tauri/commands';
 import { ToggleSwitch } from '../../ui/form';
@@ -18,92 +17,90 @@ import { InlineToast } from '../../ui/feedback';
 import { Button } from '../../ui/button';
 import type { SyncIntervalOption, SyncResult } from '../../../types';
 
-export const SyncSettings: Component = () => {
-  const settingsStore = useSettings();
-  const [loading, setLoading] = createSignal(true);
-  const [syncing, setSyncing] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const [successMessage, setSuccessMessage] = createSignal<string | null>(null);
-  const [lastSyncTime, setLastSyncTime] = createSignal<string | null>(null);
-  const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
-  const [debounceHandle, setDebounceHandle] = createSignal<number | null>(null);
-  const [successMsgHandle, setSuccessMsgHandle] = createSignal<number | null>(null);
+export const SyncSettings: React.FC = () => {
+  const { settings, isLoading, error: storeError, updateSettings } = useSettings();
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const initialLoadCompleteRef = useRef(false);
+  const debounceHandleRef = useRef<number | null>(null);
+  const successMsgHandleRef = useRef<number | null>(null);
 
   // Load sync intervals
-  const [syncIntervals] = createResource<SyncIntervalOption[]>(async () => {
+  const [syncIntervals, setSyncIntervals] = useState<SyncIntervalOption[]>([]);
+
+  const fetchSyncIntervals = useCallback(async () => {
     try {
-      return await settingsApi.getSyncIntervals();
+      const data = await settingsApi.getSyncIntervals();
+      setSyncIntervals(data);
     } catch (e) {
       console.error('Failed to load sync intervals:', e);
       // Use fallback intervals
-      return [
+      setSyncIntervals([
         { value: 5, label: '5分' },
         { value: 15, label: '15分' },
         { value: 30, label: '30分' },
         { value: 60, label: '1時間' },
         { value: 180, label: '3時間' },
         { value: 0, label: '手動のみ' },
-      ];
+      ]);
     }
-  });
+  }, []);
+
+  useEffect(() => {
+    fetchSyncIntervals();
+  }, [fetchSyncIntervals]);
 
   // Load settings on mount
-  createEffect(() => {
-    if (initialLoadComplete()) return;
+  useEffect(() => {
+    if (initialLoadCompleteRef.current) return;
 
-    if (!settingsStore.store.isLoading && settingsStore.store.settings) {
+    if (!isLoading && settings) {
       setLoading(false);
-      setInitialLoadComplete(true);
-    } else if (!settingsStore.store.isLoading && settingsStore.store.error) {
-      setError(`設定の読み込みに失敗しました: ${settingsStore.store.error}`);
+      initialLoadCompleteRef.current = true;
+    } else if (!isLoading && storeError) {
+      setError(`設定の読み込みに失敗しました: ${storeError}`);
       setLoading(false);
-      setInitialLoadComplete(true);
+      initialLoadCompleteRef.current = true;
     }
-  });
+  }, [isLoading, settings, storeError]);
 
   // Update sync interval
   const updateSyncInterval = (interval: number) => {
-    const currentSettings = settingsStore.store.settings;
-    if (!currentSettings) return;
+    if (!settings) return;
 
-    settingsStore
-      .updateSettings({
-        ...currentSettings,
-        syncIntervalMinutes: interval,
-      })
-      .catch((e) => {
-        setError(`設定の保存に失敗しました: ${e}`);
-      });
+    updateSettings({
+      ...settings,
+      syncIntervalMinutes: interval,
+    }).catch((e) => {
+      setError(`設定の保存に失敗しました: ${e}`);
+    });
   };
 
   // Toggle background sync
   const toggleBackgroundSync = () => {
-    const currentSettings = settingsStore.store.settings;
-    if (!currentSettings) return;
+    if (!settings) return;
 
-    settingsStore
-      .updateSettings({
-        ...currentSettings,
-        backgroundSync: !currentSettings.backgroundSync,
-      })
-      .catch((e) => {
-        setError(`設定の保存に失敗しました: ${e}`);
-      });
+    updateSettings({
+      ...settings,
+      backgroundSync: !settings.backgroundSync,
+    }).catch((e) => {
+      setError(`設定の保存に失敗しました: ${e}`);
+    });
   };
 
   // Toggle sync on startup
   const toggleSyncOnStartup = () => {
-    const currentSettings = settingsStore.store.settings;
-    if (!currentSettings) return;
+    if (!settings) return;
 
-    settingsStore
-      .updateSettings({
-        ...currentSettings,
-        syncOnStartup: !currentSettings.syncOnStartup,
-      })
-      .catch((e) => {
-        setError(`設定の保存に失敗しました: ${e}`);
-      });
+    updateSettings({
+      ...settings,
+      syncOnStartup: !settings.syncOnStartup,
+    }).catch((e) => {
+      setError(`設定の保存に失敗しました: ${e}`);
+    });
   };
 
   // Manual sync
@@ -113,9 +110,9 @@ export const SyncSettings: Component = () => {
     setSuccessMessage(null);
 
     // Clear any existing success message timeout
-    if (successMsgHandle() !== null) {
-      clearTimeout(successMsgHandle()!);
-      setSuccessMsgHandle(null);
+    if (successMsgHandleRef.current !== null) {
+      clearTimeout(successMsgHandleRef.current);
+      successMsgHandleRef.current = null;
     }
 
     try {
@@ -137,11 +134,11 @@ export const SyncSettings: Component = () => {
       setSuccessMessage(`同期が完了しました${xpMsg}`);
 
       // Auto-hide success message after 3 seconds
-      const handle = setTimeout(() => {
+      const handle = window.setTimeout(() => {
         setSuccessMessage(null);
-        setSuccessMsgHandle(null);
+        successMsgHandleRef.current = null;
       }, 3000);
-      setSuccessMsgHandle(handle);
+      successMsgHandleRef.current = handle;
     } catch (e) {
       setError(`同期に失敗しました: ${e}`);
     } finally {
@@ -149,187 +146,159 @@ export const SyncSettings: Component = () => {
     }
   };
 
-  // Auto-save when settings change with debouncing
-  createEffect(() => {
-    const currentSettings = settingsStore.store.settings;
-    const isInitialLoadComplete = initialLoadComplete();
-
-    // Skip if settings are not loaded or initial load is not complete
-    if (!currentSettings || loading() || !isInitialLoadComplete) {
-      return;
-    }
-
-    // Clear previous timeout if exists
-    if (debounceHandle() !== null) {
-      clearTimeout(debounceHandle()!);
-      setDebounceHandle(null);
-    }
-
-    // Debounce: save after 500ms of no changes
-    const handle = setTimeout(() => {
-      // Settings are already saved by updateSettings
-      setDebounceHandle(null);
-    }, 500);
-
-    setDebounceHandle(handle);
-  });
-
   // Cleanup timeouts on component unmount
-  onCleanup(() => {
-    if (debounceHandle() !== null) {
-      clearTimeout(debounceHandle()!);
-    }
-    if (successMsgHandle() !== null) {
-      clearTimeout(successMsgHandle()!);
-    }
-  });
-
-  const settings = () => settingsStore.store.settings;
+  useEffect(() => {
+    return () => {
+      if (debounceHandleRef.current !== null) {
+        clearTimeout(debounceHandleRef.current);
+      }
+      if (successMsgHandleRef.current !== null) {
+        clearTimeout(successMsgHandleRef.current);
+      }
+    };
+  }, []);
 
   return (
-    <div class="space-y-6">
+    <div className="space-y-6">
       {/* Loading state */}
-      <Show when={loading()}>
-        <div class="text-center py-8 text-dt-text-sub">設定を読み込み中...</div>
-      </Show>
+      {loading && (
+        <div className="text-center py-8 text-dt-text-sub">設定を読み込み中...</div>
+      )}
 
       {/* Error message with InlineToast */}
       <InlineToast
-        visible={() => error() !== null}
-        message={error() || ''}
+        visible={error !== null}
+        message={error || ''}
         type="error"
       />
 
       {/* Success message with InlineToast */}
       <InlineToast
-        visible={() => successMessage() !== null}
-        message={successMessage() || ''}
+        visible={successMessage !== null}
+        message={successMessage || ''}
         type="success"
       />
 
       {/* Settings form */}
-      <Show when={settings() && !loading()}>
-        {(s) => {
-          const intervals = syncIntervals() || [];
+      {settings && !loading && (() => {
+        const intervals = syncIntervals;
 
-          return (
-            <>
-              {/* Sync interval selection */}
-              <div class="space-y-3">
-                <h3 class="text-lg font-gaming font-bold text-white" id="sync-interval-label">
-                  自動同期間隔
-                </h3>
-                <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
-                  <select
-                    class="w-full px-4 py-3 bg-gm-bg-primary border border-gm-accent-cyan/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gm-accent-cyan/50 focus:border-gm-accent-cyan cursor-pointer appearance-none"
-                    style={{
-                      'background-image': `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2306b6d4' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-                      'background-position': 'right 0.75rem center',
-                      'background-repeat': 'no-repeat',
-                      'background-size': '1.5em 1.5em',
-                      'padding-right': '2.5rem',
-                    }}
-                    aria-labelledby="sync-interval-label"
-                    value={s().syncIntervalMinutes}
-                    onChange={(e) => {
-                      const value = parseInt(e.currentTarget.value, 10);
-                      if (!isNaN(value)) {
-                        updateSyncInterval(value);
-                      }
-                    }}
-                  >
-                    {intervals.map((interval) => (
-                      <option value={interval.value} selected={s().syncIntervalMinutes === interval.value}>
-                        {interval.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p class="mt-2 text-sm text-dt-text-sub">
-                    {s().syncIntervalMinutes === 0
-                      ? '自動同期は無効です。手動で同期を実行してください。'
-                      : 'GitHubの統計情報を自動的に取得する間隔を設定します。'}
-                  </p>
-                </div>
+        return (
+          <>
+            {/* Sync interval selection */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-gaming font-bold text-white" id="sync-interval-label">
+                自動同期間隔
+              </h3>
+              <div className="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
+                <select
+                  className="w-full px-4 py-3 bg-gm-bg-primary border border-gm-accent-cyan/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gm-accent-cyan/50 focus:border-gm-accent-cyan cursor-pointer appearance-none"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2306b6d4' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                    backgroundPosition: 'right 0.75rem center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '1.5em 1.5em',
+                    paddingRight: '2.5rem',
+                  }}
+                  aria-labelledby="sync-interval-label"
+                  value={settings.syncIntervalMinutes}
+                  onChange={(e) => {
+                    const value = parseInt(e.currentTarget.value, 10);
+                    if (!isNaN(value)) {
+                      updateSyncInterval(value);
+                    }
+                  }}
+                >
+                  {intervals.map((interval) => (
+                    <option key={interval.value} value={interval.value}>
+                      {interval.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-sm text-dt-text-sub">
+                  {settings.syncIntervalMinutes === 0
+                    ? '自動同期は無効です。手動で同期を実行してください。'
+                    : 'GitHubの統計情報を自動的に取得する間隔を設定します。'}
+                </p>
               </div>
+            </div>
 
-              {/* Divider */}
-              <div class="border-t border-gm-accent-cyan/20"></div>
+            {/* Divider */}
+            <div className="border-t border-gm-accent-cyan/20"></div>
 
-              {/* Toggle settings */}
-              <div class="space-y-3">
-                <h3 class="text-lg font-gaming font-bold text-white">同期オプション</h3>
-                <div class="space-y-2 p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
-                  {/* Background sync toggle */}
-                  <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
-                    <div class="flex-1">
-                      <span class="text-white block font-gaming font-bold" id="background-sync-label">
-                        バックグラウンド同期
-                      </span>
-                      <span class="text-sm text-dt-text-sub mt-1 block">
-                        アプリがバックグラウンドにある時も同期を続ける
-                      </span>
-                    </div>
-                    <ToggleSwitch
-                      enabled={s().backgroundSync}
-                      onToggle={toggleBackgroundSync}
-                      labelId="background-sync-label"
-                    />
+            {/* Toggle settings */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-gaming font-bold text-white">同期オプション</h3>
+              <div className="space-y-2 p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
+                {/* Background sync toggle */}
+                <div className="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
+                  <div className="flex-1">
+                    <span className="text-white block font-gaming font-bold" id="background-sync-label">
+                      バックグラウンド同期
+                    </span>
+                    <span className="text-sm text-dt-text-sub mt-1 block">
+                      アプリがバックグラウンドにある時も同期を続ける
+                    </span>
                   </div>
+                  <ToggleSwitch
+                    enabled={settings.backgroundSync}
+                    onToggle={toggleBackgroundSync}
+                    labelId="background-sync-label"
+                  />
+                </div>
 
-                  {/* Sync on startup toggle */}
-                  <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
-                    <div class="flex-1">
-                      <span class="text-white block font-gaming font-bold" id="sync-on-startup-label">
-                        起動時に同期
-                      </span>
-                      <span class="text-sm text-dt-text-sub mt-1 block">
-                        アプリ起動時に自動的に同期を実行する
-                      </span>
-                    </div>
-                    <ToggleSwitch
-                      enabled={s().syncOnStartup}
-                      onToggle={toggleSyncOnStartup}
-                      labelId="sync-on-startup-label"
-                    />
+                {/* Sync on startup toggle */}
+                <div className="flex items-center justify-between p-3 rounded-lg hover:bg-gm-bg-card/30 transition-colors">
+                  <div className="flex-1">
+                    <span className="text-white block font-gaming font-bold" id="sync-on-startup-label">
+                      起動時に同期
+                    </span>
+                    <span className="text-sm text-dt-text-sub mt-1 block">
+                      アプリ起動時に自動的に同期を実行する
+                    </span>
                   </div>
+                  <ToggleSwitch
+                    enabled={settings.syncOnStartup}
+                    onToggle={toggleSyncOnStartup}
+                    labelId="sync-on-startup-label"
+                  />
                 </div>
               </div>
+            </div>
 
-              {/* Divider */}
-              <div class="border-t border-gm-accent-cyan/20"></div>
+            {/* Divider */}
+            <div className="border-t border-gm-accent-cyan/20"></div>
 
-              {/* Manual sync section */}
-              <div class="space-y-3">
-                <h3 class="text-lg font-gaming font-bold text-white">手動同期</h3>
-                <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
-                  {/* Last sync time */}
-                  <Show when={lastSyncTime()}>
-                    <div class="mb-4 text-sm text-dt-text-sub">
-                      <span class="font-medium">最終同期: </span>
-                      <span>{lastSyncTime()}</span>
-                    </div>
-                  </Show>
+            {/* Manual sync section */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-gaming font-bold text-white">手動同期</h3>
+              <div className="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
+                {/* Last sync time */}
+                {lastSyncTime && (
+                  <div className="mb-4 text-sm text-dt-text-sub">
+                    <span className="font-medium">最終同期: </span>
+                    <span>{lastSyncTime}</span>
+                  </div>
+                )}
 
-                  {/* Sync button */}
-                  <Button
-                    variant="primary"
-                    onClick={onManualSync}
-                    disabled={syncing()}
-                    fullWidth
-                    isLoading={syncing()}
-                  >
-                    {syncing() ? '同期中...' : '今すぐ同期'}
-                  </Button>
-                  <p class="mt-2 text-sm text-dt-text-sub text-center">
-                    GitHubの統計情報を今すぐ取得します
-                  </p>
-                </div>
+                {/* Sync button */}
+                <Button
+                  variant="primary"
+                  onClick={onManualSync}
+                  disabled={syncing}
+                  fullWidth
+                  isLoading={syncing}
+                >
+                  {syncing ? '同期中...' : '今すぐ同期'}
+                </Button>
+                <p className="mt-2 text-sm text-dt-text-sub text-center">
+                  GitHubの統計情報を今すぐ取得します
+                </p>
               </div>
-            </>
-          );
-        }}
-      </Show>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 };
-

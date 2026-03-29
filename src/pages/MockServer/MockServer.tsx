@@ -8,16 +8,13 @@
  *   - Issue: https://github.com/otomatty/development-tools/issues/135
  */
 
-import type { Component } from 'solid-js';
-
-const MockServer: Component = () => {
+const MockServer = () => {
   return (
-    <div class="min-h-screen bg-dt-bg text-dt-text p-8">
-      <h1 class="text-4xl font-bold text-gm-accent-cyan">Mock Server</h1>
-      <p class="mt-4 text-dt-text-sub">Coming soon...</p>
+    <div className="min-h-screen bg-dt-bg text-dt-text p-8">
+      <h1 className="text-4xl font-bold text-gm-accent-cyan">Mock Server</h1>
+      <p className="mt-4 text-dt-text-sub">Coming soon...</p>
     </div>
   );
 };
 
 export default MockServer;
-

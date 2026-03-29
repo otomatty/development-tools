@@ -8,20 +8,18 @@
  *   - Issue: https://github.com/otomatty/development-tools/issues/135
  */
 
-import type { Component } from 'solid-js';
-import { useParams } from '@solidjs/router';
+import { useParams } from 'react-router-dom';
 
-const ProjectDashboard: Component = () => {
-  const params = useParams<{ id: string }>();
+const ProjectDashboard = () => {
+  const { id } = useParams<{ id: string }>();
 
   return (
-    <div class="min-h-screen bg-dt-bg text-dt-text p-8">
-      <h1 class="text-4xl font-bold text-gm-accent-cyan">Project Dashboard</h1>
-      <p class="mt-4 text-dt-text-sub">Project ID: {params.id}</p>
-      <p class="mt-2 text-dt-text-sub">Coming soon...</p>
+    <div className="min-h-screen bg-dt-bg text-dt-text p-8">
+      <h1 className="text-4xl font-bold text-gm-accent-cyan">Project Dashboard</h1>
+      <p className="mt-4 text-dt-text-sub">Project ID: {id}</p>
+      <p className="mt-2 text-dt-text-sub">Coming soon...</p>
     </div>
   );
 };
 
 export default ProjectDashboard;
-

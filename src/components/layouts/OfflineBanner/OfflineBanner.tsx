@@ -10,7 +10,6 @@
  *   - Original (Leptos): src/components/network_status.rs
  */
 
-import { Component, Show } from 'solid-js';
 import { useNetworkStatus } from '@/stores/networkStore';
 import { Icon } from '@/components/icons';
 
@@ -18,7 +17,7 @@ import { Icon } from '@/components/icons';
  * Format ISO 8601 timestamp to human-readable format
  * Converts to local time and returns HH:MM format.
  * Example: "2025-11-30T12:34:56.789Z" -> "21:34" (JST)
- * 
+ *
  * @param isoString - ISO 8601 timestamp string
  * @returns Formatted time string (HH:MM) or original string if invalid
  */
@@ -38,21 +37,20 @@ function formatTimestamp(isoString: string): string {
  * Displays a warning banner when offline.
  * Only renders when the network is offline.
  */
-export const OfflineBanner: Component = () => {
+export const OfflineBanner = () => {
   const { networkState, isOnline } = useNetworkStatus();
 
+  if (isOnline) return null;
+
   return (
-    <Show when={!isOnline()}>
-      <div class="bg-amber-500/90 text-amber-950 px-4 py-2 text-sm flex items-center justify-center gap-2">
-        <Icon name="alert-triangle" class="w-4 h-4" />
-        <span>⚠️ オフラインモード - キャッシュデータを表示中</span>
-        <Show when={networkState()?.lastOnlineAt}>
-          <span class="text-amber-800 text-xs">
-            最終オンライン: {formatTimestamp(networkState()!.lastOnlineAt!)}
-          </span>
-        </Show>
-      </div>
-    </Show>
+    <div className="bg-amber-500/90 text-amber-950 px-4 py-2 text-sm flex items-center justify-center gap-2">
+      <Icon name="alert-triangle" className="w-4 h-4" />
+      <span>⚠️ オフラインモード - キャッシュデータを表示中</span>
+      {networkState?.lastOnlineAt && (
+        <span className="text-amber-800 text-xs">
+          最終オンライン: {formatTimestamp(networkState.lastOnlineAt)}
+        </span>
+      )}
+    </div>
   );
 };
-
