@@ -139,10 +139,10 @@ export const ContributionGraph: React.FC<ContributionGraphProps> = ({ githubStat
         </div>
       </div>
 
-      {/* Error message */}
-      {syncError && (
+      {/* Error messages */}
+      {(syncError || calendarError) && (
         <div className="mb-4 p-3 bg-gm-error/20 border border-gm-error/50 rounded-lg text-gm-error text-sm">
-          {syncError}
+          {syncError || calendarError}
         </div>
       )}
 
@@ -209,7 +209,7 @@ export const ContributionGraph: React.FC<ContributionGraphProps> = ({ githubStat
       {/* Hover tooltip */}
       {hoveredDate && (
         <div
-          className="absolute z-50 px-3 py-2 bg-gm-bg-card/95 backdrop-blur-sm border border-gm-accent-cyan/20 rounded-lg shadow-lg pointer-events-none"
+          className="fixed z-50 px-3 py-2 bg-gm-bg-card/95 backdrop-blur-sm border border-gm-accent-cyan/20 rounded-lg shadow-lg pointer-events-none"
           style={{
             left: `${hoverPosition[0] + 10}px`,
             top: `${hoverPosition[1] - 10}px`,

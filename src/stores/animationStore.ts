@@ -10,6 +10,7 @@
  */
 
 import { create } from 'zustand';
+import { useSettings } from './settingsStore';
 
 interface AnimationStore {
   enabled: boolean;
@@ -22,9 +23,6 @@ export const useAnimation = create<AnimationStore>((set) => ({
 }));
 
 // Sync with settings store after settings load
-// This is done via a zustand subscription instead of Solid.js createEffect
-import { useSettings } from './settingsStore';
-
 useSettings.subscribe((state) => {
   if (state.settings) {
     useAnimation.getState().setEnabled(state.settings.animationsEnabled);

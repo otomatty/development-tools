@@ -44,18 +44,22 @@ export const Home = () => {
       return;
     }
 
+    let cancelled = false;
     setDataLoading(true);
     Promise.all([
       github.getStats().catch(e => { console.error('Failed to load GitHub stats:', e); return null; }),
       gamification.getLevelInfo().catch(e => { console.error('Failed to load level info:', e); return null; }),
       github.getUserStats().catch(e => { console.error('Failed to load user stats:', e); return null; }),
     ]).then(([stats, level, uStats]) => {
+      if (cancelled) return;
       setGithubStats(stats);
       setLevelInfo(level);
       setUserStats(uStats);
       setDataLoading(false);
       setLoading(false);
     });
+
+    return () => { cancelled = true; };
   }, [isLoggedIn]);
 
   // TODO: [FEATURE] Implement stats diff resource when sync result tracking is available
