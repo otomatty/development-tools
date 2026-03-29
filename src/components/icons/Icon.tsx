@@ -1,20 +1,19 @@
 /**
  * Icon Component
  *
- * Wraps lucide-solid icons to provide a consistent icon interface.
- * Maps existing icon names to lucide-solid icon components.
+ * Wraps lucide-react icons to provide a consistent icon interface.
+ * Maps existing icon names to lucide-react icon components.
  *
  * Related Documentation:
  *   - Issue: https://github.com/otomatty/development-tools/issues/137
- *   - lucide-solid: https://lucide.dev/guide/packages/lucide-solid
+ *   - lucide-react: https://lucide.dev/guide/packages/lucide-react
  */
 
-import { Component } from 'solid-js';
-import * as LucideIcons from 'lucide-solid';
+import * as LucideIcons from 'lucide-react';
 import type { IconProps } from '@/types/ui';
 
 /**
- * Maps existing icon names to lucide-solid icon component names
+ * Maps existing icon names to lucide-react icon component names
  */
 const iconNameMap: Record<string, keyof typeof LucideIcons> = {
   'shield': 'Shield',
@@ -75,44 +74,34 @@ const iconNameMap: Record<string, keyof typeof LucideIcons> = {
 /**
  * Icon Component
  *
- * Renders an icon from lucide-solid based on the provided name.
+ * Renders an icon from lucide-react based on the provided name.
  * Falls back to a default icon if the name is not found.
  */
-export const Icon: Component<IconProps> = (props) => {
-  const iconName = () => iconNameMap[props.name];
-  
-  const getIconComponent = () => {
-    const name = iconName();
-    if (!name) {
-      return LucideIcons.AlertCircle;
-    }
-    const Component = LucideIcons[name];
-    if (!Component) {
-      return LucideIcons.AlertCircle;
-    }
-    return Component;
-  };
+export const Icon = ({ name, className, size, strokeWidth }: IconProps) => {
+  const iconKey = iconNameMap[name];
+
+  const IconComponent =
+    (iconKey ? (LucideIcons[iconKey] as LucideIcons.LucideIcon | undefined) : undefined) ??
+    LucideIcons.AlertCircle;
 
   const defaultClass = 'w-5 h-5';
-  const iconClass = () => props.class || defaultClass;
-  const size = () => {
-    if (props.size) return props.size;
+  const iconClass = className || defaultClass;
+
+  const computedSize = (() => {
+    if (size) return size;
     // Extract size from class if present (e.g., "w-6 h-6" -> 24)
-    const match = iconClass().match(/w-(\d+)/);
+    const match = iconClass.match(/w-(\d+(?:\.\d+)?)/);
     if (match) {
-      return parseInt(match[1]) * 4; // Tailwind spacing unit (1 = 4px)
+      return parseFloat(match[1]) * 4; // Tailwind spacing unit (1 = 4px)
     }
     return 20; // Default size
-  };
-
-  const IconComponent = getIconComponent();
+  })();
 
   return (
     <IconComponent
-      class={iconClass()}
-      size={size()}
-      stroke-width={props.strokeWidth || 2}
+      className={iconClass}
+      size={computedSize}
+      strokeWidth={strokeWidth ?? 2}
     />
   );
 };
-

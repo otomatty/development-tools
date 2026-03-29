@@ -1,7 +1,7 @@
 /**
  * Animated Emoji Component
  *
- * Solid.js implementation of AnimatedEmoji component.
+ * React implementation of AnimatedEmoji component.
  * Displays an emoji with optional CSS animation based on the animation context.
  * Supports hover-only animation mode for better UX.
  *
@@ -11,7 +11,7 @@
  *   - Spec: ../animated_emoji.spec.md
  */
 
-import { Component, createSignal, createMemo, splitProps } from 'solid-js';
+import { useState, useMemo } from 'react';
 import { useAnimation } from '../../../stores/animationStore';
 import { buildEmojiClasses, EMOJI_METADATA, type EmojiType, type AnimationIntensity } from './types';
 
@@ -25,43 +25,42 @@ export interface AnimatedEmojiProps {
   /** Animation intensity */
   intensity?: AnimationIntensity;
   /** Additional CSS classes */
-  class?: string;
+  className?: string;
 }
 
-export const AnimatedEmoji: Component<AnimatedEmojiProps> = (props) => {
-  const [local, others] = splitProps(props, ['emoji', 'size', 'hoverOnly', 'intensity', 'class']);
-  const animation = useAnimation();
-  const [isHovered, setIsHovered] = createSignal(false);
+export const AnimatedEmoji = ({
+  emoji,
+  size = 'text-2xl',
+  hoverOnly = false,
+  intensity = 'Normal',
+  className,
+}: AnimatedEmojiProps) => {
+  const { enabled } = useAnimation();
+  const [isHovered, setIsHovered] = useState(false);
 
-  const size = () => local.size ?? 'text-2xl';
-  const hoverOnly = () => local.hoverOnly ?? false;
-  const intensity = () => (local.intensity ?? 'Normal') as AnimationIntensity;
-
-  const computedClass = createMemo(() => {
+  const computedClass = useMemo(() => {
     return buildEmojiClasses(
-      animation.store.enabled,
-      isHovered(),
-      hoverOnly(),
-      local.emoji,
-      intensity(),
-      size(),
-      local.class
+      enabled,
+      isHovered,
+      hoverOnly,
+      emoji,
+      intensity,
+      size,
+      className
     );
-  });
+  }, [enabled, isHovered, hoverOnly, emoji, intensity, size, className]);
 
-  const metadata = () => EMOJI_METADATA[local.emoji];
+  const metadata = EMOJI_METADATA[emoji];
 
   return (
     <span
-      class={computedClass()}
+      className={computedClass}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       role="img"
-      aria-label={metadata().ariaLabel}
-      {...others}
+      aria-label={metadata.ariaLabel}
     >
-      {metadata().emoji}
+      {metadata.emoji}
     </span>
   );
 };
-

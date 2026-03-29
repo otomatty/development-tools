@@ -1,7 +1,7 @@
 /**
  * Toast Hook
  *
- * Solid.js hook for managing toast notifications.
+ * React hook for managing toast notifications.
  * Provides a simple API to show toast messages.
  *
  * Related Documentation:
@@ -9,7 +9,7 @@
  *   - Toast Component: src/components/ui/feedback/Toast.tsx
  */
 
-import { createSignal, Accessor } from 'solid-js';
+import { useState, useCallback } from 'react';
 import type { ToastType } from '../types/ui';
 
 export interface ToastMessage {
@@ -19,7 +19,7 @@ export interface ToastMessage {
 }
 
 export interface UseToastReturn {
-  current: Accessor<ToastMessage | null>;
+  current: ToastMessage | null;
   show: (message: string, type?: ToastType, duration?: number) => void;
   success: (message: string, duration?: number) => void;
   error: (message: string, duration?: number) => void;
@@ -48,44 +48,31 @@ export interface UseToastReturn {
  * ```
  */
 export const useToast = (): UseToastReturn => {
-  const [current, setCurrent] = createSignal<ToastMessage | null>(null);
+  const [current, setCurrent] = useState<ToastMessage | null>(null);
 
-  const show = (message: string, type: ToastType = 'info', duration: number = 3000) => {
-    setCurrent({
-      message,
-      type,
-      duration,
-    });
-  };
+  const show = useCallback((message: string, type: ToastType = 'info', duration: number = 3000) => {
+    setCurrent({ message, type, duration });
+  }, []);
 
-  const success = (message: string, duration: number = 3000) => {
+  const success = useCallback((message: string, duration: number = 3000) => {
     show(message, 'success', duration);
-  };
+  }, [show]);
 
-  const error = (message: string, duration: number = 3000) => {
+  const error = useCallback((message: string, duration: number = 3000) => {
     show(message, 'error', duration);
-  };
+  }, [show]);
 
-  const warning = (message: string, duration: number = 3000) => {
+  const warning = useCallback((message: string, duration: number = 3000) => {
     show(message, 'warning', duration);
-  };
+  }, [show]);
 
-  const info = (message: string, duration: number = 3000) => {
+  const info = useCallback((message: string, duration: number = 3000) => {
     show(message, 'info', duration);
-  };
+  }, [show]);
 
-  const hide = () => {
+  const hide = useCallback(() => {
     setCurrent(null);
-  };
+  }, []);
 
-  return {
-    current,
-    show,
-    success,
-    error,
-    warning,
-    info,
-    hide,
-  };
+  return { current, show, success, error, warning, info, hide };
 };
-

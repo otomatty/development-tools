@@ -1,7 +1,7 @@
 /**
  * Accordion Section Component
  *
- * Solid.js implementation of AccordionSection component.
+ * React implementation of AccordionSection component.
  * A single collapsible section with title, icon, and content.
  *
  * Related Documentation:
@@ -10,67 +10,62 @@
  *   - Spec: ./accordion.spec.md
  */
 
-import { Component, Show, splitProps } from 'solid-js';
 import { Icon } from '../../icons';
 import type { AccordionSectionProps } from '../../../types/ui';
 
-export const AccordionSection: Component<AccordionSectionProps> = (props) => {
-  const [local, others] = splitProps(props, [
-    'title',
-    'icon',
-    'expanded',
-    'onToggle',
-    'children',
-    'maxHeight',
-    'class',
-  ]);
-
-  const expanded = () => (typeof local.expanded === 'function' ? local.expanded() : local.expanded);
-  const maxHeight = () => local.maxHeight ?? '500px';
-  const sectionId = `accordion-section-${local.title.replace(/\s+/g, '-').toLowerCase()}`;
+export const AccordionSection = ({
+  title,
+  icon,
+  expanded,
+  onToggle,
+  children,
+  maxHeight = '500px',
+  className,
+}: AccordionSectionProps) => {
+  const sectionId = `accordion-section-${title.replace(/\s+/g, '-').toLowerCase()}`;
   const contentId = `${sectionId}-content`;
 
   const handleClick = () => {
-    local.onToggle?.();
+    onToggle?.();
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      local.onToggle?.();
+      onToggle?.();
     }
   };
 
-  const combinedClass = `bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-cyan/20 shadow-lg overflow-hidden transition-all duration-300 hover:border-gm-accent-cyan/40 hover:shadow-gm-accent-cyan/10 ${local.class || ''}`.trim();
+  const combinedClass = `bg-gm-bg-card/80 backdrop-blur-sm rounded-2xl border border-gm-accent-cyan/20 shadow-lg overflow-hidden transition-all duration-300 hover:border-gm-accent-cyan/40 hover:shadow-gm-accent-cyan/10 ${className || ''}`.trim();
 
   return (
-    <div class={combinedClass} {...others}>
+    <div className={combinedClass}>
       {/* Header button */}
       <button
         type="button"
-        class="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gm-accent-cyan/10 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-inset focus:ring-gm-accent-cyan"
+        className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gm-accent-cyan/10 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-inset focus:ring-gm-accent-cyan"
         onClick={handleClick}
         onKeyDown={handleKeyDown}
-        aria-expanded={expanded()}
+        aria-expanded={expanded}
         aria-controls={contentId}
         id={sectionId}
       >
-        <div class="flex items-center gap-3">
-          <Show when={local.icon}>
-            <span class="text-gm-accent-cyan group-hover:scale-110 transition-transform duration-200">
-              <Icon name={local.icon!} class="w-5 h-5" />
+        <div className="flex items-center gap-3">
+          {icon && (
+            <span className="text-gm-accent-cyan group-hover:scale-110 transition-transform duration-200">
+              <Icon name={icon} className="w-5 h-5" />
             </span>
-          </Show>
-          <span class="text-lg font-gaming font-bold text-white group-hover:text-gm-accent-cyan transition-colors duration-200">
-            {local.title}
+          )}
+          <span className="text-lg font-gaming font-bold text-white group-hover:text-gm-accent-cyan transition-colors duration-200">
+            {title}
           </span>
         </div>
         <span
-          class="text-gm-accent-cyan transition-transform duration-300 ease-in-out"
-          style={{ transform: expanded() ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          className="text-gm-accent-cyan transition-transform duration-300 ease-in-out"
+          style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
           aria-hidden="true"
         >
-          <Icon name="chevron-down" class="w-5 h-5" />
+          <Icon name="chevron-down" className="w-5 h-5" />
         </span>
       </button>
 
@@ -79,15 +74,14 @@ export const AccordionSection: Component<AccordionSectionProps> = (props) => {
         id={contentId}
         role="region"
         aria-labelledby={sectionId}
-        class="overflow-hidden transition-all duration-300 ease-in-out"
+        className="overflow-hidden transition-all duration-300 ease-in-out"
         style={{
-          'max-height': expanded() ? maxHeight() : '0px',
-          opacity: expanded() ? '1' : '0',
+          maxHeight: expanded ? maxHeight : '0px',
+          opacity: expanded ? 1 : 0,
         }}
       >
-        <div class="px-6 pb-6 pt-2">{local.children}</div>
+        <div className="px-6 pb-6 pt-2">{children}</div>
       </div>
     </div>
   );
 };
-

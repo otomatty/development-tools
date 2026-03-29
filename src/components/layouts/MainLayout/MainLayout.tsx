@@ -10,7 +10,7 @@
  *   - OfflineBanner: ../OfflineBanner/OfflineBanner.tsx
  */
 
-import { ParentComponent } from 'solid-js';
+import type { ReactNode } from 'react';
 import { Sidebar } from '../Sidebar';
 import { OfflineBanner } from '../OfflineBanner';
 
@@ -24,15 +24,14 @@ import { OfflineBanner } from '../OfflineBanner';
  *
  * Responsive design will be implemented in a later phase.
  */
-export const MainLayout: ParentComponent = (props) => {
+export const MainLayout = ({ children }: { children: ReactNode }) => {
   return (
-    <div class="flex h-screen bg-dt-bg">
+    <div className="flex h-screen bg-dt-bg">
       <Sidebar />
-      <main class="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden">
         <OfflineBanner />
-        {props.children}
+        {children}
       </main>
     </div>
   );
 };
-

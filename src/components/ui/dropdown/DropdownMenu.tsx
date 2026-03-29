@@ -1,7 +1,7 @@
 /**
  * DropdownMenu Components
  *
- * Solid.js implementation of DropdownMenu, DropdownMenuItem, and DropdownMenuDivider components.
+ * React implementation of DropdownMenu, DropdownMenuItem, and DropdownMenuDivider components.
  *
  * Related Documentation:
  *   - Issue: https://github.com/otomatty/development-tools/issues/136
@@ -10,16 +10,7 @@
  *   - Original (Leptos): ./dropdown_menu.rs
  */
 
-import {
-  Component,
-  createSignal,
-  createContext,
-  useContext,
-  Show,
-  onMount,
-  onCleanup,
-  splitProps,
-} from 'solid-js';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import type {
   DropdownMenuProps,
   DropdownMenuItemProps,
@@ -32,40 +23,40 @@ import { useAnimation } from '../../../stores/animationStore';
 // ============================================================================
 
 interface DropdownMenuContextValue {
-  isOpen: () => boolean;
+  isOpen: boolean;
   setIsOpen: (value: boolean) => void;
   closeMenu: () => void;
 }
 
-const DropdownMenuContext = createContext<DropdownMenuContextValue>();
+const DropdownMenuContext = createContext<DropdownMenuContextValue | undefined>(undefined);
 
 // ============================================================================
 // DropdownMenu Component
 // ============================================================================
 
-export const DropdownMenu: Component<DropdownMenuProps> = (props) => {
-  const [local, others] = splitProps(props, ['trigger', 'children', 'align', 'class']);
-  const [isOpen, setIsOpen] = createSignal(false);
-  const animation = useAnimation();
+export const DropdownMenu = ({
+  trigger,
+  children,
+  align = 'right',
+  className,
+}: DropdownMenuProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const { enabled } = useAnimation();
 
-  const align = () => local.align ?? 'right';
   const closeMenu = () => setIsOpen(false);
   const toggleMenu = () => setIsOpen((prev) => !prev);
 
   // Handle ESC key
-  // TODO: [IMPROVE] 複数のドロップダウンメニューが開いている場合、ESCキーで全てのメニューが閉じてしまう問題
-  // 最前面のメニューのみが反応するように、グローバルな状態管理やイベント処理フラグを導入する必要がある
-  onMount(() => {
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen()) {
+      if (e.key === 'Escape' && isOpen) {
         closeMenu();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    onCleanup(() => window.removeEventListener('keydown', handleKeyDown));
-  });
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
 
-  // Provide context for child components
   const contextValue: DropdownMenuContextValue = {
     isOpen,
     setIsOpen,
@@ -73,45 +64,41 @@ export const DropdownMenu: Component<DropdownMenuProps> = (props) => {
   };
 
   // Menu classes
-  const alignClass = align() === 'left' ? 'left-0' : 'right-0';
+  const alignClass = align === 'left' ? 'left-0' : 'right-0';
   const baseMenuClass = `absolute ${alignClass} top-full mt-2 min-w-[160px] bg-gm-bg-card/95 backdrop-blur-sm border border-gm-accent-cyan/20 rounded-lg shadow-lg z-50`;
-  const menuClass = animation.store.enabled
+  const menuClass = enabled
     ? `${baseMenuClass} transition-all duration-200 ease-out`
     : baseMenuClass;
 
   // Menu style (for animation)
-  const menuStyle = () => {
-    if (isOpen()) {
-      return 'opacity: 1; transform: translateY(0);';
-    } else if (animation.store.enabled) {
-      return 'opacity: 0; transform: translateY(-8px); pointer-events: none;';
-    } else {
-      return 'display: none;';
-    }
-  };
+  const menuStyle: React.CSSProperties = isOpen
+    ? { opacity: 1, transform: 'translateY(0)' }
+    : enabled
+      ? { opacity: 0, transform: 'translateY(-8px)', pointerEvents: 'none' }
+      : { display: 'none' };
 
   return (
     <DropdownMenuContext.Provider value={contextValue}>
-      <div class={`relative ${local.class || ''}`.trim()} {...others}>
+      <div className={`relative ${className || ''}`.trim()}>
         {/* Overlay for click outside detection */}
-        <Show when={isOpen()}>
-          <div class="fixed inset-0 z-40" onClick={closeMenu} />
-        </Show>
+        {isOpen && (
+          <div className="fixed inset-0 z-40" onClick={closeMenu} />
+        )}
 
         {/* Trigger button */}
         <button
           type="button"
-          class="p-2 text-dt-text-sub hover:text-gm-accent-cyan transition-colors rounded-lg"
-          aria-expanded={isOpen()}
+          className="p-2 text-dt-text-sub hover:text-gm-accent-cyan transition-colors rounded-lg"
+          aria-expanded={isOpen}
           aria-haspopup="true"
           onClick={toggleMenu}
         >
-          {typeof local.trigger === 'function' ? local.trigger() : local.trigger}
+          {typeof trigger === 'function' ? trigger() : trigger}
         </button>
 
         {/* Dropdown menu */}
-        <div class={menuClass} style={menuStyle()} role="menu" aria-orientation="vertical">
-          <div class="py-1">{local.children}</div>
+        <div className={menuClass} style={menuStyle} role="menu" aria-orientation="vertical">
+          <div className="py-1">{children}</div>
         </div>
       </div>
     </DropdownMenuContext.Provider>
@@ -122,8 +109,13 @@ export const DropdownMenu: Component<DropdownMenuProps> = (props) => {
 // DropdownMenuItem Component
 // ============================================================================
 
-export const DropdownMenuItem: Component<DropdownMenuItemProps> = (props) => {
-  const [local, others] = splitProps(props, ['children', 'onClick', 'disabled', 'class', 'danger']);
+export const DropdownMenuItem = ({
+  children,
+  onClick,
+  disabled,
+  danger,
+  className,
+}: DropdownMenuItemProps) => {
   const context = useContext(DropdownMenuContext);
 
   if (!context) {
@@ -133,31 +125,29 @@ export const DropdownMenuItem: Component<DropdownMenuItemProps> = (props) => {
 
   const baseClasses =
     'flex items-center gap-3 px-4 py-2 text-sm transition-colors cursor-pointer w-full text-left';
-  const dangerClasses = local.danger
+  const dangerClasses = danger
     ? 'text-gm-error hover:bg-gm-error/10'
     : 'text-dt-text-main hover:bg-gm-accent-cyan/10';
-  const disabledClasses = local.disabled ? 'opacity-50 cursor-not-allowed' : '';
-  const itemClasses = `${baseClasses} ${dangerClasses} ${disabledClasses} ${local.class || ''}`.trim();
+  const disabledClasses = disabled ? 'opacity-50 cursor-not-allowed' : '';
+  const itemClasses = `${baseClasses} ${dangerClasses} ${disabledClasses} ${className || ''}`.trim();
 
-  const handleClick = (e: MouseEvent) => {
-    if (local.disabled) return;
-    if (local.onClick) {
-      local.onClick();
+  const handleClick = () => {
+    if (disabled) return;
+    if (onClick) {
+      onClick();
     }
-    // Close menu after item click
     context.closeMenu();
   };
 
   return (
     <button
       type="button"
-      class={itemClasses}
+      className={itemClasses}
       role="menuitem"
-      disabled={local.disabled}
+      disabled={disabled}
       onClick={handleClick}
-      {...others}
     >
-      {local.children}
+      {children}
     </button>
   );
 };
@@ -166,14 +156,11 @@ export const DropdownMenuItem: Component<DropdownMenuItemProps> = (props) => {
 // DropdownMenuDivider Component
 // ============================================================================
 
-export const DropdownMenuDivider: Component<DropdownMenuDividerProps> = (props) => {
-  const [local, others] = splitProps(props, ['class']);
+export const DropdownMenuDivider = ({ className }: DropdownMenuDividerProps) => {
   return (
     <div
-      class={`my-1 border-t border-gm-accent-cyan/10 ${local.class || ''}`.trim()}
+      className={`my-1 border-t border-gm-accent-cyan/10 ${className || ''}`.trim()}
       role="separator"
-      {...others}
     />
   );
 };
-

@@ -1,7 +1,7 @@
 /**
  * Appearance Settings Component
  *
- * Solid.js implementation of AppearanceSettings component.
+ * React implementation of AppearanceSettings component.
  * Allows users to configure animation effects ON/OFF.
  *
  * Related Documentation:
@@ -9,150 +9,116 @@
  *   - Original (Leptos): ../settings/appearance_settings.rs
  */
 
-import { Component, Show, createSignal, createEffect, onCleanup } from 'solid-js';
+import React, { useState, useEffect } from 'react';
 import { useSettings } from '../../../stores/settingsStore';
 import { useAnimation } from '../../../stores/animationStore';
 import { ToggleSwitch } from '../../ui/form';
 
-export const AppearanceSettings: Component = () => {
-  const settingsStore = useSettings();
-  const animation = useAnimation();
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
-  const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
-  const [debounceHandle, setDebounceHandle] = createSignal<number | null>(null);
+export const AppearanceSettings: React.FC = () => {
+  const { settings, isLoading, error: storeError, updateSettings } = useSettings();
+  const animationsEnabled = useAnimation((s) => s.enabled);
+  const setAnimationEnabled = useAnimation((s) => s.setEnabled);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const initialLoadCompleteRef = React.useRef(false);
 
   // Load settings on mount
-  createEffect(() => {
-    if (initialLoadComplete()) return;
+  useEffect(() => {
+    if (initialLoadCompleteRef.current) return;
 
-    if (!settingsStore.store.isLoading && settingsStore.store.settings) {
+    if (!isLoading && settings) {
       setLoading(false);
-      setInitialLoadComplete(true);
-    } else if (!settingsStore.store.isLoading && settingsStore.store.error) {
-      setError(`設定の読み込みに失敗しました: ${settingsStore.store.error}`);
+      initialLoadCompleteRef.current = true;
+    } else if (!isLoading && storeError) {
+      setError(`設定の読み込みに失敗しました: ${storeError}`);
       setLoading(false);
-      setInitialLoadComplete(true);
+      initialLoadCompleteRef.current = true;
     }
-  });
+  }, [isLoading, settings, storeError]);
 
-  // Toggle animations
-  const toggleAnimations = () => {
-    const currentSettings = settingsStore.store.settings;
-    if (!currentSettings) return;
+  // Toggle animations with optimistic update and rollback on failure
+  const toggleAnimations = async () => {
+    if (!settings || isSaving) return;
 
-    const newValue = !currentSettings.animationsEnabled;
+    const previousValue = animationsEnabled;
+    const newValue = !previousValue;
+    setError(null);
 
-    // Update global animation context immediately
-    animation.setEnabled(newValue);
+    // Optimistic update
+    setAnimationEnabled(newValue);
 
-    // Update settings
-    settingsStore
-      .updateSettings({
-        ...currentSettings,
+    setIsSaving(true);
+    try {
+      await updateSettings({
+        ...settings,
         animationsEnabled: newValue,
-      })
-      .catch((e) => {
-        setError(`設定の保存に失敗しました: ${e}`);
       });
+    } catch (e) {
+      // Rollback on failure
+      setAnimationEnabled(previousValue);
+      setError(`設定の保存に失敗しました: ${e}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Auto-save when settings change with debouncing
-  createEffect(() => {
-    const currentSettings = settingsStore.store.settings;
-    const isInitialLoadComplete = initialLoadComplete();
-
-    // Skip if settings are not loaded or initial load is not complete
-    if (!currentSettings || loading() || !isInitialLoadComplete) {
-      return;
-    }
-
-    // Clear previous timeout if exists
-    const id = debounceHandle();
-    if (id !== null) {
-      clearTimeout(id);
-      setDebounceHandle(null);
-    }
-
-    // Debounce: save after 500ms of no changes
-    const handle = setTimeout(() => {
-      // Settings are already saved by updateSettings in toggleAnimations
-      setDebounceHandle(null);
-    }, 500);
-
-    setDebounceHandle(handle);
-
-    // Cleanup timeout on effect re-execution or unmount
-    onCleanup(() => {
-      const cleanupId = debounceHandle();
-      if (cleanupId !== null) {
-        clearTimeout(cleanupId);
-        setDebounceHandle(null);
-      }
-    });
-  });
-
-  const settings = () => settingsStore.store.settings;
-
   return (
-    <div class="space-y-6">
+    <div className="space-y-6">
       {/* Loading state */}
-      <Show when={loading()}>
-        <div class="text-center py-8 text-dt-text-sub">設定を読み込み中...</div>
-      </Show>
+      {loading && (
+        <div className="text-center py-8 text-dt-text-sub">設定を読み込み中...</div>
+      )}
 
       {/* Error message */}
-      <Show when={error()}>
-        <div class="p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 text-sm">
-          {error()}
+      {error && (
+        <div className="p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 text-sm">
+          {error}
         </div>
-      </Show>
+      )}
 
       {/* Settings form */}
-      <Show when={settings() && !loading()}>
-        {(s) => (
-          <div class="space-y-3">
-            {/* Animation toggle */}
-            <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
-              <div class="flex items-center justify-between">
-                <div class="flex-1">
-                  <span class="text-white block font-gaming font-bold" id="animations-label">
-                    アニメーション効果
-                  </span>
-                  <span class="text-sm text-dt-text-sub mt-1 block">
-                    XP獲得、レベルアップ、バッジ獲得時の
-                    <br />
-                    アニメーション効果を有効にする
-                  </span>
-                </div>
-                <ToggleSwitch
-                  enabled={s().animationsEnabled}
-                  onToggle={toggleAnimations}
-                  labelId="animations-label"
-                />
+      {settings && !loading && (
+        <div className="space-y-3">
+          {/* Animation toggle */}
+          <div className="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <span className="text-white block font-gaming font-bold" id="animations-label">
+                  アニメーション効果
+                </span>
+                <span className="text-sm text-dt-text-sub mt-1 block">
+                  XP獲得、レベルアップ、バッジ獲得時の
+                  <br />
+                  アニメーション効果を有効にする
+                </span>
               </div>
+              <ToggleSwitch
+                enabled={animationsEnabled}
+                onToggle={toggleAnimations}
+                labelId="animations-label"
+              />
             </div>
-
-            {/* Hint text */}
-            <div class="text-xs text-dt-text-sub p-3 bg-gm-bg-card/30 rounded-lg">
-              ※ OFFにするとパフォーマンスが向上する場合があります
-            </div>
-
-            {/* Animation preview (when enabled) */}
-            <Show when={s().animationsEnabled}>
-              <div class="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
-                <h4 class="text-sm font-gaming font-bold text-white mb-3">プレビュー</h4>
-                <div class="flex items-center justify-center gap-4">
-                  <div class="text-3xl animate-bounce">✨</div>
-                  <div class="text-3xl animate-pulse">🔥</div>
-                  <div class="text-3xl animate-bounce-slow">🏆</div>
-                </div>
-              </div>
-            </Show>
           </div>
-        )}
-      </Show>
+
+          {/* Hint text */}
+          <div className="text-xs text-dt-text-sub p-3 bg-gm-bg-card/30 rounded-lg">
+            ※ OFFにするとパフォーマンスが向上する場合があります
+          </div>
+
+          {/* Animation preview (when enabled) */}
+          {animationsEnabled && (
+            <div className="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20">
+              <h4 className="text-sm font-gaming font-bold text-white mb-3">プレビュー</h4>
+              <div className="flex items-center justify-center gap-4">
+                <div className="text-3xl animate-bounce">✨</div>
+                <div className="text-3xl animate-pulse">🔥</div>
+                <div className="text-3xl animate-bounce-slow">🏆</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
-

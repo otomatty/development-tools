@@ -41,47 +41,47 @@ export interface EmojiMetadata {
  */
 export const EMOJI_METADATA: Record<EmojiType, EmojiMetadata> = {
   Fire: {
-    emoji: '🔥',
+    emoji: '\uD83D\uDD25',
     animationClass: 'animate-emoji-flame',
     ariaLabel: 'streak fire',
   },
   Trophy: {
-    emoji: '🏆',
+    emoji: '\uD83C\uDFC6',
     animationClass: 'animate-emoji-shine',
     ariaLabel: 'trophy achievement',
   },
   Star: {
-    emoji: '⭐',
+    emoji: '\u2B50',
     animationClass: 'animate-emoji-twinkle',
     ariaLabel: 'star rating',
   },
   Target: {
-    emoji: '🎯',
+    emoji: '\uD83C\uDFAF',
     animationClass: 'animate-emoji-pulse-scale',
     ariaLabel: 'goal target',
   },
   Muscle: {
-    emoji: '💪',
+    emoji: '\uD83D\uDCAA',
     animationClass: 'animate-emoji-flex',
     ariaLabel: 'strength milestone',
   },
   Crown: {
-    emoji: '👑',
+    emoji: '\uD83D\uDC51',
     animationClass: 'animate-emoji-float',
     ariaLabel: 'crown achievement',
   },
   Party: {
-    emoji: '🎉',
+    emoji: '\uD83C\uDF89',
     animationClass: 'animate-emoji-bounce',
     ariaLabel: 'celebration',
   },
   Sparkles: {
-    emoji: '✨',
+    emoji: '\u2728',
     animationClass: 'animate-emoji-sparkle',
     ariaLabel: 'sparkles effect',
   },
   Rocket: {
-    emoji: '🚀',
+    emoji: '\uD83D\uDE80',
     animationClass: 'animate-emoji-launch',
     ariaLabel: 'progress rocket',
   },
@@ -138,4 +138,3 @@ export function buildEmojiClasses(
 
   return classes.join(' ');
 }
-
