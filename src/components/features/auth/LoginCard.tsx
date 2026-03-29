@@ -309,7 +309,7 @@ export const LoginCard: React.FC = () => {
       setLoginState({ type: 'Polling' });
 
       // Start polling for token
-      const interval = setInterval(async () => {
+      const interval = window.setInterval(async () => {
         try {
           const status: DeviceTokenStatus = await authApi.pollDeviceToken();
           if (status.status === 'success') {
@@ -331,7 +331,7 @@ export const LoginCard: React.FC = () => {
         }
       }, 5000); // Poll every 5 seconds
 
-      setPollingInterval(interval as unknown as number);
+      setPollingInterval(interval);
     } catch (e) {
       setLoginState({ type: 'Error', message: `Failed to open URL: ${e}` });
     }

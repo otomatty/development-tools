@@ -28,17 +28,14 @@ export interface SidebarItemProps {
 export const SidebarItem = ({ path, label, icon, exact }: SidebarItemProps) => {
   const location = useLocation();
 
-  const isActive = (() => {
-    if (exact) {
-      return location.pathname === path;
-    }
-    // For non-exact matching, check if pathname starts with the path
-    // Special case for root path
-    if (path === '/') {
-      return location.pathname === '/';
-    }
-    return location.pathname.startsWith(path);
-  })();
+  let isActive: boolean;
+  if (exact) {
+    isActive = location.pathname === path;
+  } else if (path === '/') {
+    isActive = location.pathname === '/';
+  } else {
+    isActive = location.pathname.startsWith(path);
+  }
 
   const activeClass = isActive
     ? 'bg-gradient-to-r from-gm-accent-cyan/20 to-gm-accent-purple/20 text-gm-accent-cyan border-l-2 border-gm-accent-cyan'

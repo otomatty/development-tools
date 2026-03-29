@@ -223,8 +223,8 @@ export const ChallengeCard: React.FC = () => {
         <>
           {challenges && challenges.length > 0 ? (
             <div className="space-y-3">
-              {challenges.map((challenge, i) => (
-                <ChallengeItem key={i} challenge={challenge} />
+              {challenges.map((challenge) => (
+                <ChallengeItem key={`${challenge.challengeType}-${challenge.targetMetric}`} challenge={challenge} />
               ))}
             </div>
           ) : (

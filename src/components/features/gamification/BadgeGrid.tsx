@@ -343,8 +343,8 @@ export const BadgeGrid: React.FC = () => {
                   <span className="text-dt-text-sub font-normal">({earned.length})</span>
                 </h4>
                 <div className="grid grid-cols-5 gap-3">
-                  {earned.map((badge, i) => (
-                    <BadgeItem key={i} badge={badge} onClick={() => setSelectedBadge(badge)} />
+                  {earned.map((badge) => (
+                    <BadgeItem key={badge.name} badge={badge} onClick={() => setSelectedBadge(badge)} />
                   ))}
                 </div>
               </div>
@@ -359,8 +359,8 @@ export const BadgeGrid: React.FC = () => {
                   <span className="text-dt-text-sub font-normal">({nearCompletion.length})</span>
                 </h4>
                 <div className="space-y-2">
-                  {nearCompletion.map((badge, i) => (
-                    <NearCompletionBadgeItem key={i} badge={badge} onClick={() => setSelectedBadge(badge)} />
+                  {nearCompletion.map((badge) => (
+                    <NearCompletionBadgeItem key={badge.name} badge={badge} onClick={() => setSelectedBadge(badge)} />
                   ))}
                 </div>
               </div>
