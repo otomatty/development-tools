@@ -45,6 +45,7 @@ export const Home = () => {
     }
 
     let cancelled = false;
+    setLoading(true);
     setDataLoading(true);
     Promise.all([
       github.getStats().catch(e => { console.error('Failed to load GitHub stats:', e); return null; }),
