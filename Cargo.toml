@@ -27,7 +27,7 @@ serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1.7"
 gloo-timers = "0.3"
 futures = "0.3"
-pulldown-cmark = "0.12"
+pulldown-cmark = "0.13"
 ammonia = "4"
 
 [workspace]
