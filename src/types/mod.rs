@@ -10,7 +10,6 @@ pub mod issue;
 mod mock_server;
 mod network;
 mod settings;
-mod tool;
 
 // Re-export all types
 pub use auth::*;
@@ -20,19 +19,12 @@ pub use issue::*;
 pub use mock_server::*;
 pub use network::*;
 pub use settings::*;
-pub use tool::*;
-
-use std::collections::HashMap;
-
-/// オプション値のマップ
-pub type OptionValues = HashMap<String, serde_json::Value>;
 
 /// アプリのページ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppPage {
     #[default]
     Home,
-    Tools,
     Projects,
     ProjectDetail(i64),
     MockServer,

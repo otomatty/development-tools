@@ -12,8 +12,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   AuthState,
-  ToolStatusEvent,
-  LogEvent,
   XpGainedEvent,
   StreakMilestoneEvent,
   BadgeEarnedEvent,
@@ -30,22 +28,6 @@ export const events = {
    */
   onAuthStateChange: (callback: (state: AuthState) => void): Promise<UnlistenFn> =>
     listen<AuthState>('auth-state-change', (event) => callback(event.payload)),
-
-  // ============================================================================
-  // Tool Events
-  // ============================================================================
-
-  /**
-   * Listen for tool status changes
-   */
-  onToolStatus: (callback: (event: ToolStatusEvent) => void): Promise<UnlistenFn> =>
-    listen<ToolStatusEvent>('tool-status', (event) => callback(event.payload)),
-
-  /**
-   * Listen for tool log output
-   */
-  onToolLog: (callback: (event: LogEvent) => void): Promise<UnlistenFn> =>
-    listen<LogEvent>('tool-log', (event) => callback(event.payload)),
 
   // ============================================================================
   // Gamification Events

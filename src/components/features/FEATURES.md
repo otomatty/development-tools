@@ -11,7 +11,6 @@ src/components/features/
 ├── gamification/     # Gamification and XP system
 ├── auth/             # Authentication components
 ├── issues/           # Issue management and projects
-├── tools/            # Development tools integration
 └── mock_server/      # Mock server components
 ```
 
@@ -73,23 +72,7 @@ src/components/features/
 - `src/components/icons.rs` - Icon components
 - `src/components/ui/*` - UI primitives
 
-### 4. Tools (`tools/`)
-
-**Purpose**: Development tools integration and result display.
-
-**Components**:
-
-- `ToolDetail` - Tool configuration and execution interface
-- `LogViewer` - Log display and filtering
-- `ResultView` - Tool execution results display
-
-**Dependencies**:
-
-- `src/tauri_api.rs` - Tool execution API
-- `src/types/tool.rs` - Tool type definitions
-- `src/components/ui/*` - UI primitives
-
-### 5. Mock Server (`mock_server/`)
+### 4. Mock Server (`mock_server/`)
 
 **Purpose**: Mock server configuration and management.
 
@@ -108,7 +91,7 @@ src/components/features/
 Each feature module should utilize the UI primitives from `src/components/ui/`:
 
 - **Layout**: `PageHeader`, `EmptyState`, `Card`
-- **Input**: `Input`, `ToggleSwitch`, `OptionForm`
+- **Input**: `Input`, `ToggleSwitch`
 - **Feedback**: `Toast`, `Loading`, `SaveStatusIndicator`
 - **Display**: `Avatar`, `Badge`, `ProgressBar`
 - **Dialog**: `Modal`, `ConfirmDialog`
@@ -156,7 +139,6 @@ Phase 3 implementation status:
 - ✅ Gamification components moved
 - ✅ Auth components moved
 - ✅ Issues components moved
-- ✅ Tools components moved
 - ✅ Mock Server components moved
 - ⏳ Spec files creation (in progress)
 - ⏳ Pages layer separation (planned for Phase 4)

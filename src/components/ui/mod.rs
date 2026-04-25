@@ -66,7 +66,7 @@ pub use feedback::{
 };
 // Form
 pub use form::{
-    Input, InputSize, InputType, LabeledInput, LabeledToggle, OptionForm, Textarea, ToggleSwitch,
+    Input, InputSize, InputType, LabeledInput, LabeledToggle, Textarea, ToggleSwitch,
     ToggleSwitchSize,
 };
 // Layout

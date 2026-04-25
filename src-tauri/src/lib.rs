@@ -3,7 +3,6 @@ mod commands;
 mod database;
 mod github;
 mod mock_server;
-mod types;
 mod utils;
 
 use tauri::Manager;
@@ -62,24 +61,19 @@ use commands::{
     get_rate_limit_info,
     get_settings,
     get_sync_intervals,
-    // Tool commands
-    get_tool_config,
     get_user_repositories,
     get_user_stats,
     get_user_stats_with_cache,
     get_xp_history,
     link_repository,
     list_mock_server_directory,
-    list_tools,
     logout,
     open_external_url,
     open_url,
     poll_device_token,
     reset_all_data,
     reset_settings,
-    run_tool,
     select_mock_server_directory,
-    select_path,
     setup_github_actions,
     start_device_flow,
     start_mock_server,
@@ -169,11 +163,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Tool commands
-            list_tools,
-            get_tool_config,
-            run_tool,
-            select_path,
             // Auth commands (Device Flow)
             get_auth_state,
             logout,

@@ -35,7 +35,6 @@ pub use features::issues::{
     CreateIssueModal, CreateProjectModal, IssueCard, IssueClickEvent, IssueDetailModal,
     IssueDetailStatusChange, KanbanBoard, LinkRepositoryModal, StatusChangeEvent,
 };
-pub use features::tools::{LogViewer, ResultView, ToolDetail};
 // TODO: [DEBT] Remove these re-exports after migrating all usages to contexts/ and hooks/
 pub use network_status::{
     try_use_network_status, use_is_online, use_network_status, NetworkStatusProvider,
@@ -64,6 +63,6 @@ pub use ui::display::{Avatar, AvatarSize, ProgressBar, ProgressBarVariant};
 // Accordion components
 pub use ui::accordion::{Accordion, AccordionItem, AccordionSection};
 // Form components (new paths) - re-exported for backward compatibility
-pub use ui::form::{LabeledToggle, OptionForm, ToggleSwitch, ToggleSwitchSize};
+pub use ui::form::{LabeledToggle, ToggleSwitch, ToggleSwitchSize};
 // Feedback components (new paths) - re-exported for backward compatibility
 pub use ui::feedback::{InlineToast, SaveStatusIndicator, Toast, ToastType};
