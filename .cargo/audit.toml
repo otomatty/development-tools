@@ -52,4 +52,9 @@ ignore = [
     # glib unsound - Iterator impl issue
     # Used by Tauri's GTK bindings
     "RUSTSEC-2024-0429",
+
+    # rand 0.7.3 unsound - custom logger with rand::rng()
+    # Dependency chain: tauri -> tauri-utils -> kuchikiki -> selectors -> phf_codegen -> phf_generator -> rand
+    # Build-time only dep; cannot be updated without an upstream Tauri release
+    "RUSTSEC-2026-0097",
 ]
