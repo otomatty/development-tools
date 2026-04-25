@@ -243,9 +243,11 @@ import { Router, Routes, Route } from '@solidjs/router';
 
 ```rust
 pub enum AppPage {
-    Home,     // ゲーミフィケーションダッシュボード
-    Tools,    // ツール一覧・実行
-    Settings, // 設定
+    Home,                // ゲーミフィケーションダッシュボード
+    Projects,            // プロジェクト一覧
+    ProjectDetail(i64),  // プロジェクト詳細
+    Settings,            // 設定
+    XpHistory,           // XP履歴
 }
 ```
 
