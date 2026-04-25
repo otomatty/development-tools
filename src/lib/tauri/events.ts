@@ -15,7 +15,6 @@ import type {
   XpGainedEvent,
   StreakMilestoneEvent,
   BadgeEarnedEvent,
-  AccessLogEntry,
 } from '@/types';
 
 // ============================================================================
@@ -57,15 +56,5 @@ export const events = {
    */
   onBadgeEarned: (callback: (event: BadgeEarnedEvent) => void): Promise<UnlistenFn> =>
     listen<BadgeEarnedEvent>('badge-earned', (event) => callback(event.payload)),
-
-  // ============================================================================
-  // Mock Server Events
-  // ============================================================================
-
-  /**
-   * Listen for mock server log events
-   */
-  onMockServerLog: (callback: (event: AccessLogEntry) => void): Promise<UnlistenFn> =>
-    listen<AccessLogEntry>('mock-server-log', (event) => callback(event.payload)),
 };
 

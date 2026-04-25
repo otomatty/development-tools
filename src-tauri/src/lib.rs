@@ -2,7 +2,6 @@ mod auth;
 mod commands;
 mod database;
 mod github;
-mod mock_server;
 mod utils;
 
 use tauri::Manager;
@@ -22,11 +21,8 @@ use commands::{
     create_challenge,
     // Issue management commands (Issue #59)
     create_github_issue,
-    // Mock Server commands
-    create_mock_server_mapping,
     create_project,
     delete_challenge,
-    delete_mock_server_mapping,
     delete_project,
     export_data,
     get_active_challenges,
@@ -51,9 +47,6 @@ use commands::{
     get_github_user,
     get_kanban_board,
     get_level_info,
-    get_mock_server_config,
-    get_mock_server_mappings,
-    get_mock_server_state,
     get_near_completion_badges,
     get_project,
     get_project_issues,
@@ -66,31 +59,24 @@ use commands::{
     get_user_stats_with_cache,
     get_xp_history,
     link_repository,
-    list_mock_server_directory,
     logout,
     open_external_url,
     open_url,
     poll_device_token,
     reset_all_data,
     reset_settings,
-    select_mock_server_directory,
     setup_github_actions,
     start_device_flow,
-    start_mock_server,
-    stop_mock_server,
     sync_code_stats,
     sync_github_stats,
     sync_project_issues,
     update_challenge_progress,
     update_issue_status,
-    update_mock_server_config,
-    update_mock_server_mapping,
     update_project,
     update_settings,
     validate_token,
     // State
     AppState,
-    MockServerManager,
 };
 
 use auth::DeviceFlowConfig;
@@ -134,7 +120,6 @@ pub fn run() {
                 state
             });
 
-            // Register Database as managed state (needed by mock_server commands)
             app.manage(app_state.db.clone());
 
             // Clean up expired cache on startup
@@ -156,9 +141,6 @@ pub fn run() {
             });
 
             app.manage(app_state);
-
-            // Initialize Mock Server manager
-            app.manage(MockServerManager::new());
 
             Ok(())
         })
@@ -217,18 +199,6 @@ pub fn run() {
             get_sync_intervals,
             get_app_info,
             open_external_url,
-            // Mock Server commands
-            get_mock_server_state,
-            start_mock_server,
-            stop_mock_server,
-            get_mock_server_config,
-            update_mock_server_config,
-            get_mock_server_mappings,
-            create_mock_server_mapping,
-            update_mock_server_mapping,
-            delete_mock_server_mapping,
-            list_mock_server_directory,
-            select_mock_server_directory,
             // Issue management commands (Issue #59)
             get_projects,
             get_project,

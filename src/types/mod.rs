@@ -7,7 +7,6 @@ mod auth;
 mod challenge;
 mod gamification;
 pub mod issue;
-mod mock_server;
 mod network;
 mod settings;
 
@@ -16,7 +15,6 @@ pub use auth::*;
 pub use challenge::*;
 pub use gamification::*;
 pub use issue::*;
-pub use mock_server::*;
 pub use network::*;
 pub use settings::*;
 
@@ -27,7 +25,6 @@ pub enum AppPage {
     Home,
     Projects,
     ProjectDetail(i64),
-    MockServer,
     Settings,
     XpHistory,
 }

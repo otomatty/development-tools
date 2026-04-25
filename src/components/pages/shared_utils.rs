@@ -4,7 +4,6 @@
 //!
 //! DEPENDENCY MAP:
 //! Parents (Files that import this module):
-//!   ├─ src/components/pages/mock_server/utils.rs
 //!   ├─ src/components/pages/project_dashboard/utils.rs
 //!   ├─ src/components/pages/projects/utils.rs
 //!   └─ src/components/pages/settings/utils.rs

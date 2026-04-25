@@ -46,8 +46,6 @@ Development Tools で使用する SQLite データベースのスキーマ仕様
 | `activity_cache`       | API レスポンスキャッシュ   | v1               |
 | `app_settings`         | アプリ設定                 | v1               |
 | `user_settings`        | ユーザー設定               | v2               |
-| `mock_server_config`   | モックサーバー設定         | v4               |
-| `mock_server_mappings` | ディレクトリマッピング     | v4               |
 | `daily_code_stats`     | 日次コード統計             | v5               |
 | `sync_metadata`        | 同期メタデータ             | v5               |
 
@@ -110,23 +108,12 @@ Development Tools で使用する SQLite データベースのスキーマ仕様
 │ ...             │       └─────────────────┘
 └─────────────────┘
 
-┌─────────────────┐       ┌─────────────────────┐
-│  app_settings   │       │ mock_server_config  │
-├─────────────────┤       ├─────────────────────┤
-│ key (PK)        │       │ id (PK)             │
-│ value           │       │ port                │
-└─────────────────┘       │ cors_mode           │
-                          │ ...                 │
-                          └─────────────────────┘
-
-                          ┌─────────────────────┐
-                          │mock_server_mappings │
-                          ├─────────────────────┤
-                          │ id (PK)             │
-                          │ virtual_path        │
-                          │ local_path          │
-                          │ enabled             │
-                          └─────────────────────┘
+┌─────────────────┐
+│  app_settings   │
+├─────────────────┤
+│ key (PK)        │
+│ value           │
+└─────────────────┘
 ```
 
 ---
@@ -289,40 +276,6 @@ GitHub API レスポンスのキャッシュ。
 
 ---
 
-### `mock_server_config`
-
-モックサーバーの設定。
-
-| カラム                   | 型       | 制約                      | 説明                      |
-| ------------------------ | -------- | ------------------------- | ------------------------- |
-| `id`                     | INTEGER  | PRIMARY KEY DEFAULT 1     | ID（常に 1）              |
-| `port`                   | INTEGER  | NOT NULL DEFAULT 9876     | ポート番号                |
-| `cors_mode`              | TEXT     | NOT NULL DEFAULT 'simple' | CORS モード               |
-| `cors_origins`           | TEXT     | -                         | 許可オリジン（JSON 配列） |
-| `cors_methods`           | TEXT     | -                         | 許可メソッド（JSON 配列） |
-| `cors_headers`           | TEXT     | -                         | 許可ヘッダー（JSON 配列） |
-| `cors_max_age`           | INTEGER  | DEFAULT 86400             | CORS キャッシュ時間       |
-| `show_directory_listing` | INTEGER  | DEFAULT 0                 | ディレクトリ一覧表示      |
-| `created_at`             | DATETIME | DEFAULT CURRENT_TIMESTAMP | 作成日時                  |
-| `updated_at`             | DATETIME | DEFAULT CURRENT_TIMESTAMP | 更新日時                  |
-
----
-
-### `mock_server_mappings`
-
-モックサーバーのディレクトリマッピング。
-
-| カラム         | 型       | 制約                      | 説明         |
-| -------------- | -------- | ------------------------- | ------------ |
-| `id`           | INTEGER  | PRIMARY KEY AUTOINCREMENT | ID           |
-| `virtual_path` | TEXT     | NOT NULL UNIQUE           | 仮想パス     |
-| `local_path`   | TEXT     | NOT NULL                  | ローカルパス |
-| `enabled`      | INTEGER  | NOT NULL DEFAULT 1        | 有効フラグ   |
-| `created_at`   | DATETIME | DEFAULT CURRENT_TIMESTAMP | 作成日時     |
-| `updated_at`   | DATETIME | DEFAULT CURRENT_TIMESTAMP | 更新日時     |
-
----
-
 ### `daily_code_stats`
 
 日次のコード統計（additions/deletions）。
@@ -387,10 +340,6 @@ CREATE INDEX idx_activity_cache_user_type ON activity_cache(user_id, data_type);
 -- user_settings
 CREATE INDEX idx_user_settings_user_id ON user_settings(user_id);
 
--- mock_server_mappings
-CREATE INDEX idx_mock_server_mappings_virtual_path ON mock_server_mappings(virtual_path);
-CREATE INDEX idx_mock_server_mappings_enabled ON mock_server_mappings(enabled);
-
 -- daily_code_stats
 CREATE INDEX idx_daily_code_stats_user_date ON daily_code_stats(user_id, date DESC);
 CREATE INDEX idx_daily_code_stats_summary ON daily_code_stats(user_id, date, additions, deletions);
@@ -410,7 +359,6 @@ CREATE INDEX idx_sync_metadata_user_type ON sync_metadata(user_id, sync_type);
 | 1       | `initial_schema`            | 初期スキーマ（users, user_stats, badges, challenges, xp_history, activity_cache, app_settings） |
 | 2       | `add_user_settings`         | ユーザー設定テーブル追加                                                                        |
 | 3       | `add_challenge_start_stats` | チャレンジに開始時統計カラム追加                                                                |
-| 4       | `add_mock_server_tables`    | モックサーバー関連テーブル追加                                                                  |
 | 5       | `add_code_stats_tables`     | コード統計テーブル追加                                                                          |
 
 ### マイグレーションの仕組み

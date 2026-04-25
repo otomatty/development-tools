@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::components::pages::{
-    HomePage, MockServerPage, ProjectDashboardPage, ProjectsPage, SettingsPage, XpHistoryPage,
+    HomePage, ProjectDashboardPage, ProjectsPage, SettingsPage, XpHistoryPage,
 };
 use crate::components::ui::feedback::OfflineBanner;
 use crate::components::Sidebar;
@@ -89,10 +89,6 @@ pub fn App() -> impl IntoView {
 
                         AppPage::ProjectDetail(project_id) => view! {
                             <ProjectDashboardPage project_id=project_id set_current_page=set_current_page />
-                        }.into_any(),
-
-                        AppPage::MockServer => view! {
-                            <MockServerPage />
                         }.into_any(),
 
                         AppPage::Settings => view! {

@@ -44,7 +44,6 @@ interface NavItem {
 | `/` | ホーム | `home` | `true` |
 | `/projects` | プロジェクト | `folder` | `false` |
 | `/issues` | Issue | `list` | `false` |
-| `/mock-server` | Mock Server | `server` | `false` |
 | `/settings` | 設定 | `settings` | `false` |
 
 ### 公開 API

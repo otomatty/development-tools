@@ -45,7 +45,7 @@ pub use ui::feedback::OfflineBanner;
 
 // Page components - re-exported from pages module for backward compatibility
 pub use pages::{
-    HomePage, MockServerPage, ProjectDashboardPage, ProjectsPage, SettingsPage, XpHistoryPage,
+    HomePage, ProjectDashboardPage, ProjectsPage, SettingsPage, XpHistoryPage,
 };
 
 // UI components (new paths)

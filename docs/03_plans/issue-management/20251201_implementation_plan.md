@@ -281,7 +281,6 @@ async fn create_issue(project_id: i64, title: String, body: Option<String>, stat
 │ 🏠 Dashboard      │
 │ 📋 Projects       │  ← 新規追加
 │ 🔧 Tools          │
-│ 🌐 Mock Server    │
 │ ⚙️ Settings       │
 └───────────────────┘
 ```

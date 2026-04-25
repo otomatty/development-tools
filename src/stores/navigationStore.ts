@@ -37,7 +37,6 @@ export function parseRouteToPageType(pathname: string, params?: Record<string, s
     return AppPage.NotFound;
   }
   if (pathname === '/issues') return AppPage.Issues;
-  if (pathname === '/mock-server') return AppPage.MockServer;
   if (pathname === '/settings') return AppPage.Settings;
   if (pathname === '/xp-history') return AppPage.XpHistory;
   return AppPage.NotFound;

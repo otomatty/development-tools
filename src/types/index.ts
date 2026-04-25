@@ -8,7 +8,6 @@ export * from './auth';
 export * from './challenge';
 export * from './gamification';
 export * from './issue';
-export * from './mock-server';
 export * from './network';
 export * from './settings';
 export * from './ui';
@@ -18,7 +17,6 @@ export enum AppPage {
   Home = 'Home',
   Projects = 'Projects',
   Issues = 'Issues',
-  MockServer = 'MockServer',
   Settings = 'Settings',
   XpHistory = 'XpHistory',
   NotFound = 'NotFound',
