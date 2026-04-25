@@ -17,7 +17,6 @@ export const pagePaths: Record<AppPage, string> = {
   [AppPage.Home]: '/',
   [AppPage.Projects]: '/projects',
   [AppPage.Issues]: '/issues',
-  [AppPage.MockServer]: '/mock-server',
   [AppPage.Settings]: '/settings',
   [AppPage.XpHistory]: '/xp-history',
   [AppPage.NotFound]: '/404',

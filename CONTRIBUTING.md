@@ -172,7 +172,6 @@ git checkout -b refactor/cleanup-database-module
 | `auth`         | 認証関連                   |
 | `github`       | GitHub API 関連            |
 | `gamification` | ゲーミフィケーション機能   |
-| `mock-server`  | モックサーバー             |
 | `tools`        | CLI ツール（tools/）       |
 | `docs`         | ドキュメント               |
 

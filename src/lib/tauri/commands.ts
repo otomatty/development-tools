@@ -26,13 +26,6 @@ import type {
   RepositoryInfo,
   CachedIssue,
   KanbanBoard,
-  MockServerState,
-  MockServerConfig,
-  UpdateConfigRequest,
-  DirectoryMapping,
-  CreateMappingRequest,
-  UpdateMappingRequest,
-  FileInfo,
   LevelInfo,
   Badge,
   BadgeDefinition,
@@ -266,78 +259,6 @@ export const issues = {
     priority?: string | null,
   ): Promise<CachedIssue> =>
     invoke<CachedIssue>('create_github_issue', { project_id, title, body, status, priority }),
-};
-
-// ============================================================================
-// Mock Server Commands
-// ============================================================================
-
-export const mockServer = {
-  /**
-   * Get current Mock Server state
-   */
-  getState: (): Promise<MockServerState> =>
-    invoke<MockServerState>('get_mock_server_state'),
-
-  /**
-   * Start the Mock Server
-   */
-  start: (): Promise<MockServerState> =>
-    invoke<MockServerState>('start_mock_server'),
-
-  /**
-   * Stop the Mock Server
-   */
-  stop: (): Promise<MockServerState> =>
-    invoke<MockServerState>('stop_mock_server'),
-
-  /**
-   * Get Mock Server configuration
-   */
-  getConfig: (): Promise<MockServerConfig> =>
-    invoke<MockServerConfig>('get_mock_server_config'),
-
-  /**
-   * Update Mock Server configuration
-   */
-  updateConfig: (request: UpdateConfigRequest): Promise<MockServerConfig> =>
-    invoke<MockServerConfig>('update_mock_server_config', { request }),
-
-  /**
-   * Get all directory mappings
-   */
-  getMappings: (): Promise<DirectoryMapping[]> =>
-    invoke<DirectoryMapping[]>('get_mock_server_mappings'),
-
-  /**
-   * Create a new directory mapping
-   */
-  createMapping: (request: CreateMappingRequest): Promise<DirectoryMapping> =>
-    invoke<DirectoryMapping>('create_mock_server_mapping', { request }),
-
-  /**
-   * Update a directory mapping
-   */
-  updateMapping: (request: UpdateMappingRequest): Promise<DirectoryMapping> =>
-    invoke<DirectoryMapping>('update_mock_server_mapping', { request }),
-
-  /**
-   * Delete a directory mapping
-   */
-  deleteMapping: (id: number): Promise<void> =>
-    invoke<void>('delete_mock_server_mapping', { id }),
-
-  /**
-   * List files in a directory
-   */
-  listDirectory: (path: string): Promise<FileInfo[]> =>
-    invoke<FileInfo[]>('list_mock_server_directory', { path }),
-
-  /**
-   * Select a directory using native dialog
-   */
-  selectDirectory: (): Promise<string | null> =>
-    invoke<string | null>('select_mock_server_directory'),
 };
 
 // ============================================================================

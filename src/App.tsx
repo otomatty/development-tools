@@ -22,7 +22,6 @@ const Home = lazy(() => import('./pages/Home'));
 const Projects = lazy(() => import('./pages/Projects'));
 const ProjectDashboard = lazy(() => import('./pages/ProjectDashboard'));
 const Issues = lazy(() => import('./pages/Issues'));
-const MockServer = lazy(() => import('./pages/MockServer'));
 const Settings = lazy(() => import('./pages/Settings'));
 const XpHistory = lazy(() => import('./pages/XpHistory'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -57,7 +56,6 @@ const RootLayout = () => {
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:id" element={<ProjectDashboard />} />
             <Route path="/issues" element={<Issues />} />
-            <Route path="/mock-server" element={<MockServer />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/xp-history" element={<XpHistory />} />
             <Route path="*" element={<NotFound />} />

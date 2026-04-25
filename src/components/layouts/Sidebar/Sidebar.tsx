@@ -25,7 +25,6 @@ const navItems: NavItem[] = [
   { path: '/', label: 'ホーム', icon: 'home', exact: true },
   { path: '/projects', label: 'プロジェクト', icon: 'folder' },
   { path: '/issues', label: 'Issue', icon: 'list' },
-  { path: '/mock-server', label: 'Mock Server', icon: 'server' },
   { path: '/settings', label: '設定', icon: 'settings' },
 ];
 
@@ -34,7 +33,7 @@ const navItems: NavItem[] = [
  *
  * Main navigation sidebar with:
  * - App header (logo, app name)
- * - Navigation items (Home, Projects, Issues, Mock Server, Settings)
+ * - Navigation items (Home, Projects, Issues, Settings)
  * - Footer (version, settings button)
  */
 export const Sidebar = () => {

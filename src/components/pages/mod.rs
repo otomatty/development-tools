@@ -23,13 +23,11 @@
 //!   ├─ xp_history/ - XP history page
 //!   ├─ projects/ - Projects list page
 //!   ├─ project_dashboard/ - Project dashboard page
-//!   ├─ settings/ - Settings page
-//!   └─ mock_server/ - Mock server page
+//!   └─ settings/ - Settings page
 //! Related Documentation:
 //!   └─ Issue: https://github.com/otomatty/development-tools/issues/117
 
 pub mod home;
-pub mod mock_server;
 pub mod project_dashboard;
 pub mod projects;
 pub mod settings;
@@ -40,7 +38,6 @@ pub mod shared_loading;
 pub mod shared_utils;
 
 pub use home::HomePage;
-pub use mock_server::MockServerPage;
 pub use project_dashboard::ProjectDashboardPage;
 pub use projects::ProjectsPage;
 pub use settings::SettingsPage;

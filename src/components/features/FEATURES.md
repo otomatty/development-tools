@@ -10,8 +10,7 @@ The `features/` directory organizes business-logic components into feature-speci
 src/components/features/
 ├── gamification/     # Gamification and XP system
 ├── auth/             # Authentication components
-├── issues/           # Issue management and projects
-└── mock_server/      # Mock server components
+└── issues/           # Issue management and projects
 ```
 
 ## Feature Modules
@@ -72,20 +71,6 @@ src/components/features/
 - `src/components/icons.rs` - Icon components
 - `src/components/ui/*` - UI primitives
 
-### 4. Mock Server (`mock_server/`)
-
-**Purpose**: Mock server configuration and management.
-
-**Components**:
-
-- `MockServerPage` - Main mock server configuration page
-
-**Dependencies**:
-
-- `src/tauri_api.rs` - Mock server API
-- `src/types/mock_server.rs` - Mock server types
-- `src/components/ui/*` - UI primitives
-
 ## UI Component Usage Guidelines
 
 Each feature module should utilize the UI primitives from `src/components/ui/`:
@@ -139,7 +124,6 @@ Phase 3 implementation status:
 - ✅ Gamification components moved
 - ✅ Auth components moved
 - ✅ Issues components moved
-- ✅ Mock Server components moved
 - ⏳ Spec files creation (in progress)
 - ⏳ Pages layer separation (planned for Phase 4)
 
