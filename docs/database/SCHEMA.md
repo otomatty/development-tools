@@ -354,12 +354,16 @@ CREATE INDEX idx_sync_metadata_user_type ON sync_metadata(user_id, sync_type);
 
 ### マイグレーション履歴
 
-| Version | Name                        | 説明                                                                                            |
-| ------- | --------------------------- | ----------------------------------------------------------------------------------------------- |
-| 1       | `initial_schema`            | 初期スキーマ（users, user_stats, badges, challenges, xp_history, activity_cache, app_settings） |
-| 2       | `add_user_settings`         | ユーザー設定テーブル追加                                                                        |
-| 3       | `add_challenge_start_stats` | チャレンジに開始時統計カラム追加                                                                |
-| 5       | `add_code_stats_tables`     | コード統計テーブル追加                                                                          |
+| Version | Name                                       | 説明                                                                                            |
+| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 1       | `initial_schema`                           | 初期スキーマ（users, user_stats, badges, challenges, xp_history, activity_cache, app_settings） |
+| 2       | `add_user_settings`                        | ユーザー設定テーブル追加                                                                        |
+| 3       | `add_challenge_start_stats`                | チャレンジに開始時統計カラム追加                                                                |
+| 5       | `add_code_stats_tables`                    | コード統計テーブル追加                                                                          |
+| 6       | `add_github_stats_snapshots`               | GitHub 統計スナップショットテーブル追加                                                         |
+| 7       | `add_issue_management_tables`              | Issue 管理テーブル追加（projects, cached_issues）                                               |
+| 8       | `add_xp_history_breakdown`                 | xp_history に詳細内訳カラム追加                                                                 |
+| 9       | `drop_legacy_static_file_server_tables`    | 旧静的ファイルサーバー関連テーブル・インデックスを削除（Issue #175）                            |
 
 ### マイグレーションの仕組み
 
