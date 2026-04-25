@@ -45,7 +45,7 @@ pub fn BadgeGrid() -> impl IntoView {
             }>
                 {move || {
                     badges_resource.get().map(|wrapped_result| {
-                        match wrapped_result.take() {
+                        match wrapped_result {
                             Ok(badges) => {
                                 let earned: Vec<BadgeWithProgress> = badges.iter()
                                     .filter(|b| b.earned)
