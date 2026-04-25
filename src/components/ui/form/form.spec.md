@@ -4,7 +4,6 @@
 
 - Implementation: `src/components/ui/form/mod.rs`
 - ToggleSwitch: `src/components/ui/form/toggle_switch.rs`
-- OptionForm: `src/components/ui/form/option_form.rs`
 - Input: `src/components/ui/form/input.rs` (新規)
   - `Input` - 基本入力コンポーネント
   - `LabeledInput` - ラベル付き入力コンポーネント
@@ -28,20 +27,14 @@
    - disabled 状態のサポート
    - アクセシビリティ対応（role="switch", aria-checked）
 
-2. **OptionForm** - ツールオプション入力フォーム
-
-   - 複数のオプションタイプをサポート（Boolean, Select, Path, Number, String）
-   - ファイル/フォルダ選択ダイアログ連携
-   - バリデーションサポート
-
-3. **Input** (新規) - 汎用テキスト入力
+2. **Input** (新規) - 汎用テキスト入力
 
    - テキスト、数値、パスワードなど複数の input type をサポート
    - placeholder 対応
    - disabled 状態のサポート
    - 動的 ID サポート（`Option<String>`）
 
-4. **LabeledInput** (新規) - ラベル付き入力コンポーネント
+3. **LabeledInput** (新規) - ラベル付き入力コンポーネント
    - 一貫したラベルスタイリング
    - 説明文（description）のサポート
    - 必須マーク（\*）のサポート
@@ -85,7 +78,6 @@ pub struct InputProps {
 ```rust
 // mod.rs からの re-export
 pub use toggle_switch::{ToggleSwitch, ToggleSwitchSize};
-pub use option_form::OptionForm;
 pub use input::{Input, LabeledInput, Textarea, InputType, InputSize};
 ```
 
@@ -139,13 +131,7 @@ pub use input::{Input, LabeledInput, Textarea, InputType, InputSize};
 - **When**: 両方がレンダリング
 - **Then**: 異なる id 属性が生成される（重複しない）
 
-### TC-009: OptionForm 複数オプション表示
-
-- **Given**: 3 つの ToolOption が渡される
-- **When**: OptionForm がレンダリング
-- **Then**: 3 つの OptionField がレンダリングされる
-
-### TC-010: モジュールインポート確認
+### TC-009: モジュールインポート確認
 
 - **Given**: `use crate::components::ui::form::ToggleSwitch;`
 - **When**: コードがコンパイル
@@ -153,6 +139,6 @@ pub use input::{Input, LabeledInput, Textarea, InputType, InputSize};
 
 ## Implementation Notes
 
-- 移動元: `settings/toggle_switch.rs`, `settings/toast.rs`, `option_form.rs`
+- 移動元: `settings/toggle_switch.rs`, `settings/toast.rs`
 - 後方互換性のため、旧パスからの re-export を一時的に維持
 - AGENTS.md の Concept 独立性原則に従い、他の Concept を直接参照しない

@@ -26,8 +26,6 @@ import type {
   RepositoryInfo,
   CachedIssue,
   KanbanBoard,
-  ToolInfo,
-  ToolConfig,
   MockServerState,
   MockServerConfig,
   UpdateConfigRequest,
@@ -268,40 +266,6 @@ export const issues = {
     priority?: string | null,
   ): Promise<CachedIssue> =>
     invoke<CachedIssue>('create_github_issue', { project_id, title, body, status, priority }),
-};
-
-// ============================================================================
-// Tool Commands
-// ============================================================================
-
-export const tools = {
-  /**
-   * Get list of available tools
-   */
-  list: (): Promise<ToolInfo[]> =>
-    invoke<ToolInfo[]>('list_tools'),
-
-  /**
-   * Get tool configuration
-   */
-  getConfig: (tool_name: string): Promise<ToolConfig> =>
-    invoke<ToolConfig>('get_tool_config', { tool_name }),
-
-  /**
-   * Run a tool
-   */
-  run: (tool_name: string, options: Record<string, unknown>): Promise<void> =>
-    invoke<void>('run_tool', { tool_name, options }),
-
-  /**
-   * Select a path using native dialog
-   */
-  selectPath: (
-    path_type: string,
-    title?: string | null,
-    default_path?: string | null,
-  ): Promise<string | null> =>
-    invoke<string | null>('select_path', { path_type, title, default_path }),
 };
 
 // ============================================================================

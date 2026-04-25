@@ -21,8 +21,6 @@ export const pagePaths: Record<AppPage, string> = {
   [AppPage.Settings]: '/settings',
   [AppPage.XpHistory]: '/xp-history',
   [AppPage.NotFound]: '/404',
-  // Tools is not used in routing (legacy)
-  [AppPage.Tools]: '/tools',
 };
 
 /**

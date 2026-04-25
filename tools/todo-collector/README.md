@@ -93,11 +93,6 @@ cargo build --release
 - SQL, Shell scripts
 - その他多数
 
-## GUI連携
-
-development-tools アプリケーションのGUIから使用できます。
-tool.json でGUI表示の設定が定義されています。
-
 ## ライセンス
 
 MIT
