@@ -185,11 +185,23 @@ pub struct BadgeEarnedEvent {
     pub icon: String,
 }
 
-/// Sync GitHub stats to local database
+/// Sync GitHub stats to local database (Tauri command wrapper).
 #[command]
 pub async fn sync_github_stats(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+) -> Result<SyncResult, String> {
+    run_github_sync(&app, state.inner()).await
+}
+
+/// Core GitHub stats sync routine.
+///
+/// Shared by the `sync_github_stats` Tauri command and the background sync
+/// scheduler (see `crate::sync_scheduler`). Both call sites pass an
+/// [`AppHandle`](tauri::AppHandle) and the application's [`AppState`].
+pub async fn run_github_sync(
+    app: &tauri::AppHandle,
+    state: &AppState,
 ) -> Result<SyncResult, String> {
     let token = state
         .token_manager

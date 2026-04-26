@@ -227,7 +227,8 @@ impl Database {
         let row = sqlx::query(
             r#"
             SELECT id, user_id, sync_type, last_sync_at, last_sync_cursor,
-                   etag, rate_limit_remaining, rate_limit_reset_at
+                   etag, rate_limit_remaining, rate_limit_reset_at,
+                   last_skipped_at, last_skipped_reason
             FROM sync_metadata
             WHERE user_id = ? AND sync_type = ?
             "#,
@@ -247,6 +248,8 @@ impl Database {
             etag: r.get("etag"),
             rate_limit_remaining: r.get("rate_limit_remaining"),
             rate_limit_reset_at: r.get("rate_limit_reset_at"),
+            last_skipped_at: r.get("last_skipped_at"),
+            last_skipped_reason: r.get("last_skipped_reason"),
         }))
     }
 
@@ -278,6 +281,59 @@ impl Database {
         .bind(etag)
         .bind(rate_limit_remaining)
         .bind(&rate_limit_reset_at)
+        .bind(user_id)
+        .bind(sync_type)
+        .execute(self.pool())
+        .await
+        .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Record that a scheduled sync was skipped along with the reason.
+    /// Ensures the metadata row exists before updating.
+    pub async fn record_sync_skipped(
+        &self,
+        user_id: i64,
+        sync_type: &str,
+        reason: &str,
+        skipped_at: chrono::DateTime<chrono::Utc>,
+    ) -> DbResult<()> {
+        // Make sure the row exists first.
+        self.get_or_create_sync_metadata(user_id, sync_type).await?;
+
+        let skipped_at_str = skipped_at.to_rfc3339();
+        sqlx::query(
+            r#"
+            UPDATE sync_metadata
+            SET last_skipped_at = ?,
+                last_skipped_reason = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND sync_type = ?
+            "#,
+        )
+        .bind(&skipped_at_str)
+        .bind(reason)
+        .bind(user_id)
+        .bind(sync_type)
+        .execute(self.pool())
+        .await
+        .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Clear the recorded skip event after a successful sync.
+    pub async fn clear_sync_skipped(&self, user_id: i64, sync_type: &str) -> DbResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE sync_metadata
+            SET last_skipped_at = NULL,
+                last_skipped_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND sync_type = ?
+            "#,
+        )
         .bind(user_id)
         .bind(sync_type)
         .execute(self.pool())

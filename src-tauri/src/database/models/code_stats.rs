@@ -61,6 +61,10 @@ pub struct SyncMetadata {
     pub rate_limit_remaining: Option<i32>,
     /// When rate limit resets (RFC3339)
     pub rate_limit_reset_at: Option<String>,
+    /// Last time the scheduler skipped a sync (RFC3339)
+    pub last_skipped_at: Option<String>,
+    /// Reason the scheduler skipped a sync (e.g. "rate_limited")
+    pub last_skipped_reason: Option<String>,
 }
 
 impl SyncMetadata {
@@ -76,6 +80,15 @@ impl SyncMetadata {
     /// Parse rate_limit_reset_at as DateTime<Utc>
     pub fn rate_limit_reset_at_parsed(&self) -> Option<DateTime<Utc>> {
         self.rate_limit_reset_at.as_ref().and_then(|s| {
+            DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        })
+    }
+
+    /// Parse last_skipped_at as DateTime<Utc>
+    pub fn last_skipped_at_parsed(&self) -> Option<DateTime<Utc>> {
+        self.last_skipped_at.as_ref().and_then(|s| {
             DateTime::parse_from_rfc3339(s)
                 .ok()
                 .map(|dt| dt.with_timezone(&Utc))
@@ -339,6 +352,8 @@ mod tests {
             etag: None,
             rate_limit_remaining: Some(4500),
             rate_limit_reset_at: None,
+            last_skipped_at: None,
+            last_skipped_reason: None,
         };
 
         let parsed = metadata.last_sync_at_parsed();
@@ -359,6 +374,8 @@ mod tests {
             etag: None,
             rate_limit_remaining: None,
             rate_limit_reset_at: None,
+            last_skipped_at: None,
+            last_skipped_reason: None,
         };
 
         assert!(metadata.last_sync_at_parsed().is_none());
@@ -375,6 +392,8 @@ mod tests {
             etag: None,
             rate_limit_remaining: Some(100),
             rate_limit_reset_at: Some("2025-11-30T13:00:00Z".to_string()),
+            last_skipped_at: None,
+            last_skipped_reason: None,
         };
 
         let parsed = metadata.rate_limit_reset_at_parsed();

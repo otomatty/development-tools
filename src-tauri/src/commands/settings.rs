@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use crate::database::models::{ClearCacheResult, DatabaseInfo, NotificationMethod, UserSettings};
+use crate::sync_scheduler::SyncSchedulerHandle;
 
 use super::AppState;
 
@@ -61,6 +62,7 @@ pub async fn get_settings(state: tauri::State<'_, AppState>) -> Result<UserSetti
 #[tauri::command]
 pub async fn update_settings(
     state: tauri::State<'_, AppState>,
+    scheduler: tauri::State<'_, SyncSchedulerHandle>,
     settings: UpdateSettingsRequest,
 ) -> Result<UserSettings, String> {
     // Get current user
@@ -96,6 +98,10 @@ pub async fn update_settings(
         .update_user_settings(user.id, &existing)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Wake the scheduler so the new sync_* values take effect immediately
+    // instead of waiting for the next loop iteration to expire.
+    scheduler.notify_config_changed();
 
     Ok(updated)
 }

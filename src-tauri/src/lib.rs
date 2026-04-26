@@ -2,6 +2,7 @@ mod auth;
 mod commands;
 mod database;
 mod github;
+mod sync_scheduler;
 mod utils;
 
 use tauri::Manager;
@@ -52,6 +53,7 @@ use commands::{
     get_project_issues,
     get_projects,
     get_rate_limit_info,
+    get_scheduler_status,
     get_settings,
     get_sync_intervals,
     get_user_repositories,
@@ -142,6 +144,11 @@ pub fn run() {
 
             app.manage(app_state);
 
+            // Start the background sync scheduler. Must run *after* AppState is
+            // managed because the scheduler resolves it via app.state::<AppState>().
+            let scheduler_handle = sync_scheduler::start_scheduler(app.handle().clone());
+            app.manage(scheduler_handle);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -199,6 +206,8 @@ pub fn run() {
             get_sync_intervals,
             get_app_info,
             open_external_url,
+            // Sync scheduler commands
+            get_scheduler_status,
             // Issue management commands (Issue #59)
             get_projects,
             get_project,

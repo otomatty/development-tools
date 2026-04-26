@@ -11,11 +11,20 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSettings } from '../../../stores/settingsStore';
-import { settings as settingsApi, github as githubApi } from '../../../lib/tauri/commands';
+import {
+  settings as settingsApi,
+  github as githubApi,
+  scheduler as schedulerApi,
+} from '../../../lib/tauri/commands';
 import { ToggleSwitch } from '../../ui/form';
 import { InlineToast } from '../../ui/feedback';
 import { Button } from '../../ui/button';
-import type { SyncIntervalOption, SyncResult } from '../../../types';
+import type {
+  SyncIntervalOption,
+  SyncResult,
+  SchedulerStatus,
+} from '../../../types';
+import { schedulerSkipReasonLabel } from '../../../types/settings';
 
 export const SyncSettings: React.FC = () => {
   const { settings, isLoading, error: storeError, updateSettings } = useSettings();
@@ -29,6 +38,9 @@ export const SyncSettings: React.FC = () => {
 
   // Load sync intervals
   const [syncIntervals, setSyncIntervals] = useState<SyncIntervalOption[]>([]);
+
+  // Background sync scheduler status
+  const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
 
   const fetchSyncIntervals = useCallback(async () => {
     try {
@@ -48,9 +60,27 @@ export const SyncSettings: React.FC = () => {
     }
   }, []);
 
+  const fetchSchedulerStatus = useCallback(async () => {
+    try {
+      const status = await schedulerApi.getStatus();
+      setSchedulerStatus(status);
+    } catch (e) {
+      // Scheduler status is best-effort; don't surface as a hard error.
+      console.warn('Failed to load scheduler status:', e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSyncIntervals();
   }, [fetchSyncIntervals]);
+
+  // Poll the scheduler status so the UI reflects the next sync time as it
+  // ticks down. Polling keeps things simple without needing event subscription.
+  useEffect(() => {
+    fetchSchedulerStatus();
+    const handle = window.setInterval(fetchSchedulerStatus, 15_000);
+    return () => window.clearInterval(handle);
+  }, [fetchSchedulerStatus]);
 
   // Load settings on mount
   useEffect(() => {
@@ -73,9 +103,11 @@ export const SyncSettings: React.FC = () => {
     updateSettings({
       ...settings,
       syncIntervalMinutes: interval,
-    }).catch((e) => {
-      setError(`設定の保存に失敗しました: ${e}`);
-    });
+    })
+      .then(() => fetchSchedulerStatus())
+      .catch((e) => {
+        setError(`設定の保存に失敗しました: ${e}`);
+      });
   };
 
   // Toggle background sync
@@ -85,9 +117,11 @@ export const SyncSettings: React.FC = () => {
     updateSettings({
       ...settings,
       backgroundSync: !settings.backgroundSync,
-    }).catch((e) => {
-      setError(`設定の保存に失敗しました: ${e}`);
-    });
+    })
+      .then(() => fetchSchedulerStatus())
+      .catch((e) => {
+        setError(`設定の保存に失敗しました: ${e}`);
+      });
   };
 
   // Toggle sync on startup
@@ -97,9 +131,11 @@ export const SyncSettings: React.FC = () => {
     updateSettings({
       ...settings,
       syncOnStartup: !settings.syncOnStartup,
-    }).catch((e) => {
-      setError(`設定の保存に失敗しました: ${e}`);
-    });
+    })
+      .then(() => fetchSchedulerStatus())
+      .catch((e) => {
+        setError(`設定の保存に失敗しました: ${e}`);
+      });
   };
 
   // Manual sync
@@ -132,6 +168,9 @@ export const SyncSettings: React.FC = () => {
       const xpMsg = syncResult.xpGained > 0 ? ` (+${syncResult.xpGained} XP)` : '';
       setSuccessMessage(`同期が完了しました${xpMsg}`);
 
+      // Refresh scheduler status to reflect the new last/next sync times.
+      void fetchSchedulerStatus();
+
       // Auto-hide success message after 3 seconds
       const handle = window.setTimeout(() => {
         setSuccessMessage(null);
@@ -143,6 +182,20 @@ export const SyncSettings: React.FC = () => {
     } finally {
       setSyncing(false);
     }
+  };
+
+  // Format an ISO timestamp for display, or return a fallback string.
+  const formatTime = (iso: string | null | undefined, fallback = '—'): string => {
+    if (!iso) return fallback;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return fallback;
+    return d.toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   // Cleanup timeouts on component unmount
@@ -259,6 +312,50 @@ export const SyncSettings: React.FC = () => {
                     labelId="sync-on-startup-label"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="border-t border-gm-accent-cyan/20"></div>
+
+            {/* Scheduler status section */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-gaming font-bold text-white">スケジューラ状態</h3>
+              <div className="p-4 bg-gm-bg-card/50 rounded-xl border border-gm-accent-cyan/20 space-y-2">
+                {schedulerStatus ? (
+                  <>
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="text-dt-text-sub">最終自動同期</span>
+                      <span className="text-white font-mono">
+                        {formatTime(schedulerStatus.lastSyncAt, '未実行')}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="text-dt-text-sub">次回自動同期</span>
+                      <span className="text-white font-mono">
+                        {schedulerStatus.backgroundSyncEnabled &&
+                        schedulerStatus.intervalMinutes > 0
+                          ? formatTime(schedulerStatus.nextSyncAt, '計算中')
+                          : '— 自動同期はオフ'}
+                      </span>
+                    </div>
+                    {schedulerStatus.lastSkippedReason ? (
+                      <div className="mt-2 p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-sm text-yellow-200">
+                        <div className="font-bold">同期がスキップされました</div>
+                        <div className="text-xs mt-1">
+                          {schedulerSkipReasonLabel(schedulerStatus.lastSkippedReason)}
+                        </div>
+                        {schedulerStatus.lastSkippedAt && (
+                          <div className="text-xs text-yellow-300/80 mt-1">
+                            最終スキップ: {formatTime(schedulerStatus.lastSkippedAt)}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="text-sm text-dt-text-sub">スケジューラ情報を読み込み中...</div>
+                )}
               </div>
             </div>
 

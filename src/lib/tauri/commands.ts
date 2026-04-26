@@ -45,6 +45,7 @@ import type {
   BadgeWithProgress,
   CachedResponse,
   CacheStats,
+  SchedulerStatus,
 } from '@/types';
 
 // ============================================================================
@@ -165,6 +166,21 @@ export const settings = {
    */
   openExternalUrl: (url: string): Promise<void> =>
     invoke<void>('open_external_url', { url }),
+};
+
+// ============================================================================
+// Sync Scheduler Commands
+// ============================================================================
+
+export const scheduler = {
+  /**
+   * Get the current background sync scheduler status
+   *
+   * Returns next sync time, last sync time, and the reason a sync was last
+   * skipped (e.g. rate limited).
+   */
+  getStatus: (): Promise<SchedulerStatus> =>
+    invoke<SchedulerStatus>('get_scheduler_status'),
 };
 
 // ============================================================================

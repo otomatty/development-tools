@@ -305,6 +305,16 @@ DROP TABLE IF EXISTS mock_server_mappings;
 DROP TABLE IF EXISTS mock_server_config;
 "#,
     },
+    Migration {
+        version: 10,
+        name: "add_sync_metadata_last_skipped",
+        sql: r#"
+-- Track the most recent skip event per sync_type for the scheduler.
+-- Related Issue: GitHub Issue #180 - 同期スケジューラの実装
+ALTER TABLE sync_metadata ADD COLUMN last_skipped_at DATETIME;
+ALTER TABLE sync_metadata ADD COLUMN last_skipped_reason TEXT;
+"#,
+    },
 ];
 
 /// Create the migrations tracking table
