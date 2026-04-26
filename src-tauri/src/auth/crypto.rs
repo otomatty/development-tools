@@ -7,7 +7,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rand::Rng;
+use rand::RngExt as _;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -94,7 +94,7 @@ impl Crypto {
     pub fn encrypt(&self, plaintext: &str) -> CryptoResult<String> {
         // Generate random 12-byte nonce
         let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill(&mut nonce_bytes);
+        rand::rng().fill(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // Encrypt
