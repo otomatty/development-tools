@@ -117,11 +117,17 @@ pub async fn get_my_open_work_with_cache(
    - **401 Unauthorized**: `assigned` と `reviews` のどちらか一方でも 401 を
      返したら（左側優先ではなく）即座に `handle_unauthorized` を発火して
      エラーを返す（キャッシュは触らない）。
-   - **ネットワーク / レート制限エラー**: `get_any_cache` で過去キャッシュを取得し、
+   - **ハードエラー優先**: どちらか一方でも非フォールバック対象のエラー
+     （`ApiError`, `JsonParse` など — `is_network_or_rate_limit_error` が
+     `false` を返すもの）を含む場合は、左側優先ではなくその「重い」エラーを
+     優先して surface する。混在ケース（例: `assigned = HttpRequest`,
+     `reviews = ApiError("500 …")`）でステイル・キャッシュにより本物の
+     バックエンド障害を隠さないため。
+   - **ネットワーク / レート制限エラー（両方とも）**: `get_any_cache` で過去
+     キャッシュを取得し、
      - キャッシュあり → `CachedResponse { from_cache: true, cached_at, expires_at }` を返す
      - キャッシュなし → エラーを返す
      - DB エラー → `None` に潰さず、DB 障害をそのまま呼び出し元に返す
-   - **その他の API エラー**: フォールバックせずエラーを返す
 
 ### Search API クエリ
 

@@ -794,22 +794,31 @@ pub async fn get_my_open_work_with_cache(
                 return Err(GitHubError::Unauthorized.to_string());
             }
 
-            // Surface the first remaining error for the fallback / classify
-            // path. Both-Ok was handled in the previous arm.
-            let first_err = match (&assigned, &reviews) {
-                (Err(e), _) => e,
-                (_, Err(e)) => e,
-                _ => unreachable!("both Ok handled above"),
-            };
+            // Mixed-failure handling: a hard (non-fallback-eligible) error
+            // from *either* query takes priority over a transient one.
+            // Without this, `(network err, 500 from API)` would silently
+            // serve stale cache and hide the real backend problem from
+            // the user.
+            let err_a = assigned.as_ref().err();
+            let err_b = reviews.as_ref().err();
 
-            if !is_network_or_rate_limit_error(first_err) {
-                return Err(format!("GitHub Search API error: {}", first_err));
+            let hard = err_a
+                .filter(|e| !is_network_or_rate_limit_error(e))
+                .or_else(|| err_b.filter(|e| !is_network_or_rate_limit_error(e)));
+            if let Some(e) = hard {
+                return Err(format!("GitHub Search API error: {}", e));
             }
+
+            // Every error remaining is network / rate-limit eligible — the
+            // 401 case was already handled above. Use either one as the
+            // representative for logs and the no-cache error message.
+            // Both-Ok was handled in the outer match.
+            let representative = err_a.or(err_b).expect("at least one Err in this branch");
 
             // Network / rate-limit error → cache fallback.
             eprintln!(
                 "GitHub Search API error, attempting cache fallback: {}",
-                first_err
+                representative
             );
 
             // Surface DB failures rather than masking them as "no cache":
@@ -835,7 +844,7 @@ pub async fn get_my_open_work_with_cache(
                 }
                 None => Err(format!(
                     "Search APIにアクセスできず、キャッシュもありません: {}",
-                    first_err
+                    representative
                 )),
             }
         }
