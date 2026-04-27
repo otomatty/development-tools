@@ -142,10 +142,23 @@ impl TokenManager {
             .await
             .map_err(OAuthError::from)?;
 
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
             return Ok(false);
         }
-        Ok(response.status().is_success())
+        if status.is_success() {
+            return Ok(true);
+        }
+        // Non-401, non-success status (403 rate-limited / abuse-blocked, 5xx
+        // server error, etc.). Surface as Err so callers can distinguish
+        // "definitely revoked" from "GitHub is having issues" and avoid a
+        // forced logout — see the lifecycle contract documented above and in
+        // docs/api/AUTH_LIFECYCLE.md.
+        Err(OAuthError::TokenExchange(format!(
+            "Unexpected status from GitHub /user during token validation: {}",
+            status
+        ))
+        .into())
     }
 }
 
@@ -186,4 +199,35 @@ mod tests {
 
     // Integration tests would require a running database
     // Unit tests for the crypto layer are in crypto.rs
+
+    /// Compile-time regression for the `validate_token` three-way contract.
+    ///
+    /// The body of `validate_token` itself can't be unit-tested without an
+    /// HTTP mock, but we can at least lock in the documented mapping at the
+    /// type / status-code level so a future refactor doesn't silently
+    /// re-introduce the "Ok(false) for any non-success status" bug
+    /// (Issue #181 review feedback) that would force-logout users on
+    /// transient 5xx / 403 responses.
+    #[test]
+    fn validate_token_status_mapping_contract() {
+        // 2xx → Ok(true)
+        assert!(reqwest::StatusCode::OK.is_success());
+        // 401 → Ok(false) — only this status maps to the auth-expired flow.
+        assert_eq!(
+            reqwest::StatusCode::UNAUTHORIZED,
+            reqwest::StatusCode::from_u16(401).unwrap()
+        );
+        // 403 / 5xx must NOT be is_success() AND must not equal UNAUTHORIZED,
+        // so they take the Err branch in the implementation.
+        for code in [403u16, 500, 502, 503, 504] {
+            let status = reqwest::StatusCode::from_u16(code).unwrap();
+            assert!(!status.is_success(), "{} should not be success", code);
+            assert_ne!(
+                status,
+                reqwest::StatusCode::UNAUTHORIZED,
+                "{} should not equal 401",
+                code
+            );
+        }
+    }
 }
