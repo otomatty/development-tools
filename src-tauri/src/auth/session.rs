@@ -111,12 +111,20 @@ pub async fn map_github_result<T>(
 ///
 /// `run_github_sync` (and other helpers used by the scheduler) flatten typed
 /// errors into `String`, so the scheduler has to match on the formatted
-/// message. We anchor on the canonical [`GitHubError::Unauthorized`] Display
-/// output ("Authentication failed") and also accept the explicit
-/// "Unauthorized" tag emitted by [`map_github_result`].
+/// message. We anchor on:
+///
+/// - `"authentication failed"` — canonical [`GitHubError::Unauthorized`]
+///   Display output (REST 401, and after PR #199 GraphQL 401 too).
+/// - `"unauthorized"` — explicit tag emitted by [`map_github_result`].
+/// - `"bad credentials"` — defense in depth for any code path that still
+///   surfaces a GitHub error body verbatim (e.g. a future endpoint that
+///   doesn't go through the typed mapping). GitHub uses this exact phrase
+///   in its 401 response payloads on both REST and GraphQL.
 pub fn classify_unauthorized(err_msg: &str) -> bool {
     let lower = err_msg.to_lowercase();
-    lower.contains("authentication failed") || lower.contains("unauthorized")
+    lower.contains("authentication failed")
+        || lower.contains("unauthorized")
+        || lower.contains("bad credentials")
 }
 
 #[cfg(test)]
@@ -153,6 +161,18 @@ mod tests {
             "Unauthorized: GitHub token is invalid or revoked"
         ));
         assert!(classify_unauthorized("UNAUTHORIZED"));
+    }
+
+    #[test]
+    fn classify_unauthorized_recognizes_github_bad_credentials_body() {
+        // Defense in depth: if any code path ever surfaces a raw GitHub 401
+        // response body (REST or GraphQL) without going through the typed
+        // GitHubError::Unauthorized mapping, the scheduler classifier must
+        // still detect it. Regression for PR #199 review (Devin).
+        assert!(classify_unauthorized(
+            "API error: {\"message\":\"Bad credentials\",\"documentation_url\":\"https://docs.github.com/...\"}"
+        ));
+        assert!(classify_unauthorized("BAD CREDENTIALS"));
     }
 
     #[test]
