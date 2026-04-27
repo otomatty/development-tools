@@ -176,8 +176,8 @@ Idle ブランチも `wait_for_change_or_timeout(&notify, IDLE_POLL_SECONDS)` �
 - Then: `SchedulerAction::Sleep { seconds }` — baseline is synthesized as
   `now`, so the first auto-sync fires after one full interval rather than
   catching up immediately. The runner persists this baseline to
-  `sync_metadata.last_sync_at` on the first Sleep so the opt-out survives
-  across loop iterations.
+  `sync_metadata.scheduler_baseline_at` on the first Sleep so the opt-out
+  survives across loop iterations.
 
 ### TC-002b: After metadata wipe, `sync_on_startup=true` recovers via RunSync
 

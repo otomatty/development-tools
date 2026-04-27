@@ -199,6 +199,14 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                             // failure floor. seconds_until handles already-
                             // passed resets via the MIN clamp.
                             sleep_secs = seconds_until(reset_at, now);
+                            // Patch the cached next_sync_at so the UI doesn't
+                            // keep showing the pre-failure projection (which
+                            // is `last + interval`, often already past).
+                            set_next_sync_at(
+                                &status,
+                                now + chrono::Duration::seconds(sleep_secs as i64),
+                            )
+                            .await;
                         } else if classify_rate_limited(&err_msg) {
                             // Rate-limited but the reset timestamp couldn't be
                             // parsed — record the reason and back off by the
@@ -216,6 +224,11 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                                     .await,
                             );
                             update_status_skipped(&status, skip_reasons::RATE_LIMITED, now).await;
+                            set_next_sync_at(
+                                &status,
+                                now + chrono::Duration::seconds(sleep_secs as i64),
+                            )
+                            .await;
                         }
 
                         // Always sleep at least MIN_FAILURE_SLEEP_SECONDS after a
@@ -339,6 +352,18 @@ async fn update_status_skipped(
     let mut s = status.write().await;
     s.last_skipped_reason = Some(reason.to_string());
     s.last_skipped_at = Some(when.to_rfc3339());
+}
+
+/// Override the in-memory `next_sync_at` after a rate-limit failure.
+///
+/// The pre-action `write_status` call already populated `next_sync_at` from
+/// `next_sync_at(&inputs)`, but that prediction was computed before the
+/// failure was known. During a rate-limit backoff the runner actually wakes
+/// at `reset_at`, so we patch the cached status here so `get_scheduler_status`
+/// stops reporting the stale (often already-past) projection.
+async fn set_next_sync_at(status: &RwLock<SchedulerStatus>, next: DateTime<Utc>) {
+    let mut s = status.write().await;
+    s.next_sync_at = Some(next.to_rfc3339());
 }
 
 fn build_inputs(
@@ -713,6 +738,20 @@ mod tests {
         let inputs = build_inputs(&settings, None, Some(expired_fallback), false, now);
         assert_eq!(inputs.rate_limit_remaining, None);
         assert_eq!(inputs.rate_limit_reset_at, None);
+    }
+
+    #[tokio::test]
+    async fn set_next_sync_at_overrides_cached_status() {
+        let status = RwLock::new(SchedulerStatus {
+            next_sync_at: Some("2026-04-01T00:00:00Z".to_string()),
+            ..SchedulerStatus::default()
+        });
+
+        let new_next = Utc::now() + chrono::Duration::minutes(20);
+        set_next_sync_at(&status, new_next).await;
+
+        let s = status.read().await;
+        assert_eq!(s.next_sync_at, Some(new_next.to_rfc3339()));
     }
 
     #[tokio::test]
