@@ -135,6 +135,30 @@ pub async fn get_user_stats_with_cache(
   - `from_cache` が `true`
   - UserStats データが返される
 
+### TC-006: 同期成功時のキャッシュ自動更新
+
+- **Given**: ユーザーがログイン済み、`activity_cache` の `github_stats` エントリが
+  存在しない（または期限切れ）
+- **When**: `sync_github_stats` / `run_github_sync` が成功裏に完了する
+- **Then**:
+  - `activity_cache` に `data_type = github_stats` のエントリが UPSERT される
+  - `expires_at` が `now + cache_durations::GITHUB_STATS`（30 分）に設定される
+  - 直後に `get_github_stats_with_cache` を呼ぶと、API を再度叩かずに
+    `from_cache = true` でキャッシュからデータを返せる
+- **Notes**: キャッシュ書き込みはベストエフォートなので、書き込み失敗が
+  同期結果のエラーに昇格しないことも併せて確認する
+
+### TC-007: 認証エラーはフォールバックしない
+
+- **Given**: オンライン状態、`github_stats` キャッシュにデータあり、
+  GitHub API がトークン失効により `401 Unauthorized` を返す
+- **When**: `get_github_stats_with_cache` を呼び出す
+- **Then**:
+  - キャッシュフォールバックは発火せず、エラー（"GitHub API error: ..."）が返る
+  - `handle_unauthorized` が呼び出され、トークンがクリアされ
+    `auth-expired` イベントが emit される
+- **Rationale**: 認証エラーで古いキャッシュを表示し続けるのはセキュリティ上望ましくない
+
 ---
 
 ## DEPENDENCY MAP
