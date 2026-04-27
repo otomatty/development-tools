@@ -181,7 +181,12 @@ const Issues = () => {
     void query.revalidate();
   }, [query]);
 
-  const initialLoading = enabled && query.data === null && query.error === null;
+  // While auth is bootstrapping, `enabled` is forced false and `query` is
+  // still in its initial state — so we have to fold `authLoading` into the
+  // loading flag explicitly, otherwise the empty-state branch below would
+  // render "no issues" before we've even attempted a fetch.
+  const initialLoading =
+    authLoading || (enabled && query.data === null && query.error === null);
 
   if (!enabled && !authLoading) {
     return (

@@ -778,19 +778,24 @@ pub async fn get_my_open_work_with_cache(
             })
         }
         (assigned, reviews) => {
-            // Surface the first error that occurred. Auth errors get the
-            // centralized 401 treatment; transient/network errors trigger
-            // cache fallback.
+            // 401 must take precedence regardless of which call surfaced it.
+            // Without this, a pattern like `assigned = network err` +
+            // `reviews = 401` would have fallen through to cache fallback,
+            // leaving a revoked token in place.
+            if matches!(&assigned, Err(GitHubError::Unauthorized))
+                || matches!(&reviews, Err(GitHubError::Unauthorized))
+            {
+                handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+                return Err(GitHubError::Unauthorized.to_string());
+            }
+
+            // Surface the first remaining error for the fallback / classify
+            // path. Both-Ok was handled in the previous arm.
             let first_err = match (&assigned, &reviews) {
                 (Err(e), _) => e,
                 (_, Err(e)) => e,
                 _ => unreachable!("both Ok handled above"),
             };
-
-            if matches!(first_err, GitHubError::Unauthorized) {
-                handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
-                return Err(first_err.to_string());
-            }
 
             if !is_network_or_rate_limit_error(first_err) {
                 return Err(format!("GitHub Search API error: {}", first_err));
@@ -802,12 +807,15 @@ pub async fn get_my_open_work_with_cache(
                 first_err
             );
 
+            // Surface DB failures rather than masking them as "no cache":
+            // when both the network and the local cache are broken, the
+            // user deserves the actual root cause, not a misleading
+            // "no cached data" message.
             let cache_result = state
                 .db
                 .get_any_cache(user_id, crate::database::cache_types::MY_OPEN_WORK)
                 .await
-                .ok()
-                .flatten();
+                .map_err(|e| format!("Failed to read my_open_work cache: {}", e))?;
 
             match cache_result {
                 Some((data_json, cached_at, expires_at)) => {
