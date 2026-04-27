@@ -13,6 +13,7 @@
 import type { ReactNode } from 'react';
 import { Sidebar } from '../Sidebar';
 import { OfflineBanner } from '../OfflineBanner';
+import { SessionExpiredBanner } from '../../features/auth';
 
 /**
  * MainLayout Component
@@ -20,6 +21,7 @@ import { OfflineBanner } from '../OfflineBanner';
  * Wraps the entire application with:
  * - Sidebar (navigation)
  * - OfflineBanner (network status)
+ * - SessionExpiredBanner (GitHub auth-expired prompt — Issue #181)
  * - Main content area (children)
  *
  * Responsive design will be implemented in a later phase.
@@ -30,6 +32,7 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
         <OfflineBanner />
+        <SessionExpiredBanner />
         {children}
       </main>
     </div>

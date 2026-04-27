@@ -14,8 +14,9 @@
 
 use chrono::Utc;
 use sqlx::Row;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::auth::map_github_result;
 use crate::commands::AppState;
 use crate::database::models::project::{
     CachedIssue, IssueStatus, KanbanBoard, Project, ProjectWithStats, RepositoryInfo,
@@ -177,15 +178,14 @@ pub async fn delete_project(state: State<'_, AppState>, project_id: i64) -> Resu
 /// Get user's repositories for linking
 #[tauri::command]
 pub async fn get_user_repositories(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<RepositoryInfo>, String> {
     let access_token = get_access_token(&state).await?;
     let client = IssuesClient::new(access_token);
 
-    let repos = client
-        .get_user_repositories()
-        .await
-        .map_err(|e| format!("Failed to fetch repositories: {:?}", e))?;
+    let repos =
+        map_github_result(&app, state.inner(), client.get_user_repositories().await).await?;
 
     Ok(repos
         .into_iter()
@@ -205,6 +205,7 @@ pub async fn get_user_repositories(
 /// Link a repository to a project
 #[tauri::command]
 pub async fn link_repository(
+    app: AppHandle,
     state: State<'_, AppState>,
     project_id: i64,
     owner: String,
@@ -215,10 +216,12 @@ pub async fn link_repository(
     let client = IssuesClient::new(access_token);
 
     // Get repository info from GitHub
-    let repo_info = client
-        .get_repository(&owner, &repo)
-        .await
-        .map_err(|e| format!("Failed to fetch repository: {:?}", e))?;
+    let repo_info = map_github_result(
+        &app,
+        state.inner(),
+        client.get_repository(&owner, &repo).await,
+    )
+    .await?;
 
     let now = Utc::now().to_rfc3339();
     let full_name = format!("{}/{}", owner, repo);
@@ -286,6 +289,7 @@ Repository: {}/{}
 /// Sync issues from GitHub to local cache
 #[tauri::command]
 pub async fn sync_project_issues(
+    app: AppHandle,
     state: State<'_, AppState>,
     project_id: i64,
 ) -> Result<Vec<CachedIssue>, String> {
@@ -302,10 +306,12 @@ pub async fn sync_project_issues(
     let mut page = 1;
 
     loop {
-        let issues = client
-            .get_issues(&owner, &repo, "all", 100, page)
-            .await
-            .map_err(|e| format!("Failed to fetch issues: {:?}", e))?;
+        let issues = map_github_result(
+            &app,
+            state.inner(),
+            client.get_issues(&owner, &repo, "all", 100, page).await,
+        )
+        .await?;
 
         if issues.is_empty() {
             break;
@@ -451,6 +457,7 @@ pub async fn get_kanban_board(
 /// Update issue status (also updates on GitHub)
 #[tauri::command]
 pub async fn update_issue_status(
+    app: AppHandle,
     state: State<'_, AppState>,
     project_id: i64,
     issue_number: i32,
@@ -469,10 +476,14 @@ pub async fn update_issue_status(
     let client = IssuesClient::new(access_token);
 
     // Update status on GitHub
-    let updated_issue = client
-        .update_issue_status(&owner, &repo, issue_number, status)
-        .await
-        .map_err(|e| format!("Failed to update issue status: {:?}", e))?;
+    let updated_issue = map_github_result(
+        &app,
+        state.inner(),
+        client
+            .update_issue_status(&owner, &repo, issue_number, status)
+            .await,
+    )
+    .await?;
 
     // Update local cache
     let now = Utc::now().to_rfc3339();
@@ -509,6 +520,7 @@ pub async fn update_issue_status(
 /// Create a new issue (on GitHub and cache locally)
 #[tauri::command]
 pub async fn create_github_issue(
+    app: AppHandle,
     state: State<'_, AppState>,
     project_id: i64,
     title: String,
@@ -539,10 +551,14 @@ pub async fn create_github_issue(
     let client = IssuesClient::new(access_token);
 
     // Create issue on GitHub
-    let github_issue = client
-        .create_issue(&owner, &repo, &title, body.as_deref(), labels)
-        .await
-        .map_err(|e| format!("Failed to create issue: {:?}", e))?;
+    let github_issue = map_github_result(
+        &app,
+        state.inner(),
+        client
+            .create_issue(&owner, &repo, &title, body.as_deref(), labels)
+            .await,
+    )
+    .await?;
 
     // Cache the new issue
     let now = Utc::now().to_rfc3339();

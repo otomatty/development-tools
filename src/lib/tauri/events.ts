@@ -12,6 +12,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   AuthState,
+  AuthExpiredEvent,
   XpGainedEvent,
   StreakMilestoneEvent,
   BadgeEarnedEvent,
@@ -27,6 +28,20 @@ export const events = {
    */
   onAuthStateChange: (callback: (state: AuthState) => void): Promise<UnlistenFn> =>
     listen<AuthState>('auth-state-change', (event) => callback(event.payload)),
+
+  /**
+   * Listen for authentication-expired events.
+   *
+   * Emitted by the backend whenever the stored GitHub token is rejected (401)
+   * — for example, the user revoked it on github.com between launches, or the
+   * background sync scheduler observed a 401. The backend has already cleared
+   * the credential by the time this fires; the frontend's job is to surface
+   * the re-login prompt and stop firing API requests.
+   *
+   * See `src-tauri/src/auth/session.rs` for the emitter and reason codes.
+   */
+  onAuthExpired: (callback: (event: AuthExpiredEvent) => void): Promise<UnlistenFn> =>
+    listen<AuthExpiredEvent>('auth-expired', (event) => callback(event.payload)),
 
   // ============================================================================
   // Gamification Events

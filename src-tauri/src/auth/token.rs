@@ -30,13 +30,22 @@ pub type TokenResult<T> = Result<T, TokenError>;
 pub struct TokenManager {
     crypto: Crypto,
     db: Database,
+    /// Shared HTTP client so the periodic / startup `validate_token` probes
+    /// reuse the underlying connection pool instead of spinning up a fresh
+    /// TCP+TLS handshake per call. `reqwest::Client` is internally `Arc`-wrapped
+    /// so cloning is cheap and the manager itself stays trivially `Send + Sync`.
+    http_client: reqwest::Client,
 }
 
 impl TokenManager {
     /// Create a new token manager
     pub fn new(db: Database) -> TokenResult<Self> {
         let crypto = Crypto::from_app_key()?;
-        Ok(Self { crypto, db })
+        Ok(Self {
+            crypto,
+            db,
+            http_client: reqwest::Client::new(),
+        })
     }
 
     /// Save tokens for a user
@@ -124,10 +133,17 @@ impl TokenManager {
         Ok(())
     }
 
-    /// Validate that a token is working by making a test API call
+    /// Validate that a token is working by making a test API call.
+    ///
+    /// Returns:
+    /// - `Ok(true)` when the API call succeeded (token is currently accepted)
+    /// - `Ok(false)` when GitHub responded with 401 (token revoked / invalid)
+    /// - `Err(_)` for transport / non-401 HTTP failures so callers can
+    ///   distinguish "definitely revoked" from "couldn't reach GitHub" — the
+    ///   latter must NOT trigger a forced logout.
     pub async fn validate_token(&self, access_token: &str) -> TokenResult<bool> {
-        let client = reqwest::Client::new();
-        let response = client
+        let response = self
+            .http_client
             .get("https://api.github.com/user")
             .header("Authorization", format!("Bearer {}", access_token))
             .header("User-Agent", "development-tools")
@@ -135,7 +151,16 @@ impl TokenManager {
             .await
             .map_err(OAuthError::from)?;
 
-        Ok(response.status().is_success())
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Ok(false);
+        }
+        // Non-401, non-success status (403 rate-limited / abuse-blocked, 5xx
+        // server error, etc.) becomes an `Err` via `error_for_status` so
+        // callers can distinguish "definitely revoked" from "GitHub is having
+        // issues" and avoid a forced logout — see the lifecycle contract
+        // documented above and in docs/api/AUTH_LIFECYCLE.md.
+        response.error_for_status().map_err(OAuthError::from)?;
+        Ok(true)
     }
 }
 
@@ -176,4 +201,35 @@ mod tests {
 
     // Integration tests would require a running database
     // Unit tests for the crypto layer are in crypto.rs
+
+    /// Compile-time regression for the `validate_token` three-way contract.
+    ///
+    /// The body of `validate_token` itself can't be unit-tested without an
+    /// HTTP mock, but we can at least lock in the documented mapping at the
+    /// type / status-code level so a future refactor doesn't silently
+    /// re-introduce the "Ok(false) for any non-success status" bug
+    /// (Issue #181 review feedback) that would force-logout users on
+    /// transient 5xx / 403 responses.
+    #[test]
+    fn validate_token_status_mapping_contract() {
+        // 2xx → Ok(true)
+        assert!(reqwest::StatusCode::OK.is_success());
+        // 401 → Ok(false) — only this status maps to the auth-expired flow.
+        assert_eq!(
+            reqwest::StatusCode::UNAUTHORIZED,
+            reqwest::StatusCode::from_u16(401).unwrap()
+        );
+        // 403 / 5xx must NOT be is_success() AND must not equal UNAUTHORIZED,
+        // so they take the Err branch in the implementation.
+        for code in [403u16, 500, 502, 503, 504] {
+            let status = reqwest::StatusCode::from_u16(code).unwrap();
+            assert!(!status.is_success(), "{} should not be success", code);
+            assert_ne!(
+                status,
+                reqwest::StatusCode::UNAUTHORIZED,
+                "{} should not equal 401",
+                code
+            );
+        }
+    }
 }

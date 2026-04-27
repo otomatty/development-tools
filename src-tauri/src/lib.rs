@@ -7,6 +7,7 @@ mod utils;
 
 use tauri::Manager;
 
+use commands::auth::run_startup_token_validation;
 use commands::{
     // Gamification commands
     add_xp,
@@ -143,6 +144,20 @@ pub fn run() {
             });
 
             app.manage(app_state);
+
+            // Probe the persisted GitHub token in the background so we can
+            // surface a re-login prompt if the user revoked it externally
+            // between launches. Runs after `app.manage(app_state)` because the
+            // helper resolves AppState via the app handle.
+            //
+            // Issue #181 — see `commands::auth::run_startup_token_validation`
+            // for the policy: only a confirmed 401 clears the session;
+            // transport errors leave it intact.
+            let app_for_auth_check = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = app_for_auth_check.state::<AppState>();
+                run_startup_token_validation(app_for_auth_check.clone(), state.inner()).await;
+            });
 
             // Start the background sync scheduler. Must run *after* AppState is
             // managed because the scheduler resolves it via app.state::<AppState>().

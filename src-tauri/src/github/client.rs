@@ -141,7 +141,18 @@ impl GitHubClient {
 
         self.check_rate_limit(&response).await?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
+            // 401 must surface as the typed `Unauthorized` variant so the
+            // shared `auth::session::map_github_result` helper can detect a
+            // revoked token and trigger the auth-expired flow. Without this
+            // mapping a GraphQL 401 (e.g. `get_contribution_calendar`) gets
+            // flattened to `ApiError("...Bad credentials...")` and slips past
+            // both `map_github_result` and the scheduler's classifier — see
+            // PR #199 review (Devin) for the original report.
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(GitHubError::Unauthorized);
+            }
             let error_text = response.text().await.unwrap_or_default();
             return Err(GitHubError::ApiError(error_text));
         }
