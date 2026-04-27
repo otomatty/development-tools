@@ -331,3 +331,60 @@ export interface RepositoryInfo {
   openIssuesCount: number;
 }
 
+// ===========================================================================
+// Cross-repository "Today / Inbox" (Issue #183)
+// ===========================================================================
+
+/// Source query that surfaced this row.
+export type MyOpenWorkSource = 'assigned' | 'review_requested';
+
+/// Item kind: distinguishes Issues from Pull Requests in the inbox.
+export type MyOpenWorkKind = 'issue' | 'pull_request';
+
+/// One row in the cross-repository inbox.
+///
+/// Mirrors `commands::issues::MyOpenWorkItem` on the backend.
+export interface MyOpenWorkItem {
+  id: number;
+  number: number;
+  title: string;
+  state: string;
+  htmlUrl: string;
+  repoOwner: string;
+  repoName: string;
+  repoFullName: string;
+  kind: MyOpenWorkKind;
+  source: MyOpenWorkSource;
+  priority: IssuePriority | null;
+  labels: string[];
+  assigneeLogin: string | null;
+  assigneeAvatarUrl: string | null;
+  authorLogin: string | null;
+  /** ISO8601 */
+  createdAt: string;
+  /** ISO8601 */
+  updatedAt: string;
+}
+
+/// Aggregated payload returned by `get_my_open_work_with_cache`.
+export interface MyOpenWork {
+  assigned: MyOpenWorkItem[];
+  reviewRequested: MyOpenWorkItem[];
+}
+
+/// Priority sort weight (higher = sorts first). `null` priority sinks to the
+/// bottom so unprioritized work doesn't bury the user's `priority:high`
+/// items.
+export function priorityWeight(priority: IssuePriority | null): number {
+  switch (priority) {
+    case 'high':
+      return 3;
+    case 'medium':
+      return 2;
+    case 'low':
+      return 1;
+    case null:
+      return 0;
+  }
+}
+

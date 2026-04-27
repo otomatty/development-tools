@@ -49,6 +49,8 @@ use commands::{
     get_github_user,
     get_kanban_board,
     get_level_info,
+    // Cross-repository "Today / Inbox" command (Issue #183)
+    get_my_open_work_with_cache,
     get_near_completion_badges,
     get_project,
     get_project_issues,
@@ -237,6 +239,7 @@ pub fn run() {
             get_kanban_board,
             update_issue_status,
             create_github_issue,
+            get_my_open_work_with_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

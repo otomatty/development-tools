@@ -77,6 +77,74 @@ pub struct GitHubOwner {
     pub id: i64,
 }
 
+/// Search API result item (Issue or PR)
+///
+/// `GET /search/issues` returns a unified shape for both issues and pull
+/// requests. The presence of `pull_request` distinguishes a PR from an issue.
+/// Also note `repository_url` ("https://api.github.com/repos/{owner}/{repo}")
+/// is the only owner/repo signal in the response — there is no nested
+/// `repository` object on the search payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitHubSearchItem {
+    pub id: i64,
+    pub number: i32,
+    pub title: String,
+    pub body: Option<String>,
+    pub state: String,
+    pub state_reason: Option<String>,
+    pub html_url: String,
+    pub repository_url: String,
+    pub labels: Vec<GitHubLabel>,
+    pub assignee: Option<GitHubAssignee>,
+    pub assignees: Option<Vec<GitHubAssignee>>,
+    pub user: Option<GitHubAssignee>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub closed_at: Option<DateTime<Utc>>,
+    /// Present when the result is a pull request. The inner shape is opaque
+    /// for our purposes — we only check for its existence.
+    #[serde(default)]
+    pub pull_request: Option<serde_json::Value>,
+}
+
+impl GitHubSearchItem {
+    /// True when this search result is a pull request.
+    pub fn is_pull_request(&self) -> bool {
+        self.pull_request.is_some()
+    }
+
+    /// Extract `(owner, repo)` from the `repository_url`.
+    /// Returns `None` if the URL does not match the expected shape.
+    pub fn owner_and_repo(&self) -> Option<(String, String)> {
+        // repository_url: "https://api.github.com/repos/{owner}/{repo}"
+        let suffix = self.repository_url.strip_prefix(GITHUB_API_URL)?;
+        let suffix = suffix.strip_prefix("/repos/")?;
+        let mut parts = suffix.splitn(2, '/');
+        let owner = parts.next()?.to_string();
+        let repo = parts.next()?.to_string();
+        if owner.is_empty() || repo.is_empty() {
+            return None;
+        }
+        Some((owner, repo))
+    }
+
+    /// Get a `owner/repo` display string. Falls back to the full URL when the
+    /// expected shape can't be parsed.
+    pub fn repo_full_name(&self) -> String {
+        self.owner_and_repo()
+            .map(|(o, r)| format!("{}/{}", o, r))
+            .unwrap_or_else(|| self.repository_url.clone())
+    }
+}
+
+/// `GET /search/issues` response envelope.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitHubSearchResponse {
+    pub total_count: i64,
+    pub incomplete_results: bool,
+    pub items: Vec<GitHubSearchItem>,
+}
+
 /// Issues API client
 pub struct IssuesClient {
     client: reqwest::Client,
@@ -128,6 +196,27 @@ impl IssuesClient {
             }
             reqwest::StatusCode::UNAUTHORIZED => Err(GitHubError::Unauthorized),
             reqwest::StatusCode::NOT_FOUND => Err(GitHubError::NotFound(url.to_string())),
+            // GitHub returns 403 when an authenticated client exhausts the
+            // primary or Search-specific rate limit. We surface this as
+            // `RateLimited` so callers can distinguish a transient quota
+            // hit from a permanent forbidden response and fall back to
+            // cache. (Mirrors the detection in `GitHubClient::check_rate_limit`.)
+            reqwest::StatusCode::FORBIDDEN
+                if response
+                    .headers()
+                    .get("x-ratelimit-remaining")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| v == "0")
+                    .unwrap_or(false) =>
+            {
+                let reset = response
+                    .headers()
+                    .get("x-ratelimit-reset")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .unwrap_or(0);
+                Err(GitHubError::RateLimited(reset))
+            }
             status => {
                 let error_text = response.text().await.unwrap_or_default();
                 Err(GitHubError::ApiError(format!(
@@ -251,6 +340,97 @@ impl IssuesClient {
     pub async fn get_repository(&self, owner: &str, repo: &str) -> GitHubResult<GitHubRepository> {
         let url = format!("{}/repos/{}/{}", GITHUB_API_URL, owner, repo);
         self.get(&url).await
+    }
+
+    // ========================================================================
+    // Cross-repository Search methods
+    // ========================================================================
+
+    /// Run a `GET /search/issues` query.
+    ///
+    /// `q` is the GitHub search query. The Search API is rate-limited
+    /// independently of the core REST API (30 req/min for authenticated
+    /// users), so callers should cache results — see
+    /// `commands/issues.rs::get_my_open_work_with_cache`.
+    pub async fn search_issues(
+        &self,
+        q: &str,
+        per_page: i32,
+        page: i32,
+    ) -> GitHubResult<GitHubSearchResponse> {
+        let url = format!(
+            "{}/search/issues?q={}&per_page={}&page={}&sort=updated&order=desc",
+            GITHUB_API_URL,
+            urlencoding::encode(q),
+            per_page,
+            page
+        );
+        self.get(&url).await
+    }
+
+    /// Maximum total items collected from a single Search API query.
+    /// GitHub's Search API caps responses at 1000 results regardless of
+    /// pagination, so 1000 is the absolute ceiling. We expose it as a
+    /// constant so the safety stop is auditable.
+    pub const SEARCH_RESULT_CAP: usize = 1000;
+
+    /// Page through `search_issues` collecting up to `SEARCH_RESULT_CAP`
+    /// items, stopping early when a page is short of `per_page` (which
+    /// indicates the last page).
+    ///
+    /// Worst-case 10 requests per call (1000 / 100). Combined with the
+    /// 5-minute cache in `commands::issues::get_my_open_work_with_cache`,
+    /// this stays well under the Search API's 30 req/min budget.
+    async fn search_issues_paginated(&self, q: &str) -> GitHubResult<Vec<GitHubSearchItem>> {
+        const PER_PAGE: i32 = 100;
+        let mut all = Vec::new();
+        let mut page: i32 = 1;
+        loop {
+            let response = self.search_issues(q, PER_PAGE, page).await?;
+            // GitHub sets `incomplete_results: true` when a search times out
+            // server-side (e.g. heavy index load). Caching a partial inbox
+            // would silently hide assigned/review-requested work until the
+            // next refresh, so we bail with a transient error and let the
+            // caller fall back to the previous cache.
+            if response.incomplete_results {
+                return Err(GitHubError::Incomplete(format!(
+                    "Search API returned incomplete_results=true on page {} (query: {})",
+                    page, q
+                )));
+            }
+            let returned = response.items.len();
+            all.extend(response.items);
+            // Last page: GitHub returned fewer than the requested page size.
+            if returned < PER_PAGE as usize {
+                break;
+            }
+            // Hard cap — also guards against the 1000-item ceiling that
+            // Search API enforces.
+            if all.len() >= Self::SEARCH_RESULT_CAP {
+                all.truncate(Self::SEARCH_RESULT_CAP);
+                break;
+            }
+            page += 1;
+        }
+        Ok(all)
+    }
+
+    /// Search Open Issues (excluding PRs) assigned to the authenticated user
+    /// across every repository the token can see.
+    pub async fn search_assigned_issues(&self) -> GitHubResult<Vec<GitHubSearchItem>> {
+        // `is:issue` excludes PRs; `archived:false` skips zombie repos.
+        let q = "is:open is:issue assignee:@me archived:false";
+        self.search_issues_paginated(q).await
+    }
+
+    /// Search Open Pull Requests where the authenticated user is requested
+    /// as a reviewer.
+    pub async fn search_review_requested(&self) -> GitHubResult<Vec<GitHubSearchItem>> {
+        // `is:pr` keeps only PRs; `review-requested:@me` includes both
+        // direct review requests and team-mediated requests the user
+        // belongs to.
+        let q = "is:open is:pr review-requested:@me archived:false";
+        self.search_issues_paginated(q).await
     }
 
     // ========================================================================
@@ -963,6 +1143,90 @@ mod tests {
             IssuesClient::extract_status_with_state(&labels, "closed", None),
             IssueStatus::Done
         );
+    }
+
+    fn make_search_item(
+        repository_url: &str,
+        pull_request: Option<serde_json::Value>,
+    ) -> GitHubSearchItem {
+        GitHubSearchItem {
+            id: 1,
+            number: 1,
+            title: "x".into(),
+            body: None,
+            state: "open".into(),
+            state_reason: None,
+            html_url: "https://github.com/o/r/issues/1".into(),
+            repository_url: repository_url.into(),
+            labels: vec![],
+            assignee: None,
+            assignees: None,
+            user: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            closed_at: None,
+            pull_request,
+        }
+    }
+
+    #[test]
+    fn search_item_detects_pull_request() {
+        let item = make_search_item(
+            "https://api.github.com/repos/octo/test",
+            Some(serde_json::json!({"url": "..."})),
+        );
+        assert!(item.is_pull_request());
+
+        let item = make_search_item("https://api.github.com/repos/octo/test", None);
+        assert!(!item.is_pull_request());
+    }
+
+    #[test]
+    fn search_item_extracts_owner_and_repo() {
+        let item = make_search_item("https://api.github.com/repos/octo/test", None);
+        assert_eq!(
+            item.owner_and_repo(),
+            Some(("octo".to_string(), "test".to_string()))
+        );
+        assert_eq!(item.repo_full_name(), "octo/test");
+    }
+
+    #[test]
+    fn search_item_handles_unexpected_url() {
+        // If GitHub ever returns a different host (e.g. GHES), we fall back
+        // to surfacing the URL as-is rather than silently mis-parsing.
+        let item = make_search_item("https://ghe.example.com/api/v3/repos/o/r", None);
+        assert_eq!(item.owner_and_repo(), None);
+        assert_eq!(
+            item.repo_full_name(),
+            "https://ghe.example.com/api/v3/repos/o/r"
+        );
+    }
+
+    #[test]
+    fn search_response_deserializes_incomplete_results_flag() {
+        // Sanity check that the `incomplete_results` field round-trips
+        // through JSON — the pagination loop relies on it to decide
+        // whether to cache a partial page.
+        let json = r#"{
+            "total_count": 0,
+            "incomplete_results": true,
+            "items": []
+        }"#;
+        let response: GitHubSearchResponse =
+            serde_json::from_str(json).expect("parse search response");
+        assert!(response.incomplete_results);
+        assert_eq!(response.total_count, 0);
+        assert!(response.items.is_empty());
+
+        let complete_json = r#"{
+            "total_count": 1,
+            "incomplete_results": false,
+            "items": []
+        }"#;
+        let response: GitHubSearchResponse =
+            serde_json::from_str(complete_json).expect("parse complete response");
+        assert!(!response.incomplete_results);
     }
 
     #[test]
