@@ -184,7 +184,8 @@ pub async fn get_user_repositories(
     let access_token = get_access_token(&state).await?;
     let client = IssuesClient::new(access_token);
 
-    let repos = map_github_result(&app, state.inner(), client.get_user_repositories().await).await?;
+    let repos =
+        map_github_result(&app, state.inner(), client.get_user_repositories().await).await?;
 
     Ok(repos
         .into_iter()

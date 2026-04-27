@@ -51,9 +51,8 @@ impl AuthExpiredEvent {
     pub fn new(reason: &str) -> Self {
         Self {
             reason: reason.to_string(),
-            message:
-                "GitHub の認証が切れました。再度ログインして連携をやり直してください。"
-                    .to_string(),
+            message: "GitHub の認証が切れました。再度ログインして連携をやり直してください。"
+                .to_string(),
         }
     }
 }

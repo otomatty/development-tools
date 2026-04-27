@@ -48,7 +48,12 @@ pub async fn get_github_stats(
         .ok_or("Not logged in")?;
 
     let client = GitHubClient::new(token);
-    map_github_result(&app, state.inner(), client.get_user_stats(&user.username).await).await
+    map_github_result(
+        &app,
+        state.inner(),
+        client.get_user_stats(&user.username).await,
+    )
+    .await
 }
 
 /// Get local user stats (gamification data)

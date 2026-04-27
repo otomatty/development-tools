@@ -168,7 +168,10 @@ pub async fn run_startup_token_validation(app: AppHandle, state: &AppState) {
     let access_token = match state.token_manager.get_access_token().await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Startup auth check: failed to load token for {}: {}", user.id, e);
+            eprintln!(
+                "Startup auth check: failed to load token for {}: {}",
+                user.id, e
+            );
             return;
         }
     };
