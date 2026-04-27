@@ -42,6 +42,8 @@ pub mod cache_durations {
     pub const CONTRIBUTION_GRAPH: i64 = 60;
     /// GitHub stats cache duration (30 minutes)
     pub const GITHUB_STATS: i64 = 30;
+    /// User stats (gamification) cache duration (1 hour)
+    pub const USER_STATS: i64 = 60;
     /// Repositories cache duration (2 hours)
     pub const REPOSITORIES: i64 = 120;
     /// Languages cache duration (24 hours)
