@@ -232,12 +232,21 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                 // off here) and auto-sync after only MAX_SLEEP_SECONDS instead
                 // of the configured interval. Persist a synthetic baseline so
                 // the elapsed-time check works correctly from now on.
-                if metadata
+                //
+                // Guard against re-persisting on every Sleep: if a baseline
+                // already exists, leave it alone — overwriting it would reset
+                // the interval countdown on every iteration and the first
+                // auto-sync would never fire.
+                let needs_baseline = metadata
                     .as_ref()
                     .and_then(|m| m.last_sync_at_parsed())
                     .is_none()
-                    && !settings.sync_on_startup
-                {
+                    && metadata
+                        .as_ref()
+                        .and_then(|m| m.scheduler_baseline_at_parsed())
+                        .is_none()
+                    && !settings.sync_on_startup;
+                if needs_baseline {
                     persist_startup_baseline(&state.db, user.id).await;
                 }
                 is_first_run = false;
@@ -339,15 +348,27 @@ fn build_inputs(
     is_first_run: bool,
     now: DateTime<Utc>,
 ) -> SchedulerInputs {
-    // Prefer DB-persisted rate-limit info; fall back to the in-memory copy
-    // we kept after a failed `record_sync_rate_limit` so the next decision
-    // still sees the rate-limited state.
+    // Prefer the *later* future reset between DB and the in-memory
+    // fallback. A stale (already-past) DB reset must not shadow a future
+    // fallback — otherwise the scheduler would resume hitting GitHub before
+    // the real reset window after `record_sync_rate_limit` failed to
+    // persist.
     let db_reset = metadata.and_then(|m| m.rate_limit_reset_at_parsed());
     let db_remaining = metadata.and_then(|m| m.rate_limit_remaining);
-    let (rate_limit_remaining, rate_limit_reset_at) = match (db_reset, rate_limit_reset_fallback) {
-        (Some(_), _) => (db_remaining, db_reset),
-        (None, Some(fallback)) if fallback > now => (Some(0), Some(fallback)),
-        _ => (db_remaining, db_reset),
+    let db_future = db_reset.filter(|d| *d > now);
+    let fb_future = rate_limit_reset_fallback.filter(|f| *f > now);
+    let (rate_limit_remaining, rate_limit_reset_at) = match (db_future, fb_future) {
+        // Both future: pick the later (more conservative) reset. Whichever
+        // wins, we use the matching `remaining`. If we picked the fallback,
+        // we just got rate-limited so remaining is effectively 0.
+        (Some(d), Some(f)) if d >= f => (db_remaining, Some(d)),
+        (Some(_), Some(f)) => (Some(0), Some(f)),
+        (Some(d), None) => (db_remaining, Some(d)),
+        (None, Some(f)) => (Some(0), Some(f)),
+        // Neither is a *future* reset: pass DB's raw values through. A stale
+        // DB reset will be filtered later by `active_rate_limit_until`'s
+        // `reset > now` check, so leaving it in place is harmless.
+        (None, None) => (db_remaining, db_reset),
     };
 
     // Effective baseline for the interval calculation: prefer the real
@@ -519,9 +540,12 @@ mod tests {
     }
 
     #[test]
-    fn build_inputs_uses_db_when_present() {
+    fn build_inputs_uses_db_when_db_reset_is_later() {
+        // When DB has a future reset later than the fallback, the DB value
+        // wins (more conservative wait).
         let now = Utc::now();
-        let reset_db = now + chrono::Duration::minutes(5);
+        let reset_db = now + chrono::Duration::minutes(60);
+        let fallback = Some(now + chrono::Duration::minutes(10));
         let mut settings = UserSettings::default();
         settings.sync_interval_minutes = 60;
         settings.background_sync = true;
@@ -534,16 +558,16 @@ mod tests {
             last_sync_at: None,
             last_sync_cursor: None,
             etag: None,
-            rate_limit_remaining: Some(0),
+            rate_limit_remaining: Some(123),
             rate_limit_reset_at: Some(reset_db.to_rfc3339()),
             scheduler_baseline_at: None,
             last_skipped_at: None,
             last_skipped_reason: None,
         };
-        let fallback = Some(now + chrono::Duration::minutes(60));
 
         let inputs = build_inputs(&settings, Some(&metadata), fallback, false, now);
-        assert_eq!(inputs.rate_limit_remaining, Some(0));
+        // DB's `remaining` should pass through when DB wins.
+        assert_eq!(inputs.rate_limit_remaining, Some(123));
         assert_eq!(
             inputs.rate_limit_reset_at.unwrap().timestamp(),
             reset_db.timestamp()
@@ -617,6 +641,66 @@ mod tests {
         assert_eq!(
             inputs.last_sync_at.unwrap().timestamp(),
             real_last.timestamp()
+        );
+    }
+
+    #[test]
+    fn build_inputs_uses_fallback_when_db_reset_is_stale() {
+        // Regression: DB reset in the past must not shadow a future fallback.
+        // Without this, after a failed record_sync_rate_limit the loop would
+        // resume hitting GitHub before the real reset.
+        let now = Utc::now();
+        let stale_db_reset = now - chrono::Duration::minutes(10);
+        let fresh_fallback = now + chrono::Duration::minutes(10);
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: GITHUB_STATS_SYNC_TYPE.to_string(),
+            last_sync_at: Some((now - chrono::Duration::minutes(1)).to_rfc3339()),
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: Some(2000),
+            rate_limit_reset_at: Some(stale_db_reset.to_rfc3339()),
+            scheduler_baseline_at: None,
+            last_skipped_at: None,
+            last_skipped_reason: None,
+        };
+        let settings = UserSettings::default();
+
+        let inputs = build_inputs(&settings, Some(&metadata), Some(fresh_fallback), false, now);
+        assert_eq!(inputs.rate_limit_remaining, Some(0));
+        assert_eq!(
+            inputs.rate_limit_reset_at.unwrap().timestamp(),
+            fresh_fallback.timestamp()
+        );
+    }
+
+    #[test]
+    fn build_inputs_picks_later_when_both_db_and_fallback_future() {
+        // When both DB and fallback are in the future, pick the later one
+        // (more conservative wait).
+        let now = Utc::now();
+        let earlier = now + chrono::Duration::minutes(5);
+        let later = now + chrono::Duration::minutes(15);
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: GITHUB_STATS_SYNC_TYPE.to_string(),
+            last_sync_at: None,
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: Some(0),
+            rate_limit_reset_at: Some(earlier.to_rfc3339()),
+            scheduler_baseline_at: None,
+            last_skipped_at: None,
+            last_skipped_reason: None,
+        };
+        let settings = UserSettings::default();
+
+        let inputs = build_inputs(&settings, Some(&metadata), Some(later), false, now);
+        assert_eq!(
+            inputs.rate_limit_reset_at.unwrap().timestamp(),
+            later.timestamp()
         );
     }
 
