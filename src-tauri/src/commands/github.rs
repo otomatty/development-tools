@@ -451,8 +451,8 @@ pub async fn run_github_sync(
     // sync. (Audit §9.2: ensure non-fallback paths populate the cache too.)
     {
         let now = chrono::Utc::now();
-        let expires_at = now
-            + chrono::Duration::minutes(crate::database::models::cache::cache_durations::GITHUB_STATS);
+        let expires_at =
+            now + chrono::Duration::minutes(crate::database::cache_durations::GITHUB_STATS);
         if let Err(e) = state
             .db
             .save_cache(user.id, cache_types::GITHUB_STATS, &stats_json, expires_at)
@@ -1342,10 +1342,8 @@ pub async fn get_github_stats_with_cache(
                 .map_err(|e| format!("Failed to serialize stats: {}", e))?;
 
             let now = chrono::Utc::now();
-            let expires_at = now
-                + chrono::Duration::minutes(
-                    crate::database::models::cache::cache_durations::GITHUB_STATS,
-                );
+            let expires_at =
+                now + chrono::Duration::minutes(crate::database::cache_durations::GITHUB_STATS);
 
             // Save to cache (ignore errors - caching is best effort)
             let _ = state
@@ -1432,10 +1430,8 @@ pub async fn get_user_stats_with_cache(
                 .map_err(|e| format!("Failed to serialize stats: {}", e))?;
 
             let now = chrono::Utc::now();
-            let expires_at = now
-                + chrono::Duration::minutes(
-                    crate::database::models::cache::cache_durations::USER_STATS,
-                );
+            let expires_at =
+                now + chrono::Duration::minutes(crate::database::cache_durations::USER_STATS);
 
             let _ = state
                 .db

@@ -173,8 +173,10 @@ Dependencies (このファイルが使用するファイル):
 ホーム画面 (`src/pages/Home/Home.tsx`) は本フックを介して `*_with_cache` を呼び、以下を実現する:
 
 - キャッシュ即時表示 → バックグラウンドで再検証 (Stale-While-Revalidate)
-- ウィンドウ復帰時 / ネットワーク再接続時の自動再検証
-- `staleTime` 経過後のみ revalidate を発火（無駄な API コールを抑制）
+- ウィンドウフォーカス時は `staleTime` を経過していれば再検証（無駄な API コールを抑制）
+- ネットワーク再接続時は `staleTime` を待たず即時再検証（オフライン中の停滞分を取り戻すため）
+- `from_cache=true` のレスポンスでは `staleTime` タイマーを更新しないため、
+  キャッシュフォールバック直後はフォーカス復帰でも即座に再検証される
 - `from_cache=true` または直近の revalidate がエラーの場合は `CacheStatusBanner`
   （`src/pages/Home/CacheStatusBanner.tsx`）でユーザーに通知し、最終更新時刻と再試行ボタンを提示する
 

@@ -84,20 +84,29 @@ export const Home = () => {
     };
   }, [enabled]);
 
+  const githubRevalidate = githubStatsQuery.revalidate;
+  const userRevalidate = userStatsQuery.revalidate;
   const handleRetry = useCallback(() => {
-    void githubStatsQuery.revalidate();
-    void userStatsQuery.revalidate();
-  }, [githubStatsQuery, userStatsQuery]);
+    void githubRevalidate();
+    void userRevalidate();
+  }, [githubRevalidate, userRevalidate]);
 
   // Initial loading: wait for auth restore and the first data fetch when
   // logged in. Cached data short-circuits this — once any cached value is
   // available we render the dashboard and let the banner communicate
   // freshness.
+  //
+  // We deliberately do NOT depend on the hooks' `isLoading` flags here. When
+  // `enabled` flips from false to true, those flags only become true after
+  // the initial-load effect fires — which is one render frame too late.
+  // Anchoring on `data === null && error === null` shows the skeleton until
+  // either succeeds, avoiding a flash of empty dashboard.
+  const githubPending =
+    githubStatsQuery.data === null && githubStatsQuery.error === null;
+  const userPending =
+    userStatsQuery.data === null && userStatsQuery.error === null;
   const initialDataLoading =
-    isLoggedIn &&
-    (githubStatsQuery.isLoading || userStatsQuery.isLoading || levelLoading) &&
-    githubStatsQuery.data === null &&
-    userStatsQuery.data === null;
+    isLoggedIn && (githubPending || userPending || levelLoading);
 
   const isLoading = authLoading || initialDataLoading;
 

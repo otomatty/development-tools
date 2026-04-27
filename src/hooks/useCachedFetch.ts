@@ -78,9 +78,21 @@ export function useCachedFetch<T>(
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
-  const lastFetchedAtRef = useRef<number | null>(null);
+  // Tracks when fresh (non-cache) data was last received. Used by the
+  // focus-revalidation effect to gate against `staleTime` so we don't slam the
+  // API every time the window is brought to the foreground.
+  const lastFreshAtRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
+  // Mirror of `enabled` available inside the in-flight async closure. Lets us
+  // discard a late response that arrived after the consumer disabled the hook
+  // (e.g. the user logged out) so the previous user's data never leaks into
+  // the next session.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  // Mirror of `data` for use inside event handlers that should not re-bind
+  // every render.
+  const hasDataRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -90,6 +102,7 @@ export function useCachedFetch<T>(
   }, []);
 
   const run = useCallback(async (mode: 'initial' | 'revalidate') => {
+    if (!enabledRef.current) return;
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     if (mode === 'initial') {
@@ -99,19 +112,25 @@ export function useCachedFetch<T>(
     }
     try {
       const response = await fetcherRef.current();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || !enabledRef.current) return;
       setData(response.data);
+      hasDataRef.current = true;
       setFromCache(response.fromCache);
       setCachedAt(response.cachedAt);
       setExpiresAt(response.expiresAt);
       setError(null);
-      lastFetchedAtRef.current = Date.now();
+      // Only reset the freshness timer when the response actually came from
+      // the API. If we returned cached data, the data is already considered
+      // stale and a focus/reconnect should be free to revalidate immediately.
+      if (!response.fromCache) {
+        lastFreshAtRef.current = Date.now();
+      }
     } catch (e) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || !enabledRef.current) return;
       setError(e instanceof Error ? e : new Error(String(e)));
     } finally {
       inFlightRef.current = false;
-      if (mountedRef.current) {
+      if (mountedRef.current && enabledRef.current) {
         if (mode === 'initial') {
           setIsLoading(false);
         } else {
@@ -121,10 +140,20 @@ export function useCachedFetch<T>(
     }
   }, []);
 
-  // Initial load when enabled flips true.
+  // Initial load when enabled flips true; reset all state when it flips false
+  // so a logout + login as a different user can't briefly show the previous
+  // user's stats.
   useEffect(() => {
     if (!enabled) {
+      setData(null);
+      hasDataRef.current = false;
+      setFromCache(false);
+      setCachedAt(null);
+      setExpiresAt(null);
+      setError(null);
+      setIsRevalidating(false);
       setIsLoading(false);
+      lastFreshAtRef.current = null;
       return;
     }
     void run('initial');
@@ -134,7 +163,7 @@ export function useCachedFetch<T>(
   useEffect(() => {
     if (!enabled || !revalidateOnFocus) return;
     const handler = () => {
-      const last = lastFetchedAtRef.current;
+      const last = lastFreshAtRef.current;
       if (last === null || Date.now() - last >= staleTime) {
         void run('revalidate');
       }
@@ -143,15 +172,13 @@ export function useCachedFetch<T>(
     return () => window.removeEventListener('focus', handler);
   }, [enabled, revalidateOnFocus, run, staleTime]);
 
-  // Revalidate when the network reconnects.
+  // Revalidate when the network reconnects. We always trigger here — the
+  // common case (came back online, want fresh data) and the recovery case
+  // (initial load failed completely, have nothing on screen) both want a
+  // re-fetch. `inFlightRef` dedupes against an in-progress initial load.
   useEffect(() => {
     if (!enabled || !revalidateOnReconnect) return;
     if (!isOnline) return;
-    const last = lastFetchedAtRef.current;
-    // If we don't yet have data, the initial-load effect handles it. Only
-    // fire the reconnect revalidation when we already have (likely stale)
-    // data from a prior offline session.
-    if (last === null) return;
     void run('revalidate');
   }, [enabled, isOnline, revalidateOnReconnect, run]);
 
