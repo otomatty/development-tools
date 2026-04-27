@@ -49,8 +49,28 @@ RateLimited { reason, seconds }      - レート制限解除を待つ
 2. 初回 + `sync_on_startup = true` → `RunSync`
 3. `sync_interval_minutes <= 0` → `Idle("manual_only")`
 4. レート制限が閾値未満 (`remaining <= 50`) かつ `reset_at` が未来 → `RateLimited`
-5. `last_sync_at` が無い、または経過時間が `interval` 以上 → `RunSync`
+5. 経過時間が `interval` 以上 → `RunSync`
 6. それ以外 → `Sleep`（最低 30 秒、最大 5 分にクランプ）
+
+#### `last_sync_at = None` の扱い
+
+履歴が無いケース（fresh install など）では：
+
+- 初回 + `sync_on_startup = false` → `now` を baseline と見なし、Sleep する
+  （`interval` 後に最初の自動同期）。ユーザーが明示的に「起動時同期しない」を
+  選んでいるため、catch-up でその意図を上書きしない。
+- それ以外（履歴無しの 2 回目以降など実質的に発生しないケース） → `RunSync`
+  で復帰させる。
+
+### 並行制御
+
+`run_github_sync` は `AppState.sync_lock`（`tokio::sync::Mutex<()>`）を
+取得してから実行する。手動同期（"今すぐ同期" ボタン）とスケジューラ同期が
+重なっても、片方が完了するまでもう片方はブロックされる。
+
+Mutex を取らないと、両者が同じ pre-sync snapshot
+（`get_previous_github_stats`）を読んで XP / バッジ / チャレンジ進捗を
+それぞれ適用してしまい、ユーザーの XP が二重加算される。
 
 ### スリープのクランプ理由
 

@@ -199,10 +199,18 @@ pub async fn sync_github_stats(
 /// Shared by the `sync_github_stats` Tauri command and the background sync
 /// scheduler (see `crate::sync_scheduler`). Both call sites pass an
 /// [`AppHandle`](tauri::AppHandle) and the application's [`AppState`].
+///
+/// Concurrency: this function takes `state.sync_lock` for the duration of the
+/// run so a manual "sync now" cannot race a scheduler-driven sync. Without
+/// the lock, both invocations would read the same pre-sync snapshot via
+/// `get_previous_github_stats` and each apply the diff independently,
+/// double-counting XP and badges.
 pub async fn run_github_sync(
     app: &tauri::AppHandle,
     state: &AppState,
 ) -> Result<SyncResult, String> {
+    let _guard = state.sync_lock.lock().await;
+
     let token = state
         .token_manager
         .get_access_token()
@@ -855,17 +863,22 @@ async fn persist_sync_success(state: &AppState, user_id: i64) {
     }
 
     // A successful sync invalidates any prior skip event (rate-limited /
-    // background-disabled etc.).
-    let _ = state
+    // background-disabled etc.). Log on failure so silent stale data doesn't
+    // make the scheduler keep skipping based on outdated rate-limit metadata.
+    if let Err(e) = state
         .db
         .clear_sync_skipped(user_id, GITHUB_STATS_SYNC_TYPE)
-        .await;
-    // Also clear stale rate-limit constraints from a prior failure so the
-    // scheduler doesn't keep skipping based on outdated reset times.
-    let _ = state
+        .await
+    {
+        eprintln!("Failed to clear sync_skipped after sync: {}", e);
+    }
+    if let Err(e) = state
         .db
         .clear_sync_rate_limit(user_id, GITHUB_STATS_SYNC_TYPE)
-        .await;
+        .await
+    {
+        eprintln!("Failed to clear sync_rate_limit after sync: {}", e);
+    }
 }
 
 /// Get contribution calendar

@@ -67,6 +67,11 @@ pub fn start_scheduler(app: AppHandle) -> SyncSchedulerHandle {
 
 async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<SchedulerStatus>>) {
     let mut is_first_run = true;
+    // Volatile fallback for the rate-limit reset time when persisting it to
+    // `sync_metadata` fails. Without this, a transient DB error would cause
+    // the next iteration to lose the rate-limit context and risk hitting the
+    // GitHub API again before the reset.
+    let mut rate_limit_reset_fallback: Option<DateTime<Utc>> = None;
 
     loop {
         let state = app.state::<AppState>();
@@ -113,7 +118,19 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
         };
 
         let now = Utc::now();
-        let inputs = build_inputs(&settings, metadata.as_ref(), is_first_run, now);
+        // Drop the fallback once its reset has passed.
+        if let Some(reset) = rate_limit_reset_fallback {
+            if reset <= now {
+                rate_limit_reset_fallback = None;
+            }
+        }
+        let inputs = build_inputs(
+            &settings,
+            metadata.as_ref(),
+            rate_limit_reset_fallback,
+            is_first_run,
+            now,
+        );
         let projected_next = next_sync_at(&inputs);
 
         write_status(&status, &settings, metadata.as_ref(), projected_next, true).await;
@@ -130,6 +147,9 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                         // so manual and scheduled flows stay in sync. Nothing to
                         // do here besides loop back; the next iteration sees the
                         // fresh `last_sync_at` and computes a Sleep action.
+                        // A successful sync invalidates any in-memory rate-limit
+                        // fallback we may have been carrying.
+                        rate_limit_reset_fallback = None;
                     }
                     Err(err_msg) => {
                         eprintln!("Scheduler: scheduled sync failed: {}", err_msg);
@@ -143,17 +163,25 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                             // would let the next iteration hit the API
                             // immediately and burn through whatever budget the
                             // reset is supposed to wait out.
-                            log_db_err(
-                                "record_sync_rate_limit",
-                                state
-                                    .db
-                                    .record_sync_rate_limit(
-                                        user.id,
-                                        GITHUB_STATS_SYNC_TYPE,
-                                        reset_at,
-                                    )
-                                    .await,
-                            );
+                            match state
+                                .db
+                                .record_sync_rate_limit(user.id, GITHUB_STATS_SYNC_TYPE, reset_at)
+                                .await
+                            {
+                                Ok(()) => {
+                                    // DB has the canonical value now; the
+                                    // in-memory fallback is no longer needed.
+                                    rate_limit_reset_fallback = None;
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "Scheduler: record_sync_rate_limit failed: {} \
+                                         (using in-memory fallback)",
+                                        e
+                                    );
+                                    rate_limit_reset_fallback = Some(reset_at);
+                                }
+                            }
                             log_db_err(
                                 "record_sync_skipped (rate_limited)",
                                 state
@@ -293,16 +321,28 @@ async fn update_status_skipped(
 fn build_inputs(
     settings: &UserSettings,
     metadata: Option<&SyncMetadata>,
+    rate_limit_reset_fallback: Option<DateTime<Utc>>,
     is_first_run: bool,
     now: DateTime<Utc>,
 ) -> SchedulerInputs {
+    // Prefer DB-persisted rate-limit info; fall back to the in-memory copy
+    // we kept after a failed `record_sync_rate_limit` so the next decision
+    // still sees the rate-limited state.
+    let db_reset = metadata.and_then(|m| m.rate_limit_reset_at_parsed());
+    let db_remaining = metadata.and_then(|m| m.rate_limit_remaining);
+    let (rate_limit_remaining, rate_limit_reset_at) = match (db_reset, rate_limit_reset_fallback) {
+        (Some(_), _) => (db_remaining, db_reset),
+        (None, Some(fallback)) if fallback > now => (Some(0), Some(fallback)),
+        _ => (db_remaining, db_reset),
+    };
+
     SchedulerInputs {
         sync_on_startup: settings.sync_on_startup,
         sync_interval_minutes: settings.sync_interval_minutes,
         background_sync: settings.background_sync,
         last_sync_at: metadata.and_then(|m| m.last_sync_at_parsed()),
-        rate_limit_remaining: metadata.and_then(|m| m.rate_limit_remaining),
-        rate_limit_reset_at: metadata.and_then(|m| m.rate_limit_reset_at_parsed()),
+        rate_limit_remaining,
+        rate_limit_reset_at,
         is_first_run,
         now,
     }
@@ -434,6 +474,62 @@ mod tests {
         let now = Utc::now();
         let future = now + chrono::Duration::seconds(300);
         assert_eq!(seconds_until(future, now), 300);
+    }
+
+    #[test]
+    fn build_inputs_uses_db_when_present() {
+        let now = Utc::now();
+        let reset_db = now + chrono::Duration::minutes(5);
+        let mut settings = UserSettings::default();
+        settings.sync_interval_minutes = 60;
+        settings.background_sync = true;
+        settings.sync_on_startup = false;
+
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: GITHUB_STATS_SYNC_TYPE.to_string(),
+            last_sync_at: None,
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: Some(0),
+            rate_limit_reset_at: Some(reset_db.to_rfc3339()),
+            last_skipped_at: None,
+            last_skipped_reason: None,
+        };
+        let fallback = Some(now + chrono::Duration::minutes(60));
+
+        let inputs = build_inputs(&settings, Some(&metadata), fallback, false, now);
+        assert_eq!(inputs.rate_limit_remaining, Some(0));
+        assert_eq!(
+            inputs.rate_limit_reset_at.unwrap().timestamp(),
+            reset_db.timestamp()
+        );
+    }
+
+    #[test]
+    fn build_inputs_uses_fallback_when_db_lacks_reset() {
+        let now = Utc::now();
+        let fallback_reset = now + chrono::Duration::minutes(10);
+        let settings = UserSettings::default();
+
+        let inputs = build_inputs(&settings, None, Some(fallback_reset), false, now);
+        assert_eq!(inputs.rate_limit_remaining, Some(0));
+        assert_eq!(
+            inputs.rate_limit_reset_at.unwrap().timestamp(),
+            fallback_reset.timestamp()
+        );
+    }
+
+    #[test]
+    fn build_inputs_ignores_expired_fallback() {
+        let now = Utc::now();
+        let expired_fallback = now - chrono::Duration::minutes(1);
+        let settings = UserSettings::default();
+
+        let inputs = build_inputs(&settings, None, Some(expired_fallback), false, now);
+        assert_eq!(inputs.rate_limit_remaining, None);
+        assert_eq!(inputs.rate_limit_reset_at, None);
     }
 
     #[tokio::test]

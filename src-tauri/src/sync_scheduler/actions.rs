@@ -16,12 +16,18 @@ const RATE_LIMIT_FLOOR: i32 = 50;
 /// Decide what the scheduler should do at `inputs.now`.
 ///
 /// Order of evaluation, from highest to lowest precedence:
-/// 1. `background_sync = false` → Idle
-/// 2. `sync_interval_minutes <= 0` (and not first-run startup) → Idle
-/// 3. Rate limit critical and reset is in the future → RateLimited
-/// 4. First run with `sync_on_startup = true` → RunSync
+/// 1. `background_sync = false` (unless first-run with `sync_on_startup`) → Idle
+/// 2. First run with `sync_on_startup = true` → RunSync
+/// 3. `sync_interval_minutes <= 0` → Idle
+/// 4. Rate limit critical and reset is in the future → RateLimited
 /// 5. Last sync older than the interval → RunSync
 /// 6. Otherwise → Sleep until the next due time
+///
+/// Special case for #5/#6: when `last_sync_at == None`, the absence of a
+/// baseline normally triggers RunSync (catch-up). For first-run users who set
+/// `sync_on_startup = false`, that catch-up is **suppressed** — we synthesize
+/// a baseline of `now` so the first auto-run lands one full interval later,
+/// honoring the explicit opt-out.
 pub fn decide_action(inputs: &SchedulerInputs) -> SchedulerAction {
     if !inputs.background_sync {
         // Even with sync_on_startup=true we honor background_sync=false on
@@ -49,18 +55,24 @@ pub fn decide_action(inputs: &SchedulerInputs) -> SchedulerAction {
     }
 
     let interval = Duration::minutes(inputs.sync_interval_minutes as i64);
-    match inputs.last_sync_at {
-        None => SchedulerAction::RunSync,
-        Some(last) => {
-            let elapsed = inputs.now.signed_duration_since(last);
-            if elapsed >= interval {
-                SchedulerAction::RunSync
-            } else {
-                let remaining = interval - elapsed;
-                SchedulerAction::Sleep {
-                    seconds: clamp_sleep(remaining),
-                }
-            }
+
+    // Honor sync_on_startup=false even when there's no history: we treat the
+    // absence of a baseline as "schedule the first auto-run after the
+    // configured interval" rather than catching up immediately, which would
+    // contradict the user's explicit opt-out.
+    let baseline = match inputs.last_sync_at {
+        Some(last) => last,
+        None if inputs.is_first_run && !inputs.sync_on_startup => inputs.now,
+        None => return SchedulerAction::RunSync,
+    };
+
+    let elapsed = inputs.now.signed_duration_since(baseline);
+    if elapsed >= interval {
+        SchedulerAction::RunSync
+    } else {
+        let remaining = interval - elapsed;
+        SchedulerAction::Sleep {
+            seconds: clamp_sleep(remaining),
         }
     }
 }
@@ -77,10 +89,14 @@ pub fn next_sync_at(inputs: &SchedulerInputs) -> Option<DateTime<Utc>> {
         return None;
     }
     let interval = Duration::minutes(inputs.sync_interval_minutes as i64);
-    match inputs.last_sync_at {
-        None => Some(inputs.now),
-        Some(last) => Some(last + interval),
-    }
+    // Mirrors `decide_action`: a first-run user with sync_on_startup=false
+    // and no history is scheduled `interval` from now, not immediately.
+    let baseline = match inputs.last_sync_at {
+        Some(last) => last,
+        None if inputs.is_first_run && !inputs.sync_on_startup => inputs.now,
+        None => return Some(inputs.now),
+    };
+    Some(baseline + interval)
 }
 
 fn check_rate_limit(inputs: &SchedulerInputs) -> Option<SchedulerAction> {
@@ -132,15 +148,39 @@ mod tests {
         assert_eq!(decide_action(&inputs), SchedulerAction::RunSync);
     }
 
-    /// TC-002: First run without startup sync waits for the interval.
+    /// TC-002: First run with `sync_on_startup=false` waits the full interval,
+    /// even when there's no `last_sync_at` history. The user explicitly opted
+    /// out of startup sync; the catch-up branch must not override that.
     #[test]
-    fn first_run_without_startup_sync_runs_when_no_history() {
+    fn first_run_without_startup_sync_sleeps_when_no_history() {
         let inputs = SchedulerInputs {
             is_first_run: true,
             sync_on_startup: false,
+            sync_interval_minutes: 60,
+            last_sync_at: None,
             ..base_inputs()
         };
-        // No history => RunSync (catch-up) when background_sync is on.
+        match decide_action(&inputs) {
+            SchedulerAction::Sleep { seconds } => {
+                assert!(seconds >= MIN_SLEEP_SECONDS);
+                assert!(seconds <= MAX_SLEEP_SECONDS);
+            }
+            other => panic!("expected Sleep, got {other:?}"),
+        }
+    }
+
+    /// TC-002b: Subsequent run with no history (impossible in practice but
+    /// covered for defence-in-depth) still RunSync's so the loop can recover
+    /// from a metadata wipe.
+    #[test]
+    fn subsequent_run_without_history_runs() {
+        let inputs = SchedulerInputs {
+            is_first_run: false,
+            sync_on_startup: false,
+            sync_interval_minutes: 60,
+            last_sync_at: None,
+            ..base_inputs()
+        };
         assert_eq!(decide_action(&inputs), SchedulerAction::RunSync);
     }
 
