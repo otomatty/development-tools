@@ -124,7 +124,14 @@ impl TokenManager {
         Ok(())
     }
 
-    /// Validate that a token is working by making a test API call
+    /// Validate that a token is working by making a test API call.
+    ///
+    /// Returns:
+    /// - `Ok(true)` when the API call succeeded (token is currently accepted)
+    /// - `Ok(false)` when GitHub responded with 401 (token revoked / invalid)
+    /// - `Err(_)` for transport / non-401 HTTP failures so callers can
+    ///   distinguish "definitely revoked" from "couldn't reach GitHub" — the
+    ///   latter must NOT trigger a forced logout.
     pub async fn validate_token(&self, access_token: &str) -> TokenResult<bool> {
         let client = reqwest::Client::new();
         let response = client
@@ -135,6 +142,9 @@ impl TokenManager {
             .await
             .map_err(OAuthError::from)?;
 
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Ok(false);
+        }
         Ok(response.status().is_success())
     }
 }

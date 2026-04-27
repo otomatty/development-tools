@@ -8,3 +8,4 @@
  */
 
 export { LoginCard } from './LoginCard';
+export { SessionExpiredBanner } from './SessionExpiredBanner';

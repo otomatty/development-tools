@@ -2,9 +2,10 @@
 //!
 //! These commands handle fetching data from the GitHub API.
 
-use tauri::{command, Emitter, State};
+use tauri::{command, AppHandle, Emitter, State};
 
 use super::auth::AppState;
+use crate::auth::map_github_result;
 use crate::database::{
     badge, challenge, level, streak, xp, GitHubStatsSnapshot, UserStats, XpActionType,
 };
@@ -13,7 +14,10 @@ use crate::utils::notifications::send_notification;
 
 /// Get GitHub user profile
 #[command]
-pub async fn get_github_user(state: State<'_, AppState>) -> Result<GitHubUser, String> {
+pub async fn get_github_user(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<GitHubUser, String> {
     let token = state
         .token_manager
         .get_access_token()
@@ -21,12 +25,15 @@ pub async fn get_github_user(state: State<'_, AppState>) -> Result<GitHubUser, S
         .map_err(|e| e.to_string())?;
 
     let client = GitHubClient::new(token);
-    client.get_user().await.map_err(|e| e.to_string())
+    map_github_result(&app, state.inner(), client.get_user().await).await
 }
 
 /// Get GitHub stats for the current user
 #[command]
-pub async fn get_github_stats(state: State<'_, AppState>) -> Result<GitHubStats, String> {
+pub async fn get_github_stats(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<GitHubStats, String> {
     let token = state
         .token_manager
         .get_access_token()
@@ -41,10 +48,7 @@ pub async fn get_github_stats(state: State<'_, AppState>) -> Result<GitHubStats,
         .ok_or("Not logged in")?;
 
     let client = GitHubClient::new(token);
-    client
-        .get_user_stats(&user.username)
-        .await
-        .map_err(|e| e.to_string())
+    map_github_result(&app, state.inner(), client.get_user_stats(&user.username).await).await
 }
 
 /// Get local user stats (gamification data)
@@ -232,10 +236,8 @@ pub async fn run_github_sync(
         .ok_or("Not logged in")?;
 
     let client = GitHubClient::new(token);
-    let github_stats = client
-        .get_user_stats(&user.username)
-        .await
-        .map_err(|e| e.to_string())?;
+    let github_stats =
+        map_github_result(app, state, client.get_user_stats(&user.username).await).await?;
 
     // Get previous stats for diff calculation
     let previous_stats_json = state
@@ -891,6 +893,7 @@ async fn persist_sync_success(state: &AppState, user_id: i64) {
 /// Get contribution calendar
 #[command]
 pub async fn get_contribution_calendar(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let token = state
@@ -907,10 +910,12 @@ pub async fn get_contribution_calendar(
         .ok_or("Not logged in")?;
 
     let client = GitHubClient::new(token);
-    let contributions = client
-        .get_contribution_calendar(&user.username)
-        .await
-        .map_err(|e| e.to_string())?;
+    let contributions = map_github_result(
+        &app,
+        state.inner(),
+        client.get_contribution_calendar(&user.username).await,
+    )
+    .await?;
 
     serde_json::to_value(contributions.contribution_calendar).map_err(|e| e.to_string())
 }
@@ -920,6 +925,7 @@ pub async fn get_contribution_calendar(
 /// Consolidates the common logic for building BadgeEvalContext used by
 /// both `get_badges_with_progress` and `get_near_completion_badges`.
 async fn build_badge_context(
+    app: &AppHandle,
     state: &State<'_, AppState>,
 ) -> Result<(badge::BadgeEvalContext, crate::database::models::User), String> {
     let user = state
@@ -945,10 +951,12 @@ async fn build_badge_context(
         .map_err(|e| e.to_string())?;
 
     let client = GitHubClient::new(token);
-    let github_stats = client
-        .get_user_stats(&user.username)
-        .await
-        .map_err(|e| e.to_string())?;
+    let github_stats = map_github_result(
+        app,
+        state.inner(),
+        client.get_user_stats(&user.username).await,
+    )
+    .await?;
 
     // Calculate level
     let current_level = level::level_from_xp(user_stats.total_xp);
@@ -975,9 +983,10 @@ async fn build_badge_context(
 /// Get badges with progress information
 #[command]
 pub async fn get_badges_with_progress(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<badge::BadgeWithProgress>, String> {
-    let (badge_context, user) = build_badge_context(&state).await?;
+    let (badge_context, user) = build_badge_context(&app, &state).await?;
 
     // Get earned badges
     let earned_badges = state
@@ -1002,11 +1011,12 @@ pub async fn get_badges_with_progress(
 /// Get badges that are close to being earned
 #[command]
 pub async fn get_near_completion_badges(
+    app: AppHandle,
     state: State<'_, AppState>,
     threshold_percent: Option<f32>,
 ) -> Result<Vec<badge::BadgeWithProgress>, String> {
     let threshold = threshold_percent.unwrap_or(50.0);
-    let (badge_context, user) = build_badge_context(&state).await?;
+    let (badge_context, user) = build_badge_context(&app, &state).await?;
 
     // Get earned badge IDs
     let earned_badges = state
@@ -1052,6 +1062,7 @@ pub struct CodeStatsSyncResult {
 /// Uses incremental sync to minimize API calls.
 #[command]
 pub async fn sync_code_stats(
+    app: AppHandle,
     state: State<'_, AppState>,
     force_full_sync: Option<bool>,
 ) -> Result<CodeStatsSyncResult, String> {
@@ -1110,10 +1121,12 @@ pub async fn sync_code_stats(
     let since = format!("{}T00:00:00Z", sync_from);
 
     // Fetch code stats from GitHub
-    let code_stats = client
-        .get_code_stats(&user.username, &since, 100)
-        .await
-        .map_err(|e| e.to_string())?;
+    let code_stats = map_github_result(
+        &app,
+        state.inner(),
+        client.get_code_stats(&user.username, &since, 100).await,
+    )
+    .await?;
 
     // Store each day's stats
     let mut total_additions = 0;
@@ -1224,7 +1237,10 @@ pub async fn get_code_stats_summary(
 
 /// Get detailed rate limit information
 #[command]
-pub async fn get_rate_limit_info(state: State<'_, AppState>) -> Result<RateLimitDetailed, String> {
+pub async fn get_rate_limit_info(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RateLimitDetailed, String> {
     let token = state
         .token_manager
         .get_access_token()
@@ -1232,16 +1248,14 @@ pub async fn get_rate_limit_info(state: State<'_, AppState>) -> Result<RateLimit
         .map_err(|e| e.to_string())?;
 
     let client = GitHubClient::new(token);
-    client
-        .get_detailed_rate_limit()
-        .await
-        .map_err(|e| e.to_string())
+    map_github_result(&app, state.inner(), client.get_detailed_rate_limit().await).await
 }
 
 // ============================================================================
 // Cache Fallback Commands
 // ============================================================================
 
+use crate::auth::{handle_unauthorized, reasons};
 use crate::database::cache_types;
 use crate::github::client::GitHubError;
 
@@ -1271,9 +1285,11 @@ pub struct CachedResponse<T> {
 ///
 /// Attempts to fetch fresh data from GitHub API. If that fails due to network error,
 /// falls back to cached data if available.
-/// Note: Authentication errors do NOT trigger cache fallback for security reasons.
+/// Note: Authentication errors do NOT trigger cache fallback for security reasons —
+/// instead they trigger the auth-expired flow (clear token + emit event).
 #[command]
 pub async fn get_github_stats_with_cache(
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CachedResponse<GitHubStats>, String> {
     let user = state
@@ -1321,7 +1337,12 @@ pub async fn get_github_stats_with_cache(
         Err(api_error) => {
             // Check if this is a network error (should fallback) or auth error (should not)
             if !is_network_error(&api_error) {
-                // Authentication or other API error - do not fallback to cache
+                // Authentication errors get the centralized 401 treatment so
+                // the UI surfaces a re-login prompt; other API errors bubble
+                // up unchanged.
+                if matches!(api_error, GitHubError::Unauthorized) {
+                    handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+                }
                 return Err(format!("GitHub API error: {}", api_error));
             }
 

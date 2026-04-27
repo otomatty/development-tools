@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use tauri::{AppHandle, Manager};
 use tokio::sync::{Notify, RwLock};
 
+use crate::auth::{classify_unauthorized, handle_unauthorized, reasons};
 use crate::commands::auth::AppState;
 use crate::commands::github::run_github_sync;
 use crate::database::models::code_stats::SyncMetadata;
@@ -155,6 +156,28 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                         eprintln!("Scheduler: scheduled sync failed: {}", err_msg);
                         let now = Utc::now();
                         let mut sleep_secs = MIN_FAILURE_SLEEP_SECONDS;
+
+                        // 401 detection: a revoked / invalidated token would
+                        // otherwise loop forever in MIN_FAILURE_SLEEP_SECONDS
+                        // increments because the failure isn't classified as
+                        // rate-limit. `run_github_sync` may have already
+                        // emitted `auth-expired` from inside the user-facing
+                        // command path, but the scheduler runs independently
+                        // (no `app` was wired through `map_github_result` for
+                        // every internal call), so re-trigger here. The
+                        // emitter is idempotent on the frontend side.
+                        if classify_unauthorized(&err_msg) {
+                            handle_unauthorized(
+                                &app,
+                                state.inner(),
+                                reasons::SCHEDULER_UNAUTHORIZED,
+                            )
+                            .await;
+                            // Skip straight to the logged-out wait branch on
+                            // the next iteration — the user is now signed out.
+                            wait_for_change_or_timeout(&notify, MIN_FAILURE_SLEEP_SECONDS).await;
+                            continue;
+                        }
 
                         if let Some(reset_at) = parse_rate_limit_reset(&err_msg) {
                             // Persist the reset time so subsequent decisions

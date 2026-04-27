@@ -4,12 +4,12 @@
 //! Device Flow is recommended for desktop apps as it doesn't require client_secret.
 
 use std::sync::Arc;
-use tauri::{command, State};
+use tauri::{command, AppHandle, State};
 use tokio::sync::Mutex;
 
 use crate::auth::{
-    AuthState, AuthToken, DeviceCodeResponse, DeviceFlow, DeviceFlowConfig, DeviceTokenStatus,
-    OAuthError, TokenManager, UserInfo,
+    handle_unauthorized, reasons, AuthState, AuthToken, DeviceCodeResponse, DeviceFlow,
+    DeviceFlowConfig, DeviceTokenStatus, OAuthError, TokenManager, UserInfo,
 };
 use crate::database::Database;
 use crate::github::GitHubClient;
@@ -104,8 +104,12 @@ pub async fn get_current_user(state: State<'_, AppState>) -> Result<Option<UserI
 /// Note: GitHub Device Flow tokens don't expire, but users can revoke them manually.
 /// This command checks if the current token is still valid by making a test API call.
 /// Returns `Ok(false)` if the user is not logged in.
+///
+/// Side effect: when GitHub responds with 401 (token revoked), the stored
+/// credential is cleared and the `auth-expired` event is emitted so the
+/// frontend can surface a re-login prompt without polling.
 #[command]
-pub async fn validate_token(state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn validate_token(app: AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
     // Check if user is logged in first
     let user = state
         .token_manager
@@ -129,7 +133,66 @@ pub async fn validate_token(state: State<'_, AppState>) -> Result<bool, String> 
         .await
         .map_err(|e| e.to_string())?;
 
+    if !is_valid {
+        // Token is definitively rejected by GitHub — clear it and notify the
+        // UI. Transport / network errors take the `Err` branch above and
+        // intentionally do NOT trigger a forced logout (see
+        // `TokenManager::validate_token`'s contract).
+        handle_unauthorized(&app, state.inner(), reasons::MANUAL_VALIDATION_FAILED).await;
+    }
+
     Ok(is_valid)
+}
+
+/// Best-effort startup probe of the persisted token.
+///
+/// Called from `lib.rs` setup *after* the Tauri runtime is ready so the
+/// `auth-expired` emit has a working app handle. Runs in a background task
+/// so it never delays splash → first paint, and silently no-ops when:
+/// - no user is logged in, or
+/// - GitHub is unreachable (transport error) — we don't want a flaky network
+///   on launch to log the user out.
+///
+/// Only a confirmed 401 from GitHub clears the token.
+pub async fn run_startup_token_validation(app: AppHandle, state: &AppState) {
+    let user = match state.token_manager.get_current_user().await {
+        Ok(Some(u)) => u,
+        Ok(None) => return,
+        Err(e) => {
+            // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+            eprintln!("Startup auth check: failed to read current user: {}", e);
+            return;
+        }
+    };
+
+    let access_token = match state.token_manager.get_access_token().await {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Startup auth check: failed to load token for {}: {}", user.id, e);
+            return;
+        }
+    };
+
+    match state.token_manager.validate_token(&access_token).await {
+        Ok(true) => {
+            // Token still works — nothing to do.
+        }
+        Ok(false) => {
+            eprintln!(
+                "Startup auth check: GitHub rejected the stored token for user {}; clearing session",
+                user.id
+            );
+            handle_unauthorized(&app, state, reasons::STARTUP_VALIDATION_FAILED).await;
+        }
+        Err(e) => {
+            // Transport failure — leave the session alone so a flaky
+            // network on launch doesn't sign the user out.
+            eprintln!(
+                "Startup auth check: validate_token failed for user {} ({}); leaving session intact",
+                user.id, e
+            );
+        }
+    }
 }
 
 // ============================================
