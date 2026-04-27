@@ -243,6 +243,25 @@ const Issues = () => {
 
       {initialLoading ? (
         <SkeletonList />
+      ) : query.error !== null && query.data === null ? (
+        // Fetch failed and we have no cached payload to fall back on. We
+        // must NOT render the "no issues" copy here — the user's actual
+        // workload is unknown, and a fake-empty inbox could cause them to
+        // miss assigned items. The CacheStatusBanner above carries the
+        // human-readable error; this block adds an explicit retry CTA.
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-8 text-center">
+          <p className="text-red-300 text-sm mb-3">
+            Inbox の取得に失敗しました。GitHub に接続できないか、Search API のレート制限に達した可能性があります。
+          </p>
+          <button
+            type="button"
+            onClick={handleRetry}
+            disabled={query.isRevalidating}
+            className="inline-flex items-center px-3 py-1.5 text-sm rounded-lg border border-red-500/40 text-red-200 hover:bg-red-500/10 disabled:opacity-50"
+          >
+            {query.isRevalidating ? '再試行中...' : '再試行'}
+          </button>
+        </div>
       ) : visibleItems.length === 0 ? (
         <div className="rounded-2xl border border-slate-700 bg-gm-bg-secondary p-8 text-center text-dt-text-sub">
           {activeItems.length === 0
