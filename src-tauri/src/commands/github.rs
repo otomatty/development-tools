@@ -190,8 +190,15 @@ pub struct BadgeEarnedEvent {
 pub async fn sync_github_stats(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    scheduler: State<'_, crate::sync_scheduler::SyncSchedulerHandle>,
 ) -> Result<SyncResult, String> {
-    run_github_sync(&app, state.inner()).await
+    let result = run_github_sync(&app, state.inner()).await?;
+    // Wake the scheduler so its cached `SchedulerStatus` (next/last sync,
+    // skip reason) is refreshed from the freshly persisted `sync_metadata`.
+    // Without this, the UI's `get_scheduler_status` could keep returning
+    // pre-sync values for up to IDLE_POLL_SECONDS / MAX_SLEEP_SECONDS.
+    scheduler.notify_config_changed();
+    Ok(result)
 }
 
 /// Core GitHub stats sync routine.

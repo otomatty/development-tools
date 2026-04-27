@@ -56,13 +56,14 @@ pub fn decide_action(inputs: &SchedulerInputs) -> SchedulerAction {
 
     let interval = Duration::minutes(inputs.sync_interval_minutes as i64);
 
-    // Honor sync_on_startup=false even when there's no history: we treat the
-    // absence of a baseline as "schedule the first auto-run after the
-    // configured interval" rather than catching up immediately, which would
-    // contradict the user's explicit opt-out.
+    // Honor sync_on_startup=false even when there's no history: synthesize
+    // `now` as the baseline so the first auto-run lands one full interval
+    // later. The runner persists this synthetic baseline to `sync_metadata`
+    // on the first Sleep so subsequent iterations see a real elapsed time
+    // rather than re-synthesizing here.
     let baseline = match inputs.last_sync_at {
         Some(last) => last,
-        None if inputs.is_first_run && !inputs.sync_on_startup => inputs.now,
+        None if !inputs.sync_on_startup => inputs.now,
         None => return SchedulerAction::RunSync,
     };
 
@@ -93,7 +94,7 @@ pub fn next_sync_at(inputs: &SchedulerInputs) -> Option<DateTime<Utc>> {
     // and no history is scheduled `interval` from now, not immediately.
     let baseline = match inputs.last_sync_at {
         Some(last) => last,
-        None if inputs.is_first_run && !inputs.sync_on_startup => inputs.now,
+        None if !inputs.sync_on_startup => inputs.now,
         None => return Some(inputs.now),
     };
     Some(baseline + interval)
@@ -169,14 +170,15 @@ mod tests {
         }
     }
 
-    /// TC-002b: Subsequent run with no history (impossible in practice but
-    /// covered for defence-in-depth) still RunSync's so the loop can recover
-    /// from a metadata wipe.
+    /// TC-002b: After a metadata wipe (`last_sync_at=None`), with
+    /// `sync_on_startup=true`, decide_action runs immediately so the user
+    /// gets a sync rather than waiting another interval. With
+    /// `sync_on_startup=false` we Sleep (covered by TC-002).
     #[test]
-    fn subsequent_run_without_history_runs() {
+    fn no_history_with_sync_on_startup_runs() {
         let inputs = SchedulerInputs {
             is_first_run: false,
-            sync_on_startup: false,
+            sync_on_startup: true,
             sync_interval_minutes: 60,
             last_sync_at: None,
             ..base_inputs()

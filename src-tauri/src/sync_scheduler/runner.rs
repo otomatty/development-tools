@@ -226,6 +226,20 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                 }
             }
             SchedulerAction::Sleep { seconds } => {
+                // First-run users with `sync_on_startup=false` and no history
+                // would otherwise hit the `last_sync_at=None → RunSync` branch
+                // on the *next* iteration (because `is_first_run` is flipped
+                // off here) and auto-sync after only MAX_SLEEP_SECONDS instead
+                // of the configured interval. Persist a synthetic baseline so
+                // the elapsed-time check works correctly from now on.
+                if metadata
+                    .as_ref()
+                    .and_then(|m| m.last_sync_at_parsed())
+                    .is_none()
+                    && !settings.sync_on_startup
+                {
+                    persist_startup_baseline(&state.db, user.id).await;
+                }
                 is_first_run = false;
                 wait_for_change_or_timeout(&notify, seconds).await;
             }
@@ -399,6 +413,45 @@ fn log_db_err<T>(op: &str, result: crate::database::DbResult<T>) {
     if let Err(e) = result {
         eprintln!("Scheduler: {} failed: {}", op, e);
     }
+}
+
+/// Persist `last_sync_at = now` so the `sync_on_startup=false` opt-out
+/// survives across iterations.
+///
+/// Without this, the second iteration would see `last_sync_at = None` again
+/// (because no real sync has happened yet) and `decide_action` would fall
+/// through to its catch-up branch — auto-syncing the user shortly after
+/// startup, contradicting their explicit "don't sync on startup" choice.
+///
+/// We use the same `update_sync_metadata` path the post-sync flow uses; the
+/// fact that `last_sync_at` lies slightly (no actual sync occurred) is
+/// acceptable because (1) only this scheduler reads `last_sync_at` for
+/// `sync_type = "github_stats"`, and (2) the next real sync overwrites it.
+async fn persist_startup_baseline(db: &crate::database::Database, user_id: i64) {
+    if let Err(e) = db
+        .get_or_create_sync_metadata(user_id, GITHUB_STATS_SYNC_TYPE)
+        .await
+    {
+        eprintln!(
+            "Scheduler: persist_startup_baseline ensure-row failed: {}",
+            e
+        );
+        return;
+    }
+    let now = Utc::now().to_rfc3339();
+    log_db_err(
+        "persist_startup_baseline",
+        db.update_sync_metadata(
+            user_id,
+            GITHUB_STATS_SYNC_TYPE,
+            Some(now),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await,
+    );
 }
 
 /// Classify a `run_github_sync` error string as rate-limited.
