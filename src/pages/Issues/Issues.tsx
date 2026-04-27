@@ -99,14 +99,16 @@ function filterAndSort(
       return false;
     }
     if (needle.length > 0) {
-      const haystack = [
-        item.title,
-        item.repoFullName,
-        ...item.labels,
-      ]
-        .join(' ')
-        .toLowerCase();
-      if (!haystack.includes(needle)) return false;
+      // Check fields individually so we short-circuit on the first match
+      // and avoid allocating a joined haystack string per item.
+      const inTitle = item.title.toLowerCase().includes(needle);
+      const inRepo = item.repoFullName.toLowerCase().includes(needle);
+      if (!inTitle && !inRepo) {
+        const inLabels = item.labels.some((l) =>
+          l.toLowerCase().includes(needle),
+        );
+        if (!inLabels) return false;
+      }
     }
     return true;
   });

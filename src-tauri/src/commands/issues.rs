@@ -729,20 +729,15 @@ pub async fn get_my_open_work_with_cache(
     let access_token = get_access_token(&state).await?;
     let client = IssuesClient::new(access_token);
 
-    // Fire both queries; even though the Search API has a tighter rate
-    // budget than core REST, we issue them sequentially to keep failures
-    // attributable and avoid a stampede when several users come back online
-    // at once.
-    let assigned_result = client.search_assigned_issues().await;
-    let reviews_result = match &assigned_result {
-        Ok(_) => client.search_review_requested().await,
-        // If the first call already failed (e.g. the network just dropped),
-        // we don't bother issuing the second one — the fallback path below
-        // will handle either failure identically.
-        Err(_) => Err(GitHubError::ApiError(
-            "skipped due to prior failure".to_string(),
-        )),
-    };
+    // Fire both queries in parallel — they're independent and the latency
+    // win matters more than the single request we'd save by short-circuiting
+    // the second on failure of the first. Search API budget is 30 req/min;
+    // even pathological "always fails" loops can't approach that with the
+    // 5-minute TTL gating refreshes.
+    let (assigned_result, reviews_result) = tokio::join!(
+        client.search_assigned_issues(),
+        client.search_review_requested(),
+    );
 
     match (assigned_result, reviews_result) {
         (Ok(assigned), Ok(reviews)) => {
