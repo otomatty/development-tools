@@ -108,7 +108,10 @@ pub async fn update_settings(
 
 /// Reset settings to defaults
 #[tauri::command]
-pub async fn reset_settings(state: tauri::State<'_, AppState>) -> Result<UserSettings, String> {
+pub async fn reset_settings(
+    state: tauri::State<'_, AppState>,
+    scheduler: tauri::State<'_, SyncSchedulerHandle>,
+) -> Result<UserSettings, String> {
     // Get current user
     let user = state
         .db
@@ -123,6 +126,11 @@ pub async fn reset_settings(state: tauri::State<'_, AppState>) -> Result<UserSet
         .reset_user_settings(user.id)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Wake the scheduler — defaults flip background_sync back on, but if the
+    // scheduler is currently parked in `Idle` waiting on a notify, it would
+    // never observe the reset without this signal.
+    scheduler.notify_config_changed();
 
     Ok(settings)
 }

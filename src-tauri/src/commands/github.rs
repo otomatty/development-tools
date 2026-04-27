@@ -799,6 +799,13 @@ pub async fn run_github_sync(
         }
     };
 
+    // Persist post-sync metadata so the scheduler (and the SchedulerStatus UI)
+    // observe this run regardless of whether it was triggered by the user or
+    // the background scheduler. Without this, manual syncs would leave
+    // `last_sync_at = None` and the next scheduler tick would immediately run
+    // a duplicate sync.
+    persist_sync_success(state, user.id).await;
+
     Ok(SyncResult {
         user_stats: updated_stats,
         xp_gained: total_xp_gained,
@@ -810,6 +817,55 @@ pub async fn run_github_sync(
         new_badges,
         stats_diff,
     })
+}
+
+/// Persist a successful GitHub sync to `sync_metadata`.
+///
+/// Centralised so manual (`sync_github_stats`) and scheduled
+/// (`crate::sync_scheduler::runner`) flows share identical post-processing.
+/// Errors are logged and swallowed because failing to update bookkeeping
+/// shouldn't fail the user-visible sync result.
+async fn persist_sync_success(state: &AppState, user_id: i64) {
+    use crate::sync_scheduler::GITHUB_STATS_SYNC_TYPE;
+
+    if let Err(e) = state
+        .db
+        .get_or_create_sync_metadata(user_id, GITHUB_STATS_SYNC_TYPE)
+        .await
+    {
+        eprintln!("Failed to ensure sync_metadata row: {}", e);
+        return;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    if let Err(e) = state
+        .db
+        .update_sync_metadata(
+            user_id,
+            GITHUB_STATS_SYNC_TYPE,
+            Some(now),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+    {
+        eprintln!("Failed to update sync_metadata after sync: {}", e);
+    }
+
+    // A successful sync invalidates any prior skip event (rate-limited /
+    // background-disabled etc.).
+    let _ = state
+        .db
+        .clear_sync_skipped(user_id, GITHUB_STATS_SYNC_TYPE)
+        .await;
+    // Also clear stale rate-limit constraints from a prior failure so the
+    // scheduler doesn't keep skipping based on outdated reset times.
+    let _ = state
+        .db
+        .clear_sync_rate_limit(user_id, GITHUB_STATS_SYNC_TYPE)
+        .await;
 }
 
 /// Get contribution calendar

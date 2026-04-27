@@ -76,7 +76,8 @@ pub enum SchedulerAction {
     Sleep { seconds: u64 },
     /// Background sync is disabled — wait until config changes.
     Idle { reason: &'static str },
-    /// Rate-limited; sleep until `wake_at` (or `seconds` if reset is unknown).
+    /// Rate-limited; sleep for `seconds` (computed from the reset timestamp
+    /// when known, or a back-off floor when not).
     RateLimited { reason: &'static str, seconds: u64 },
 }
 

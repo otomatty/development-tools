@@ -343,6 +343,60 @@ impl Database {
         Ok(())
     }
 
+    /// Persist the GitHub rate-limit reset time when a sync fails because of
+    /// rate limiting. The scheduler reads this back to decide how long to
+    /// sleep before retrying.
+    pub async fn record_sync_rate_limit(
+        &self,
+        user_id: i64,
+        sync_type: &str,
+        reset_at: chrono::DateTime<chrono::Utc>,
+    ) -> DbResult<()> {
+        // Make sure the row exists first.
+        self.get_or_create_sync_metadata(user_id, sync_type).await?;
+
+        let reset_str = reset_at.to_rfc3339();
+        sqlx::query(
+            r#"
+            UPDATE sync_metadata
+            SET rate_limit_remaining = 0,
+                rate_limit_reset_at = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND sync_type = ?
+            "#,
+        )
+        .bind(&reset_str)
+        .bind(user_id)
+        .bind(sync_type)
+        .execute(self.pool())
+        .await
+        .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Clear stale rate-limit data on the metadata row. Called after a
+    /// successful sync — by definition we just made an API call without being
+    /// rate-limited, so any persisted reset time is no longer authoritative.
+    pub async fn clear_sync_rate_limit(&self, user_id: i64, sync_type: &str) -> DbResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE sync_metadata
+            SET rate_limit_remaining = NULL,
+                rate_limit_reset_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND sync_type = ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(sync_type)
+        .execute(self.pool())
+        .await
+        .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Check if a sync is needed (based on last sync time and cache duration)
     pub async fn is_sync_needed(
         &self,

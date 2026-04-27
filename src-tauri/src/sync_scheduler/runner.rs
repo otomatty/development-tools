@@ -116,43 +116,59 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
 
                 match run_github_sync(&app, state.inner()).await {
                     Ok(_) => {
-                        let now = Utc::now();
-                        if let Err(e) = state
-                            .db
-                            .update_sync_metadata(
-                                user.id,
-                                GITHUB_STATS_SYNC_TYPE,
-                                Some(now.to_rfc3339()),
-                                None,
-                                None,
-                                None,
-                                None,
-                            )
-                            .await
-                        {
-                            eprintln!("Scheduler: failed to update sync_metadata: {}", e);
-                        }
-                        let _ = state
-                            .db
-                            .clear_sync_skipped(user.id, GITHUB_STATS_SYNC_TYPE)
-                            .await;
+                        // Post-sync metadata is persisted inside `run_github_sync`
+                        // so manual and scheduled flows stay in sync. Nothing to
+                        // do here besides loop back; the next iteration sees the
+                        // fresh `last_sync_at` and computes a Sleep action.
                     }
                     Err(err_msg) => {
                         eprintln!("Scheduler: scheduled sync failed: {}", err_msg);
-                        if classify_rate_limited(&err_msg) {
+                        let now = Utc::now();
+                        let mut sleep_secs = MIN_FAILURE_SLEEP_SECONDS;
+
+                        if let Some(reset_at) = parse_rate_limit_reset(&err_msg) {
+                            // Persist the reset time so subsequent decisions
+                            // return RateLimited until it passes.
+                            let _ = state
+                                .db
+                                .record_sync_rate_limit(user.id, GITHUB_STATS_SYNC_TYPE, reset_at)
+                                .await;
                             let _ = state
                                 .db
                                 .record_sync_skipped(
                                     user.id,
                                     GITHUB_STATS_SYNC_TYPE,
                                     skip_reasons::RATE_LIMITED,
-                                    Utc::now(),
+                                    now,
                                 )
                                 .await;
+                            update_status_skipped(&status, skip_reasons::RATE_LIMITED, now).await;
+                            // Sleep until the reset, but never less than the
+                            // failure floor. clamp_failure_sleep handles
+                            // already-passed resets.
+                            sleep_secs = seconds_until(reset_at, now);
+                        } else if classify_rate_limited(&err_msg) {
+                            // Rate-limited but the reset timestamp couldn't be
+                            // parsed — record the reason and back off by the
+                            // failure floor so we don't hammer the API.
+                            let _ = state
+                                .db
+                                .record_sync_skipped(
+                                    user.id,
+                                    GITHUB_STATS_SYNC_TYPE,
+                                    skip_reasons::RATE_LIMITED,
+                                    now,
+                                )
+                                .await;
+                            update_status_skipped(&status, skip_reasons::RATE_LIMITED, now).await;
                         }
+
+                        // Always sleep at least MIN_FAILURE_SLEEP_SECONDS after a
+                        // failure so transient errors don't trigger a tight
+                        // retry loop.
+                        wait_for_change_or_timeout(&notify, sleep_secs).await;
                     }
                 }
-                // Loop back; the next iteration computes a fresh sleep.
             }
             SchedulerAction::Sleep { seconds } => {
                 is_first_run = false;
@@ -160,35 +176,74 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
             }
             SchedulerAction::Idle { reason } => {
                 is_first_run = false;
+                let now = Utc::now();
                 let _ = state
                     .db
-                    .record_sync_skipped(
-                        user.id,
-                        GITHUB_STATS_SYNC_TYPE,
-                        reason,
-                        Utc::now(),
-                    )
+                    .record_sync_skipped(user.id, GITHUB_STATS_SYNC_TYPE, reason, now)
                     .await;
-                // Update status so the UI reflects the idle state.
-                write_status(&status, &settings, metadata.as_ref(), None, true).await;
+                // Surface the just-written skip reason on the in-memory
+                // SchedulerStatus so the UI sees it without waiting for the
+                // next loop iteration.
+                update_status_skipped(&status, reason, now).await;
                 // Wait until the user toggles a setting.
                 notify.notified().await;
             }
             SchedulerAction::RateLimited { reason, seconds } => {
                 is_first_run = false;
+                let now = Utc::now();
                 let _ = state
                     .db
-                    .record_sync_skipped(
-                        user.id,
-                        GITHUB_STATS_SYNC_TYPE,
-                        reason,
-                        Utc::now(),
-                    )
+                    .record_sync_skipped(user.id, GITHUB_STATS_SYNC_TYPE, reason, now)
                     .await;
+                update_status_skipped(&status, reason, now).await;
                 wait_for_change_or_timeout(&notify, seconds).await;
             }
         }
     }
+}
+
+/// Minimum back-off between sync failures. Prevents a tight retry loop when
+/// the GitHub API returns errors without parseable rate-limit metadata.
+const MIN_FAILURE_SLEEP_SECONDS: u64 = 60;
+
+/// Cap on how long the runner will sleep after a rate-limit failure even if
+/// the reset is far in the future. Bounded so a config change can break out.
+const MAX_FAILURE_SLEEP_SECONDS: u64 = 30 * 60;
+
+fn seconds_until(target: DateTime<Utc>, now: DateTime<Utc>) -> u64 {
+    let diff = target.signed_duration_since(now).num_seconds();
+    let secs = if diff < 0 { 0 } else { diff as u64 };
+    secs.clamp(MIN_FAILURE_SLEEP_SECONDS, MAX_FAILURE_SLEEP_SECONDS)
+}
+
+/// Parse the `Resets at <unix_ts>` suffix produced by
+/// [`GitHubError::RateLimited`]'s Display impl.
+///
+/// The error string travels through `.map_err(|e| e.to_string())` before it
+/// reaches the runner, so we extract the timestamp by string match rather than
+/// by destructuring the typed error.
+fn parse_rate_limit_reset(err_msg: &str) -> Option<DateTime<Utc>> {
+    const NEEDLE: &str = "Resets at ";
+    let idx = err_msg.find(NEEDLE)?;
+    let tail = &err_msg[idx + NEEDLE.len()..];
+    // Take leading digits (and optional minus) only.
+    let end = tail
+        .find(|c: char| !c.is_ascii_digit() && c != '-')
+        .unwrap_or(tail.len());
+    let ts: i64 = tail[..end].parse().ok()?;
+    DateTime::from_timestamp(ts, 0)
+}
+
+/// Update only the skip-related fields of the in-memory status so the UI sees
+/// the new skip without waiting for the next loop iteration.
+async fn update_status_skipped(
+    status: &RwLock<SchedulerStatus>,
+    reason: &str,
+    when: DateTime<Utc>,
+) {
+    let mut s = status.write().await;
+    s.last_skipped_reason = Some(reason.to_string());
+    s.last_skipped_at = Some(when.to_rfc3339());
 }
 
 fn build_inputs(
@@ -274,5 +329,46 @@ mod tests {
     fn classify_rate_limited_rejects_unrelated() {
         assert!(!classify_rate_limited("unauthorized"));
         assert!(!classify_rate_limited("network error"));
+    }
+
+    #[test]
+    fn parse_rate_limit_reset_extracts_timestamp() {
+        let msg = format!("{}", GitHubError::RateLimited(1_700_000_000));
+        let parsed = parse_rate_limit_reset(&msg).expect("should parse timestamp");
+        assert_eq!(parsed.timestamp(), 1_700_000_000);
+    }
+
+    #[test]
+    fn parse_rate_limit_reset_handles_trailing_text() {
+        let msg = "Rate limit exceeded. Resets at 1700000000 (some context)";
+        let parsed = parse_rate_limit_reset(msg).expect("should parse timestamp");
+        assert_eq!(parsed.timestamp(), 1_700_000_000);
+    }
+
+    #[test]
+    fn parse_rate_limit_reset_returns_none_for_unrelated() {
+        assert!(parse_rate_limit_reset("network error").is_none());
+        assert!(parse_rate_limit_reset("Rate limit").is_none());
+    }
+
+    #[test]
+    fn seconds_until_clamps_past_target_to_min() {
+        let now = Utc::now();
+        let past = now - chrono::Duration::seconds(120);
+        assert_eq!(seconds_until(past, now), MIN_FAILURE_SLEEP_SECONDS);
+    }
+
+    #[test]
+    fn seconds_until_clamps_far_future_to_max() {
+        let now = Utc::now();
+        let far = now + chrono::Duration::hours(2);
+        assert_eq!(seconds_until(far, now), MAX_FAILURE_SLEEP_SECONDS);
+    }
+
+    #[test]
+    fn seconds_until_passes_through_in_range() {
+        let now = Utc::now();
+        let future = now + chrono::Duration::seconds(300);
+        assert_eq!(seconds_until(future, now), 300);
     }
 }

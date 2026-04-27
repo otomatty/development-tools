@@ -34,7 +34,7 @@ GitHub 統計同期 (`sync_github_stats`) を、ユーザーの `user_settings` 
 
 ### 出力（Actions）
 
-```
+```text
 RunSync                              - 同期を実行
 Sleep { seconds }                    - 経過後に再評価
 Idle  { reason }                     - 設定変更を待つ
@@ -65,6 +65,39 @@ RateLimited { reason, seconds }      - レート制限解除を待つ
 | `manual_only`               | 自動同期 OFF（`interval=0`） |
 | `rate_limited`              | レート制限到達 |
 | `not_logged_in`             | 未ログイン |
+
+スキップを記録した直後にランナーは `RwLock<SchedulerStatus>` の
+`last_skipped_reason` / `last_skipped_at` も同期更新する。これにより
+`get_scheduler_status` が次のループ反復を待たずに最新のスキップ理由を返す。
+
+### 同期成功時の `sync_metadata` 更新
+
+`run_github_sync` が成功した時点で、以下を **同関数内で** 永続化する。これにより
+手動同期（`sync_github_stats` コマンド）と自動同期（スケジューラ）の両経路で
+同じ事後処理が走る。
+
+1. `get_or_create_sync_metadata(user_id, "github_stats")` で行を確実に作成
+2. `update_sync_metadata` で `last_sync_at = now()`
+3. `clear_sync_skipped` で `last_skipped_*` をクリア
+4. `clear_sync_rate_limit` で `rate_limit_*` をクリア
+
+→ 新規ユーザーで「初回 RunSync 後も `last_sync_at` が `None` のままで
+RunSync を連発する」現象を防ぐ。
+
+### 同期失敗時の `sync_metadata` 更新
+
+GitHub 側が `Rate limit exceeded. Resets at <unix_ts>` を返した場合、
+ランナーは：
+
+1. `parse_rate_limit_reset(err_msg)` でリセット時刻を抽出
+2. `record_sync_rate_limit(user_id, sync_type, reset_at)` で
+   `rate_limit_remaining=0` / `rate_limit_reset_at` を保存
+3. `record_sync_skipped` で `last_skipped_reason="rate_limited"` を記録
+4. `seconds_until(reset_at, now)` で算出した秒数 sleep
+   （`MIN_FAILURE_SLEEP_SECONDS=60` 〜 `MAX_FAILURE_SLEEP_SECONDS=30 分` でクランプ）
+
+リセット時刻が抽出できない場合でも、最低 60 秒は sleep する（タイトな再試行
+ループの防止）。
 
 ### 設定変更の即時反映
 
@@ -160,6 +193,36 @@ RateLimited { reason, seconds }      - レート制限解除を待つ
 - Given: an error string formatted from `GitHubError::RateLimited(_)`
 - When: `classify_rate_limited(msg)`
 - Then: `true`
+
+### TC-014: `parse_rate_limit_reset` extracts the unix timestamp
+
+- Given: `"Rate limit exceeded. Resets at 1700000000"` (formatted from `GitHubError::RateLimited`)
+- When: `parse_rate_limit_reset(msg)`
+- Then: `Some(DateTime::from_timestamp(1_700_000_000, 0))`
+
+### TC-015: `parse_rate_limit_reset` returns None when no timestamp
+
+- Given: `"Rate limit"` (no trailing timestamp), `"network error"`
+- When: `parse_rate_limit_reset(msg)`
+- Then: `None`
+
+### TC-016: `seconds_until` clamps past targets to MIN_FAILURE_SLEEP_SECONDS
+
+- Given: target = now - 120s
+- When: `seconds_until(target, now)`
+- Then: `MIN_FAILURE_SLEEP_SECONDS` (60s)
+
+### TC-017: `seconds_until` clamps far-future targets to MAX_FAILURE_SLEEP_SECONDS
+
+- Given: target = now + 2 hours
+- When: `seconds_until(target, now)`
+- Then: `MAX_FAILURE_SLEEP_SECONDS` (30 minutes)
+
+### TC-018: `seconds_until` passes through values within the window
+
+- Given: target = now + 5 minutes
+- When: `seconds_until(target, now)`
+- Then: `300`
 
 ## DoD（Issue #180 完了条件）への対応
 

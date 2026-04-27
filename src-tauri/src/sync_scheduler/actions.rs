@@ -153,7 +153,10 @@ mod tests {
             is_first_run: false,
             ..base_inputs()
         };
-        assert!(matches!(decide_action(&inputs), SchedulerAction::Idle { .. }));
+        assert!(matches!(
+            decide_action(&inputs),
+            SchedulerAction::Idle { .. }
+        ));
     }
 
     /// TC-004: `background_sync=false` still allows startup sync once.
@@ -175,7 +178,10 @@ mod tests {
             sync_interval_minutes: 0,
             ..base_inputs()
         };
-        assert!(matches!(decide_action(&inputs), SchedulerAction::Idle { .. }));
+        assert!(matches!(
+            decide_action(&inputs),
+            SchedulerAction::Idle { .. }
+        ));
     }
 
     /// TC-006: When the interval has elapsed since last sync, run.
