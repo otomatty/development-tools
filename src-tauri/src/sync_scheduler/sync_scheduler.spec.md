@@ -101,7 +101,16 @@ GitHub 側が `Rate limit exceeded. Resets at <unix_ts>` を返した場合、
 
 ### 設定変更の即時反映
 
-`update_settings` コマンドは、保存後に `SyncSchedulerHandle::notify_config_changed()` を呼び出し、ループの `tokio::sync::Notify` を起こす。スリープ中・Idle 中ともに即座に再評価される。
+`update_settings` / `reset_settings` コマンドは、保存後に
+`SyncSchedulerHandle::notify_config_changed()` を呼び出してループの
+`tokio::sync::Notify` を起こす。スリープ中・Idle 中ともに即座に再評価される。
+
+### Idle 状態の再評価
+
+Idle ブランチも `wait_for_change_or_timeout(&notify, IDLE_POLL_SECONDS)` で
+最大 5 分の bounded wait としている。設定変更以外の状態遷移（ログアウト／
+ログイン、アカウント切り替え、メタデータの外部変更など）でも、最大
+`IDLE_POLL_SECONDS` 後にループが再評価される自己治癒設計。
 
 ### スケジューラの起動／停止
 

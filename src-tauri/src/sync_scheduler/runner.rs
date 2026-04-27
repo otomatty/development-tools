@@ -185,8 +185,11 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                 // SchedulerStatus so the UI sees it without waiting for the
                 // next loop iteration.
                 update_status_skipped(&status, reason, now).await;
-                // Wait until the user toggles a setting.
-                notify.notified().await;
+                // Wake on settings changes immediately, but also re-poll on a
+                // bounded interval as a safety net for non-settings transitions
+                // (logout/login, an account switch, etc.) that don't currently
+                // emit a notify.
+                wait_for_change_or_timeout(&notify, IDLE_POLL_SECONDS).await;
             }
             SchedulerAction::RateLimited { reason, seconds } => {
                 is_first_run = false;
@@ -209,6 +212,14 @@ const MIN_FAILURE_SLEEP_SECONDS: u64 = 60;
 /// Cap on how long the runner will sleep after a rate-limit failure even if
 /// the reset is far in the future. Bounded so a config change can break out.
 const MAX_FAILURE_SLEEP_SECONDS: u64 = 30 * 60;
+
+/// Maximum time the loop stays parked in the `Idle` state before re-polling.
+///
+/// The notify channel covers settings updates, but other transitions
+/// (logout/login, account switch, manual sync from the UI) currently don't
+/// emit a notify. This bounded wait makes the loop self-healing — it'll
+/// observe such state changes within at most this many seconds.
+const IDLE_POLL_SECONDS: u64 = 5 * 60;
 
 fn seconds_until(target: DateTime<Utc>, now: DateTime<Utc>) -> u64 {
     let diff = target.signed_duration_since(now).num_seconds();
