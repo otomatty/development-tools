@@ -27,7 +27,10 @@ interface CacheStatusBannerProps {
   onRetry?: () => void;
 }
 
-function formatTimestamp(isoString: string | null): string | null {
+// Format an ISO8601 timestamp as `HH:MM` in the user's local timezone.
+// Local time is intentional here: this is shown directly to the user as
+// "最終更新: HH:MM" and matches what they'd expect from a wall clock.
+function formatLocalTimestamp(isoString: string | null): string | null {
   if (!isoString) return null;
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return null;
@@ -46,7 +49,7 @@ export const CacheStatusBanner = ({
 }: CacheStatusBannerProps) => {
   if (!fromCache && !hasError) return null;
 
-  const cachedTime = formatTimestamp(cachedAt);
+  const cachedTime = formatLocalTimestamp(cachedAt);
   // Distinguish "revalidate failed but cache is on screen" from "initial load
   // failed and we have nothing to show". The original error message implied
   // the former unconditionally, which was misleading in the latter case.

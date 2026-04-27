@@ -172,13 +172,19 @@ export function useCachedFetch<T>(
     return () => window.removeEventListener('focus', handler);
   }, [enabled, revalidateOnFocus, run, staleTime]);
 
-  // Revalidate when the network reconnects. We always trigger here — the
-  // common case (came back online, want fresh data) and the recovery case
-  // (initial load failed completely, have nothing on screen) both want a
-  // re-fetch. `inFlightRef` dedupes against an in-progress initial load.
+  // Revalidate when the network reconnects. The `inFlightRef` guard inside
+  // `run` already dedupes the initial-mount case (where this effect fires
+  // simultaneously with the initial-load effect), but we add an explicit
+  // pre-check here so a reader can see the intent: a reconnect-triggered
+  // revalidation only makes sense after at least one load attempt has
+  // produced data — either fresh (`lastFreshAtRef`) or cached
+  // (`hasDataRef`). If the initial load is still in flight or failed
+  // outright with no cache, the initial-load effect — not this one — is
+  // responsible for retrying.
   useEffect(() => {
     if (!enabled || !revalidateOnReconnect) return;
     if (!isOnline) return;
+    if (lastFreshAtRef.current === null && !hasDataRef.current) return;
     void run('revalidate');
   }, [enabled, isOnline, revalidateOnReconnect, run]);
 
