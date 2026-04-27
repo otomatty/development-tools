@@ -30,13 +30,22 @@ pub type TokenResult<T> = Result<T, TokenError>;
 pub struct TokenManager {
     crypto: Crypto,
     db: Database,
+    /// Shared HTTP client so the periodic / startup `validate_token` probes
+    /// reuse the underlying connection pool instead of spinning up a fresh
+    /// TCP+TLS handshake per call. `reqwest::Client` is internally `Arc`-wrapped
+    /// so cloning is cheap and the manager itself stays trivially `Send + Sync`.
+    http_client: reqwest::Client,
 }
 
 impl TokenManager {
     /// Create a new token manager
     pub fn new(db: Database) -> TokenResult<Self> {
         let crypto = Crypto::from_app_key()?;
-        Ok(Self { crypto, db })
+        Ok(Self {
+            crypto,
+            db,
+            http_client: reqwest::Client::new(),
+        })
     }
 
     /// Save tokens for a user
@@ -133,8 +142,8 @@ impl TokenManager {
     ///   distinguish "definitely revoked" from "couldn't reach GitHub" — the
     ///   latter must NOT trigger a forced logout.
     pub async fn validate_token(&self, access_token: &str) -> TokenResult<bool> {
-        let client = reqwest::Client::new();
-        let response = client
+        let response = self
+            .http_client
             .get("https://api.github.com/user")
             .header("Authorization", format!("Bearer {}", access_token))
             .header("User-Agent", "development-tools")
@@ -142,23 +151,16 @@ impl TokenManager {
             .await
             .map_err(OAuthError::from)?;
 
-        let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED {
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             return Ok(false);
         }
-        if status.is_success() {
-            return Ok(true);
-        }
         // Non-401, non-success status (403 rate-limited / abuse-blocked, 5xx
-        // server error, etc.). Surface as Err so callers can distinguish
-        // "definitely revoked" from "GitHub is having issues" and avoid a
-        // forced logout — see the lifecycle contract documented above and in
-        // docs/api/AUTH_LIFECYCLE.md.
-        Err(OAuthError::TokenExchange(format!(
-            "Unexpected status from GitHub /user during token validation: {}",
-            status
-        ))
-        .into())
+        // server error, etc.) becomes an `Err` via `error_for_status` so
+        // callers can distinguish "definitely revoked" from "GitHub is having
+        // issues" and avoid a forced logout — see the lifecycle contract
+        // documented above and in docs/api/AUTH_LIFECYCLE.md.
+        response.error_for_status().map_err(OAuthError::from)?;
+        Ok(true)
     }
 }
 
