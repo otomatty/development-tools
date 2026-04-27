@@ -196,6 +196,27 @@ impl IssuesClient {
             }
             reqwest::StatusCode::UNAUTHORIZED => Err(GitHubError::Unauthorized),
             reqwest::StatusCode::NOT_FOUND => Err(GitHubError::NotFound(url.to_string())),
+            // GitHub returns 403 when an authenticated client exhausts the
+            // primary or Search-specific rate limit. We surface this as
+            // `RateLimited` so callers can distinguish a transient quota
+            // hit from a permanent forbidden response and fall back to
+            // cache. (Mirrors the detection in `GitHubClient::check_rate_limit`.)
+            reqwest::StatusCode::FORBIDDEN
+                if response
+                    .headers()
+                    .get("x-ratelimit-remaining")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| v == "0")
+                    .unwrap_or(false) =>
+            {
+                let reset = response
+                    .headers()
+                    .get("x-ratelimit-reset")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .unwrap_or(0);
+                Err(GitHubError::RateLimited(reset))
+            }
             status => {
                 let error_text = response.text().await.unwrap_or_default();
                 Err(GitHubError::ApiError(format!(
@@ -347,13 +368,48 @@ impl IssuesClient {
         self.get(&url).await
     }
 
+    /// Maximum total items collected from a single Search API query.
+    /// GitHub's Search API caps responses at 1000 results regardless of
+    /// pagination, so 1000 is the absolute ceiling. We expose it as a
+    /// constant so the safety stop is auditable.
+    pub const SEARCH_RESULT_CAP: usize = 1000;
+
+    /// Page through `search_issues` collecting up to `SEARCH_RESULT_CAP`
+    /// items, stopping early when a page is short of `per_page` (which
+    /// indicates the last page).
+    ///
+    /// Worst-case 10 requests per call (1000 / 100). Combined with the
+    /// 5-minute cache in `commands::issues::get_my_open_work_with_cache`,
+    /// this stays well under the Search API's 30 req/min budget.
+    async fn search_issues_paginated(&self, q: &str) -> GitHubResult<Vec<GitHubSearchItem>> {
+        const PER_PAGE: i32 = 100;
+        let mut all = Vec::new();
+        let mut page: i32 = 1;
+        loop {
+            let response = self.search_issues(q, PER_PAGE, page).await?;
+            let returned = response.items.len();
+            all.extend(response.items);
+            // Last page: GitHub returned fewer than the requested page size.
+            if returned < PER_PAGE as usize {
+                break;
+            }
+            // Hard cap — also guards against the 1000-item ceiling that
+            // Search API enforces.
+            if all.len() >= Self::SEARCH_RESULT_CAP {
+                all.truncate(Self::SEARCH_RESULT_CAP);
+                break;
+            }
+            page += 1;
+        }
+        Ok(all)
+    }
+
     /// Search Open Issues (excluding PRs) assigned to the authenticated user
     /// across every repository the token can see.
     pub async fn search_assigned_issues(&self) -> GitHubResult<Vec<GitHubSearchItem>> {
         // `is:issue` excludes PRs; `archived:false` skips zombie repos.
         let q = "is:open is:issue assignee:@me archived:false";
-        let response = self.search_issues(q, 100, 1).await?;
-        Ok(response.items)
+        self.search_issues_paginated(q).await
     }
 
     /// Search Open Pull Requests where the authenticated user is requested
@@ -363,8 +419,7 @@ impl IssuesClient {
         // direct review requests and team-mediated requests the user
         // belongs to.
         let q = "is:open is:pr review-requested:@me archived:false";
-        let response = self.search_issues(q, 100, 1).await?;
-        Ok(response.items)
+        self.search_issues_paginated(q).await
     }
 
     // ========================================================================
