@@ -138,38 +138,55 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
 
                         if let Some(reset_at) = parse_rate_limit_reset(&err_msg) {
                             // Persist the reset time so subsequent decisions
-                            // return RateLimited until it passes.
-                            let _ = state
-                                .db
-                                .record_sync_rate_limit(user.id, GITHUB_STATS_SYNC_TYPE, reset_at)
-                                .await;
-                            let _ = state
-                                .db
-                                .record_sync_skipped(
-                                    user.id,
-                                    GITHUB_STATS_SYNC_TYPE,
-                                    skip_reasons::RATE_LIMITED,
-                                    now,
-                                )
-                                .await;
+                            // return RateLimited until it passes. These writes
+                            // are correctness-critical: silently dropping them
+                            // would let the next iteration hit the API
+                            // immediately and burn through whatever budget the
+                            // reset is supposed to wait out.
+                            log_db_err(
+                                "record_sync_rate_limit",
+                                state
+                                    .db
+                                    .record_sync_rate_limit(
+                                        user.id,
+                                        GITHUB_STATS_SYNC_TYPE,
+                                        reset_at,
+                                    )
+                                    .await,
+                            );
+                            log_db_err(
+                                "record_sync_skipped (rate_limited)",
+                                state
+                                    .db
+                                    .record_sync_skipped(
+                                        user.id,
+                                        GITHUB_STATS_SYNC_TYPE,
+                                        skip_reasons::RATE_LIMITED,
+                                        now,
+                                    )
+                                    .await,
+                            );
                             update_status_skipped(&status, skip_reasons::RATE_LIMITED, now).await;
                             // Sleep until the reset, but never less than the
-                            // failure floor. clamp_failure_sleep handles
-                            // already-passed resets.
+                            // failure floor. seconds_until handles already-
+                            // passed resets via the MIN clamp.
                             sleep_secs = seconds_until(reset_at, now);
                         } else if classify_rate_limited(&err_msg) {
                             // Rate-limited but the reset timestamp couldn't be
                             // parsed — record the reason and back off by the
                             // failure floor so we don't hammer the API.
-                            let _ = state
-                                .db
-                                .record_sync_skipped(
-                                    user.id,
-                                    GITHUB_STATS_SYNC_TYPE,
-                                    skip_reasons::RATE_LIMITED,
-                                    now,
-                                )
-                                .await;
+                            log_db_err(
+                                "record_sync_skipped (rate_limited, no reset)",
+                                state
+                                    .db
+                                    .record_sync_skipped(
+                                        user.id,
+                                        GITHUB_STATS_SYNC_TYPE,
+                                        skip_reasons::RATE_LIMITED,
+                                        now,
+                                    )
+                                    .await,
+                            );
                             update_status_skipped(&status, skip_reasons::RATE_LIMITED, now).await;
                         }
 
@@ -187,10 +204,13 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
             SchedulerAction::Idle { reason } => {
                 is_first_run = false;
                 let now = Utc::now();
-                let _ = state
-                    .db
-                    .record_sync_skipped(user.id, GITHUB_STATS_SYNC_TYPE, reason, now)
-                    .await;
+                log_db_err(
+                    "record_sync_skipped (idle)",
+                    state
+                        .db
+                        .record_sync_skipped(user.id, GITHUB_STATS_SYNC_TYPE, reason, now)
+                        .await,
+                );
                 // Surface the just-written skip reason on the in-memory
                 // SchedulerStatus so the UI sees it without waiting for the
                 // next loop iteration.
@@ -204,10 +224,13 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
             SchedulerAction::RateLimited { reason, seconds } => {
                 is_first_run = false;
                 let now = Utc::now();
-                let _ = state
-                    .db
-                    .record_sync_skipped(user.id, GITHUB_STATS_SYNC_TYPE, reason, now)
-                    .await;
+                log_db_err(
+                    "record_sync_skipped (rate_limited)",
+                    state
+                        .db
+                        .record_sync_skipped(user.id, GITHUB_STATS_SYNC_TYPE, reason, now)
+                        .await,
+                );
                 update_status_skipped(&status, reason, now).await;
                 wait_for_change_or_timeout(&notify, seconds).await;
             }
@@ -321,6 +344,20 @@ async fn wait_for_change_or_timeout(notify: &Notify, seconds: u64) {
     tokio::select! {
         _ = notify.notified() => {}
         _ = tokio::time::sleep(Duration::from_secs(seconds)) => {}
+    }
+}
+
+/// Log a `DbResult<()>` if it's an error, with `op` as the calling site.
+///
+/// Replaces a fleet of `let _ = state.db.foo().await` calls so transient DB
+/// failures inside the scheduler are at least visible in the logs. We don't
+/// propagate the error further because each call site has already decided
+/// what to do regardless (sleep / continue) — the goal is solely
+/// observability.
+// TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+fn log_db_err<T>(op: &str, result: crate::database::DbResult<T>) {
+    if let Err(e) = result {
+        eprintln!("Scheduler: {} failed: {}", op, e);
     }
 }
 
