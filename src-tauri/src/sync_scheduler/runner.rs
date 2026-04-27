@@ -95,12 +95,22 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
             }
         };
 
-        let metadata = state
+        // Treat a DB error here as a hard failure rather than silently
+        // falling back to None — without this guard a transient SQLite issue
+        // would zero out `last_sync_at` and the next decision would
+        // immediately RunSync again until recovery.
+        let metadata = match state
             .db
             .get_sync_metadata(user.id, GITHUB_STATS_SYNC_TYPE)
             .await
-            .ok()
-            .flatten();
+        {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("Scheduler: failed to read sync_metadata: {}", e);
+                wait_for_change_or_timeout(&notify, MIN_FAILURE_SLEEP_SECONDS).await;
+                continue;
+            }
+        };
 
         let now = Utc::now();
         let inputs = build_inputs(&settings, metadata.as_ref(), is_first_run, now);
@@ -295,9 +305,15 @@ async fn write_status(
 
 async fn set_status_logged_out(status: &RwLock<SchedulerStatus>) {
     let mut s = status.write().await;
-    s.running = true;
-    s.last_skipped_reason = Some(skip_reasons::NOT_LOGGED_IN.to_string());
-    s.next_sync_at = None;
+    // Full reset so a previous user's last_sync_at / interval_minutes /
+    // skip-history doesn't leak across logouts or account switches. The only
+    // logout-specific override is the skip reason so the UI can explain why
+    // the scheduler is parked.
+    *s = SchedulerStatus {
+        running: true,
+        last_skipped_reason: Some(skip_reasons::NOT_LOGGED_IN.to_string()),
+        ..SchedulerStatus::default()
+    };
 }
 
 async fn wait_for_change_or_timeout(notify: &Notify, seconds: u64) {
@@ -381,5 +397,36 @@ mod tests {
         let now = Utc::now();
         let future = now + chrono::Duration::seconds(300);
         assert_eq!(seconds_until(future, now), 300);
+    }
+
+    #[tokio::test]
+    async fn set_status_logged_out_clears_prior_user_state() {
+        // Pre-populate the status with a previous user's data.
+        let status = RwLock::new(SchedulerStatus {
+            running: true,
+            background_sync_enabled: true,
+            interval_minutes: 60,
+            sync_on_startup: true,
+            last_sync_at: Some("2026-04-01T00:00:00Z".to_string()),
+            next_sync_at: Some("2026-04-01T01:00:00Z".to_string()),
+            last_skipped_at: Some("2026-04-01T00:30:00Z".to_string()),
+            last_skipped_reason: Some(skip_reasons::RATE_LIMITED.to_string()),
+        });
+
+        set_status_logged_out(&status).await;
+
+        let s = status.read().await;
+        assert!(s.running);
+        assert_eq!(
+            s.last_skipped_reason.as_deref(),
+            Some(skip_reasons::NOT_LOGGED_IN)
+        );
+        // Everything else from the prior session must be cleared.
+        assert!(!s.background_sync_enabled);
+        assert_eq!(s.interval_minutes, 0);
+        assert!(!s.sync_on_startup);
+        assert!(s.last_sync_at.is_none());
+        assert!(s.next_sync_at.is_none());
+        assert!(s.last_skipped_at.is_none());
     }
 }

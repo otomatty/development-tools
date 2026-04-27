@@ -57,14 +57,22 @@ RateLimited { reason, seconds }      - レート制限解除を待つ
 - 最低 30 秒: 高頻度チェックを避ける（ロードを下げる）
 - 最大 5 分: 通知チャネル取りこぼしの安全網（設定変更が最遅でも 5 分で観測される）
 
-### スキップ理由（`sync_metadata.last_skipped_reason`）
+### スキップ理由
+
+DB (`sync_metadata.last_skipped_reason`) と in-memory `SchedulerStatus` の
+両方に保存されるもの：
 
 | 値                          | 意味 |
 | --------------------------- | --- |
 | `background_sync_disabled`  | バックグラウンド同期 OFF |
 | `manual_only`               | 自動同期 OFF（`interval=0`） |
 | `rate_limited`              | レート制限到達 |
-| `not_logged_in`             | 未ログイン |
+
+in-memory `SchedulerStatus` のみ（DB には永続化しない）：
+
+| 値                          | 意味 |
+| --------------------------- | --- |
+| `not_logged_in`             | 未ログイン。`set_status_logged_out` で UI 用に表示するだけで、`record_sync_skipped` は呼ばれない |
 
 スキップを記録した直後にランナーは `RwLock<SchedulerStatus>` の
 `last_skipped_reason` / `last_skipped_at` も同期更新する。これにより
