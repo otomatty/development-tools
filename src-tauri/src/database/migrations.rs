@@ -305,6 +305,29 @@ DROP TABLE IF EXISTS mock_server_mappings;
 DROP TABLE IF EXISTS mock_server_config;
 "#,
     },
+    Migration {
+        version: 10,
+        name: "add_sync_metadata_last_skipped",
+        sql: r#"
+-- Track the most recent skip event per sync_type for the scheduler.
+-- Related Issue: GitHub Issue #180 - 同期スケジューラの実装
+ALTER TABLE sync_metadata ADD COLUMN last_skipped_at DATETIME;
+ALTER TABLE sync_metadata ADD COLUMN last_skipped_reason TEXT;
+"#,
+    },
+    Migration {
+        version: 11,
+        name: "add_sync_metadata_scheduler_baseline",
+        sql: r#"
+-- Distinct from `last_sync_at` (which records actual sync completions),
+-- `scheduler_baseline_at` records when the scheduler decided to start
+-- counting the interval for `sync_on_startup=false` users with no real sync
+-- history. Keeping them separate avoids lying to UI consumers that read
+-- `last_sync_at` as "last real sync".
+-- Related Issue: GitHub Issue #180 - 同期スケジューラの実装
+ALTER TABLE sync_metadata ADD COLUMN scheduler_baseline_at DATETIME;
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

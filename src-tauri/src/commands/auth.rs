@@ -24,6 +24,10 @@ pub struct AppState {
     pub device_flow_state: Arc<Mutex<Option<String>>>,
     /// Shared HTTP client for reuse across requests (improves performance)
     pub http_client: reqwest::Client,
+    /// Serializes `run_github_sync` invocations so a manual "sync now" never
+    /// races a scheduler-driven sync. Two concurrent runs would read the same
+    /// pre-sync snapshot and double-apply XP / badges / challenge progress.
+    pub sync_lock: Arc<Mutex<()>>,
 }
 
 impl AppState {
@@ -45,6 +49,7 @@ impl AppState {
             device_flow_config: None,
             device_flow_state: Arc::new(Mutex::new(None)),
             http_client,
+            sync_lock: Arc::new(Mutex::new(())),
         })
     }
 

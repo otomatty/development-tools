@@ -118,3 +118,46 @@ export interface SyncIntervalOption {
   label: string;
 }
 
+/// スケジューラのスキップ理由
+///
+/// **IMPORTANT**: keep in sync with `src-tauri/src/sync_scheduler/state.rs::skip_reasons`.
+export type SchedulerSkipReason =
+  | 'background_sync_disabled'
+  | 'manual_only'
+  | 'rate_limited'
+  | 'not_logged_in';
+
+/// 同期スケジューラの動作状況
+///
+/// **IMPORTANT**: keep in sync with `src-tauri/src/sync_scheduler/state.rs::SchedulerStatus`.
+export interface SchedulerStatus {
+  running: boolean;
+  backgroundSyncEnabled: boolean;
+  intervalMinutes: number;
+  syncOnStartup: boolean;
+  lastSyncAt: string | null;
+  nextSyncAt: string | null;
+  lastSkippedAt: string | null;
+  lastSkippedReason: SchedulerSkipReason | string | null;
+}
+
+/// スキップ理由のラベルを取得
+export function schedulerSkipReasonLabel(reason: string | null | undefined): string | null {
+  switch (reason) {
+    case 'background_sync_disabled':
+      return 'バックグラウンド同期がオフのためスキップしています';
+    case 'manual_only':
+      return '自動同期がオフのためスキップしています';
+    case 'rate_limited':
+      return 'GitHub のレート制限到達のためスキップしました';
+    case 'not_logged_in':
+      return 'ログインしていないため同期できません';
+    case null:
+    case undefined:
+    case '':
+      return null;
+    default:
+      return reason ?? null;
+  }
+}
+

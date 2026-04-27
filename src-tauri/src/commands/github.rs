@@ -185,12 +185,39 @@ pub struct BadgeEarnedEvent {
     pub icon: String,
 }
 
-/// Sync GitHub stats to local database
+/// Sync GitHub stats to local database (Tauri command wrapper).
 #[command]
 pub async fn sync_github_stats(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    scheduler: State<'_, crate::sync_scheduler::SyncSchedulerHandle>,
 ) -> Result<SyncResult, String> {
+    let result = run_github_sync(&app, state.inner()).await?;
+    // Wake the scheduler so its cached `SchedulerStatus` (next/last sync,
+    // skip reason) is refreshed from the freshly persisted `sync_metadata`.
+    // Without this, the UI's `get_scheduler_status` could keep returning
+    // pre-sync values for up to IDLE_POLL_SECONDS / MAX_SLEEP_SECONDS.
+    scheduler.notify_config_changed();
+    Ok(result)
+}
+
+/// Core GitHub stats sync routine.
+///
+/// Shared by the `sync_github_stats` Tauri command and the background sync
+/// scheduler (see `crate::sync_scheduler`). Both call sites pass an
+/// [`AppHandle`](tauri::AppHandle) and the application's [`AppState`].
+///
+/// Concurrency: this function takes `state.sync_lock` for the duration of the
+/// run so a manual "sync now" cannot race a scheduler-driven sync. Without
+/// the lock, both invocations would read the same pre-sync snapshot via
+/// `get_previous_github_stats` and each apply the diff independently,
+/// double-counting XP and badges.
+pub async fn run_github_sync(
+    app: &tauri::AppHandle,
+    state: &AppState,
+) -> Result<SyncResult, String> {
+    let _guard = state.sync_lock.lock().await;
+
     let token = state
         .token_manager
         .get_access_token()
@@ -787,6 +814,13 @@ pub async fn sync_github_stats(
         }
     };
 
+    // Persist post-sync metadata so the scheduler (and the SchedulerStatus UI)
+    // observe this run regardless of whether it was triggered by the user or
+    // the background scheduler. Without this, manual syncs would leave
+    // `last_sync_at = None` and the next scheduler tick would immediately run
+    // a duplicate sync.
+    persist_sync_success(state, user.id).await;
+
     Ok(SyncResult {
         user_stats: updated_stats,
         xp_gained: total_xp_gained,
@@ -798,6 +832,60 @@ pub async fn sync_github_stats(
         new_badges,
         stats_diff,
     })
+}
+
+/// Persist a successful GitHub sync to `sync_metadata`.
+///
+/// Centralised so manual (`sync_github_stats`) and scheduled
+/// (`crate::sync_scheduler::runner`) flows share identical post-processing.
+/// Errors are logged and swallowed because failing to update bookkeeping
+/// shouldn't fail the user-visible sync result.
+async fn persist_sync_success(state: &AppState, user_id: i64) {
+    use crate::sync_scheduler::GITHUB_STATS_SYNC_TYPE;
+
+    if let Err(e) = state
+        .db
+        .get_or_create_sync_metadata(user_id, GITHUB_STATS_SYNC_TYPE)
+        .await
+    {
+        eprintln!("Failed to ensure sync_metadata row: {}", e);
+        return;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    if let Err(e) = state
+        .db
+        .update_sync_metadata(
+            user_id,
+            GITHUB_STATS_SYNC_TYPE,
+            Some(now),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+    {
+        eprintln!("Failed to update sync_metadata after sync: {}", e);
+    }
+
+    // A successful sync invalidates any prior skip event (rate-limited /
+    // background-disabled etc.). Log on failure so silent stale data doesn't
+    // make the scheduler keep skipping based on outdated rate-limit metadata.
+    if let Err(e) = state
+        .db
+        .clear_sync_skipped(user_id, GITHUB_STATS_SYNC_TYPE)
+        .await
+    {
+        eprintln!("Failed to clear sync_skipped after sync: {}", e);
+    }
+    if let Err(e) = state
+        .db
+        .clear_sync_rate_limit(user_id, GITHUB_STATS_SYNC_TYPE)
+        .await
+    {
+        eprintln!("Failed to clear sync_rate_limit after sync: {}", e);
+    }
 }
 
 /// Get contribution calendar

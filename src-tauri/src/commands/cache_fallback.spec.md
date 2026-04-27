@@ -168,3 +168,25 @@ Dependencies (このファイルが使用するファイル):
 
 - 「キャッシュデータを表示中」のインジケーター
 - 最終更新日時（cached_at）
+
+---
+
+## 同期スケジューラとの関係
+
+GitHub 統計の自動同期は `crate::sync_scheduler` が担当する。スケジューラはユーザー設定（`sync_on_startup` / `sync_interval_minutes` / `background_sync`）に応じて
+バックグラウンドで `sync_github_stats` を駆動し、結果は本キャッシュ層と同様に DB
+に保存される。
+
+| トリガー | 担当 | 備考 |
+| --- | --- | --- |
+| 起動時同期 (`sync_on_startup=true`) | `sync_scheduler::runner` | 初回ループで `RunSync` |
+| 定期同期 (`sync_interval_minutes>0`) | `sync_scheduler::runner` | 経過時間で `RunSync` を発火 |
+| バックグラウンド OFF (`background_sync=false`) | `sync_scheduler::runner` | `Idle` 状態に入り、設定変更を待つ |
+| 手動同期 | `SyncSettings` の「今すぐ同期」 | 直接 `sync_github_stats` を呼ぶ |
+| キャッシュフォールバック | 本仕様 (`*_with_cache`) | API 失敗時のみ |
+
+スケジューラ側の詳細仕様: `src-tauri/src/sync_scheduler/sync_scheduler.spec.md`
+
+レート制限到達時は、スケジューラが `sync_metadata.last_skipped_reason = "rate_limited"`
+を保存し、`get_scheduler_status` 経由で `SyncSettings` 画面に表示される。本キャッシュ層は
+レート制限を含むネットワーク障害でフォールバックを発火する点で、両者は補完関係にある。
