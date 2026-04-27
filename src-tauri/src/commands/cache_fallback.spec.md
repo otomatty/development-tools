@@ -52,7 +52,9 @@ pub struct CachedResponse<T> {
 | ------------ | --------------- | -------- | -------------------------- |
 | GitHub Stats | `github_stats`  | 30 分    | ユーザーの GitHub 統計情報 |
 | User Stats   | `user_stats`    | 60 分    | ゲーミフィケーション統計   |
-| Level Info   | `level_info`    | 60 分    | レベル情報                 |
+
+> 期限の値は `src-tauri/src/database/models/cache.rs` の `cache_durations` 定数で集中管理。
+> 両コマンドおよび `sync_github_stats` は成功時に常にこの期限でキャッシュを上書きする。
 
 ### コマンド変更
 
@@ -70,10 +72,13 @@ pub async fn get_github_stats_with_cache(
 **動作フロー:**
 
 1. GitHubStats API を呼び出し
-2. 成功 → キャッシュに保存 → `CachedResponse { data, from_cache: false, ... }` を返す
-3. 失敗 → キャッシュから取得を試行
-   - キャッシュあり → `CachedResponse { data, from_cache: true, cached_at, ... }` を返す
-   - キャッシュなし → エラーを返す
+2. 成功 → 常にキャッシュを上書き保存 → `CachedResponse { data, from_cache: false, ... }` を返す
+3. 失敗
+   - 認証エラー (`Unauthorized`) → 401 ハンドラを呼んでエラーを返す（キャッシュは触らない）
+   - ネットワーク / レート制限エラー → キャッシュから取得を試行
+     - キャッシュあり → `CachedResponse { data, from_cache: true, cached_at, ... }` を返す
+     - キャッシュなし → エラーを返す
+   - その他の API エラー → エラーをそのまま返す
 
 #### get_user_stats_with_cache
 
@@ -164,10 +169,14 @@ Dependencies (このファイルが使用するファイル):
 
 ### フロントエンド表示
 
-キャッシュデータ使用時は以下を表示:
+`src/hooks/useCachedFetch.ts` が SWR ライクな fetcher として両コマンドをラップする。
+ホーム画面 (`src/pages/Home/Home.tsx`) は本フックを介して `*_with_cache` を呼び、以下を実現する:
 
-- 「キャッシュデータを表示中」のインジケーター
-- 最終更新日時（cached_at）
+- キャッシュ即時表示 → バックグラウンドで再検証 (Stale-While-Revalidate)
+- ウィンドウ復帰時 / ネットワーク再接続時の自動再検証
+- `staleTime` 経過後のみ revalidate を発火（無駄な API コールを抑制）
+- `from_cache=true` または直近の revalidate がエラーの場合は `CacheStatusBanner`
+  （`src/pages/Home/CacheStatusBanner.tsx`）でユーザーに通知し、最終更新時刻と再試行ボタンを提示する
 
 ---
 
@@ -175,7 +184,9 @@ Dependencies (このファイルが使用するファイル):
 
 GitHub 統計の自動同期は `crate::sync_scheduler` が担当する。スケジューラはユーザー設定（`sync_on_startup` / `sync_interval_minutes` / `background_sync`）に応じて
 バックグラウンドで `sync_github_stats` を駆動し、結果は本キャッシュ層と同様に DB
-に保存される。
+に保存される。さらに `run_github_sync` は同期成功後に `cache_types::GITHUB_STATS`
+キャッシュを `cache_durations::GITHUB_STATS` で上書きするため、直後の
+`get_github_stats_with_cache` は API を再度呼ばずにキャッシュから即時応答できる。
 
 | トリガー | 担当 | 備考 |
 | --- | --- | --- |

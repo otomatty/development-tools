@@ -445,6 +445,23 @@ pub async fn run_github_sync(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Also prime the activity cache so subsequent `get_github_stats_with_cache`
+    // calls can serve the freshly-synced data without re-hitting the API. The
+    // cache is best-effort: a write failure is logged but does not fail the
+    // sync. (Audit §9.2: ensure non-fallback paths populate the cache too.)
+    {
+        let now = chrono::Utc::now();
+        let expires_at = now
+            + chrono::Duration::minutes(crate::database::models::cache::cache_durations::GITHUB_STATS);
+        if let Err(e) = state
+            .db
+            .save_cache(user.id, cache_types::GITHUB_STATS, &stats_json, expires_at)
+            .await
+        {
+            eprintln!("Failed to prime github_stats cache after sync: {}", e);
+        }
+    }
+
     let xp_breakdown_result = XpBreakdownResult {
         commits_xp: xp_breakdown.commits_xp,
         prs_created_xp: xp_breakdown.prs_created_xp,
@@ -1319,12 +1336,16 @@ pub async fn get_github_stats_with_cache(
 
     match api_result {
         Ok(stats) => {
-            // API succeeded - cache the data
+            // API succeeded - always refresh the cache (audit §9.2: cache must
+            // be populated on the success path, not only when falling back).
             let stats_json = serde_json::to_string(&stats)
                 .map_err(|e| format!("Failed to serialize stats: {}", e))?;
 
             let now = chrono::Utc::now();
-            let expires_at = now + chrono::Duration::minutes(30);
+            let expires_at = now
+                + chrono::Duration::minutes(
+                    crate::database::models::cache::cache_durations::GITHUB_STATS,
+                );
 
             // Save to cache (ignore errors - caching is best effort)
             let _ = state
@@ -1401,16 +1422,20 @@ pub async fn get_user_stats_with_cache(
         .map_err(|e| e.to_string())?
         .ok_or("Not logged in")?;
 
-    // User stats are stored locally, so they should always be available
-    // But we still cache for consistency and to support future scenarios
+    // User stats are stored locally, so they should always be available.
+    // Even on the success path we refresh the cache (audit §9.2: cache must
+    // be populated outside the fallback path) so the SWR-style frontend can
+    // render last-known stats during a transient DB failure.
     match state.db.get_user_stats(user.id).await {
         Ok(Some(stats)) => {
-            // Cache the stats
             let stats_json = serde_json::to_string(&stats)
                 .map_err(|e| format!("Failed to serialize stats: {}", e))?;
 
             let now = chrono::Utc::now();
-            let expires_at = now + chrono::Duration::minutes(60);
+            let expires_at = now
+                + chrono::Duration::minutes(
+                    crate::database::models::cache::cache_durations::USER_STATS,
+                );
 
             let _ = state
                 .db
