@@ -112,6 +112,8 @@ export const Home = () => {
 
   const fromCache = githubStatsQuery.fromCache || userStatsQuery.fromCache;
   const hasError = githubStatsQuery.error !== null || userStatsQuery.error !== null;
+  const hasData =
+    githubStatsQuery.data !== null || userStatsQuery.data !== null;
   const isRevalidating =
     githubStatsQuery.isRevalidating || userStatsQuery.isRevalidating;
   // Surface the older of the two cache timestamps so the user sees the
@@ -130,6 +132,7 @@ export const Home = () => {
           <CacheStatusBanner
             fromCache={fromCache}
             hasError={hasError}
+            hasData={hasData}
             isRevalidating={isRevalidating}
             cachedAt={bannerCachedAt}
             onRetry={handleRetry}

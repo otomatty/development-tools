@@ -17,6 +17,8 @@ interface CacheStatusBannerProps {
   fromCache: boolean;
   /** Whether the latest revalidation attempt failed. */
   hasError: boolean;
+  /** Whether the dashboard currently has any data to display (cached or fresh). */
+  hasData: boolean;
   /** Whether a background revalidation is currently in flight. */
   isRevalidating: boolean;
   /** ISO8601 timestamp of the cached data being displayed. */
@@ -37,6 +39,7 @@ function formatTimestamp(isoString: string | null): string | null {
 export const CacheStatusBanner = ({
   fromCache,
   hasError,
+  hasData,
   isRevalidating,
   cachedAt,
   onRetry,
@@ -44,9 +47,18 @@ export const CacheStatusBanner = ({
   if (!fromCache && !hasError) return null;
 
   const cachedTime = formatTimestamp(cachedAt);
-  const message = hasError
-    ? '最新化に失敗しました。前回取得したデータを表示中です。'
-    : 'キャッシュされたデータを表示中です。';
+  // Distinguish "revalidate failed but cache is on screen" from "initial load
+  // failed and we have nothing to show". The original error message implied
+  // the former unconditionally, which was misleading in the latter case.
+  let message: string;
+  if (hasError && !hasData) {
+    message = 'データの取得に失敗しました。再試行してください。';
+  } else if (hasError) {
+    message = '最新化に失敗しました。前回取得したデータを表示中です。';
+  } else {
+    message = 'キャッシュされたデータを表示中です。';
+  }
+  const showCachedTime = cachedTime !== null && hasData;
 
   return (
     <div
@@ -56,7 +68,7 @@ export const CacheStatusBanner = ({
       <Icon name="alert-triangle" className="w-4 h-4 flex-shrink-0" />
       <span className="flex-1">
         {message}
-        {cachedTime && (
+        {showCachedTime && (
           <span className="ml-2 text-amber-300/80 text-xs">
             最終更新: {cachedTime}
           </span>
