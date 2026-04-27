@@ -26,6 +26,7 @@ import type {
   RepositoryInfo,
   CachedIssue,
   KanbanBoard,
+  MyOpenWork,
   LevelInfo,
   Badge,
   BadgeDefinition,
@@ -275,6 +276,18 @@ export const issues = {
     priority?: string | null,
   ): Promise<CachedIssue> =>
     invoke<CachedIssue>('create_github_issue', { project_id, title, body, status, priority }),
+
+  /**
+   * Cross-repository "Today / Inbox": Open Issues assigned to the current
+   * user plus PRs where they are requested as a reviewer.
+   *
+   * Backed by GitHub's Search API with a 5-minute SQLite cache. Use with
+   * `useCachedFetch` for SWR-style revalidation.
+   *
+   * Related: Issue #183
+   */
+  getMyOpenWorkWithCache: (): Promise<CachedResponse<MyOpenWork>> =>
+    invoke<CachedResponse<MyOpenWork>>('get_my_open_work_with_cache'),
 };
 
 // ============================================================================

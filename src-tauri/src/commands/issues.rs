@@ -13,15 +13,18 @@
 //!   └─ src-tauri/src/commands/auth.rs (for auth state)
 
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, State};
 
-use crate::auth::map_github_result;
+use crate::auth::{handle_unauthorized, map_github_result, reasons};
+use crate::commands::github::CachedResponse;
 use crate::commands::AppState;
 use crate::database::models::project::{
     CachedIssue, IssueStatus, KanbanBoard, Project, ProjectWithStats, RepositoryInfo,
 };
-use crate::github::issues::{generate_actions_template, IssuesClient};
+use crate::github::client::GitHubError;
+use crate::github::issues::{generate_actions_template, GitHubSearchItem, IssuesClient};
 
 /// Get all projects for the current user
 #[tauri::command]
@@ -616,6 +619,219 @@ pub async fn create_github_issue(
     .await
     .map_err(|e| format!("Failed to fetch issue: {}", e))?
     .ok_or_else(|| "Issue not found".to_string())
+}
+
+// ============================================================================
+// Cross-repository "Today / Inbox" (Issue #183)
+// ============================================================================
+
+/// One row in the cross-repository inbox.
+///
+/// Field naming uses camelCase on the wire for parity with the rest of the
+/// `commands::*` API surface; the frontend type lives in
+/// `src/types/issue.ts::MyOpenWorkItem`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MyOpenWorkItem {
+    pub id: i64,
+    pub number: i32,
+    pub title: String,
+    pub state: String,
+    pub html_url: String,
+    pub repo_owner: String,
+    pub repo_name: String,
+    pub repo_full_name: String,
+    /// `"issue"` (assigned to me) or `"pull_request"` (review requested).
+    pub kind: String,
+    /// Source query, used by the UI to split tabs:
+    /// `"assigned"` or `"review_requested"`.
+    pub source: String,
+    pub priority: Option<String>,
+    pub labels: Vec<String>,
+    pub assignee_login: Option<String>,
+    pub assignee_avatar_url: Option<String>,
+    pub author_login: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Aggregated payload returned by [`get_my_open_work_with_cache`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MyOpenWork {
+    pub assigned: Vec<MyOpenWorkItem>,
+    pub review_requested: Vec<MyOpenWorkItem>,
+}
+
+fn convert_search_item(item: GitHubSearchItem, source: &str) -> MyOpenWorkItem {
+    let (owner, repo) = item
+        .owner_and_repo()
+        .unwrap_or_else(|| ("".to_string(), "".to_string()));
+    let repo_full_name = if !owner.is_empty() && !repo.is_empty() {
+        format!("{}/{}", owner, repo)
+    } else {
+        item.repository_url.clone()
+    };
+
+    let priority = IssuesClient::extract_priority(&item.labels).map(|p| p.to_string());
+    let kind = if item.is_pull_request() {
+        "pull_request"
+    } else {
+        "issue"
+    };
+
+    MyOpenWorkItem {
+        id: item.id,
+        number: item.number,
+        title: item.title,
+        state: item.state,
+        html_url: item.html_url,
+        repo_owner: owner,
+        repo_name: repo,
+        repo_full_name,
+        kind: kind.to_string(),
+        source: source.to_string(),
+        priority,
+        labels: item.labels.into_iter().map(|l| l.name).collect(),
+        assignee_login: item.assignee.as_ref().map(|a| a.login.clone()),
+        assignee_avatar_url: item.assignee.as_ref().map(|a| a.avatar_url.clone()),
+        author_login: item.user.as_ref().map(|u| u.login.clone()),
+        created_at: item.created_at.to_rfc3339(),
+        updated_at: item.updated_at.to_rfc3339(),
+    }
+}
+
+fn is_network_or_rate_limit_error(error: &GitHubError) -> bool {
+    matches!(
+        error,
+        GitHubError::HttpRequest(_) | GitHubError::RateLimited(_)
+    )
+}
+
+/// Fetch the cross-repository inbox (assigned Open Issues + Review Requested
+/// PRs) with a 5-minute SQLite cache.
+///
+/// Behaviour mirrors `get_github_stats_with_cache`:
+/// - Both Search API queries succeed → cache + return `from_cache: false`.
+/// - Network / rate-limit error → fall back to last cached payload (any age)
+///   if available, else surface the error.
+/// - 401 → trigger the central auth-expired flow; do not fall back to cache.
+///
+/// Search API budget: 30 req/min for authenticated users. Two requests per
+/// refresh and a 5-minute TTL keep us well under that even with focus
+/// revalidation.
+#[tauri::command]
+pub async fn get_my_open_work_with_cache(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<MyOpenWork>, String> {
+    let user_id = get_current_user_id(&state).await?;
+    let access_token = get_access_token(&state).await?;
+    let client = IssuesClient::new(access_token);
+
+    // Fire both queries; even though the Search API has a tighter rate
+    // budget than core REST, we issue them sequentially to keep failures
+    // attributable and avoid a stampede when several users come back online
+    // at once.
+    let assigned_result = client.search_assigned_issues().await;
+    let reviews_result = match &assigned_result {
+        Ok(_) => client.search_review_requested().await,
+        // If the first call already failed (e.g. the network just dropped),
+        // we don't bother issuing the second one — the fallback path below
+        // will handle either failure identically.
+        Err(_) => Err(GitHubError::ApiError(
+            "skipped due to prior failure".to_string(),
+        )),
+    };
+
+    match (assigned_result, reviews_result) {
+        (Ok(assigned), Ok(reviews)) => {
+            let payload = MyOpenWork {
+                assigned: assigned
+                    .into_iter()
+                    .map(|i| convert_search_item(i, "assigned"))
+                    .collect(),
+                review_requested: reviews
+                    .into_iter()
+                    .map(|i| convert_search_item(i, "review_requested"))
+                    .collect(),
+            };
+
+            let payload_json = serde_json::to_string(&payload)
+                .map_err(|e| format!("Failed to serialize my_open_work: {}", e))?;
+
+            let now = Utc::now();
+            let expires_at =
+                now + chrono::Duration::minutes(crate::database::cache_durations::MY_OPEN_WORK);
+
+            // Best effort: a cache failure shouldn't block the response.
+            let _ = state
+                .db
+                .save_cache(
+                    user_id,
+                    crate::database::cache_types::MY_OPEN_WORK,
+                    &payload_json,
+                    expires_at,
+                )
+                .await;
+
+            Ok(CachedResponse {
+                data: payload,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        (assigned, reviews) => {
+            // Surface the first error that occurred. Auth errors get the
+            // centralized 401 treatment; transient/network errors trigger
+            // cache fallback.
+            let first_err = match (&assigned, &reviews) {
+                (Err(e), _) => e,
+                (_, Err(e)) => e,
+                _ => unreachable!("both Ok handled above"),
+            };
+
+            if matches!(first_err, GitHubError::Unauthorized) {
+                handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+                return Err(first_err.to_string());
+            }
+
+            if !is_network_or_rate_limit_error(first_err) {
+                return Err(format!("GitHub Search API error: {}", first_err));
+            }
+
+            // Network / rate-limit error → cache fallback.
+            eprintln!(
+                "GitHub Search API error, attempting cache fallback: {}",
+                first_err
+            );
+
+            let cache_result = state
+                .db
+                .get_any_cache(user_id, crate::database::cache_types::MY_OPEN_WORK)
+                .await
+                .ok()
+                .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let payload: MyOpenWork = serde_json::from_str(&data_json)
+                        .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    Ok(CachedResponse {
+                        data: payload,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!(
+                    "Search APIにアクセスできず、キャッシュもありません: {}",
+                    first_err
+                )),
+            }
+        }
+    }
 }
 
 // ============================================================================

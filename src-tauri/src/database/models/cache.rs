@@ -34,6 +34,9 @@ pub mod cache_types {
     pub const USER_STATS: &str = "user_stats";
     pub const REPOSITORIES: &str = "repositories";
     pub const LANGUAGES: &str = "languages";
+    /// Cross-repo "Today / Inbox": assigned Open Issues + Review Requested
+    /// PRs combined into a single payload. See Issue #183.
+    pub const MY_OPEN_WORK: &str = "my_open_work";
 }
 
 /// Default cache durations in minutes
@@ -48,4 +51,8 @@ pub mod cache_durations {
     pub const REPOSITORIES: i64 = 120;
     /// Languages cache duration (24 hours)
     pub const LANGUAGES: i64 = 1440;
+    /// Cross-repo "Today / Inbox" cache duration (5 minutes).
+    /// Search API budget is 30 req/min — even at one user with one foreground
+    /// + revalidate-on-focus, 5 minutes keeps us well under that.
+    pub const MY_OPEN_WORK: i64 = 5;
 }
