@@ -350,11 +350,19 @@ fn build_inputs(
         _ => (db_remaining, db_reset),
     };
 
+    // Effective baseline for the interval calculation: prefer the real
+    // last_sync_at, fall back to the synthesized scheduler_baseline_at when
+    // the user opted out of startup sync. Keeping these as separate columns
+    // means the UI never sees the synthetic timestamp as "last sync".
+    let last_sync_at = metadata
+        .and_then(|m| m.last_sync_at_parsed())
+        .or_else(|| metadata.and_then(|m| m.scheduler_baseline_at_parsed()));
+
     SchedulerInputs {
         sync_on_startup: settings.sync_on_startup,
         sync_interval_minutes: settings.sync_interval_minutes,
         background_sync: settings.background_sync,
-        last_sync_at: metadata.and_then(|m| m.last_sync_at_parsed()),
+        last_sync_at,
         rate_limit_remaining,
         rate_limit_reset_at,
         is_first_run,
@@ -415,42 +423,23 @@ fn log_db_err<T>(op: &str, result: crate::database::DbResult<T>) {
     }
 }
 
-/// Persist `last_sync_at = now` so the `sync_on_startup=false` opt-out
-/// survives across iterations.
+/// Persist a synthetic interval baseline so the `sync_on_startup=false`
+/// opt-out survives across iterations.
 ///
 /// Without this, the second iteration would see `last_sync_at = None` again
 /// (because no real sync has happened yet) and `decide_action` would fall
 /// through to its catch-up branch — auto-syncing the user shortly after
 /// startup, contradicting their explicit "don't sync on startup" choice.
 ///
-/// We use the same `update_sync_metadata` path the post-sync flow uses; the
-/// fact that `last_sync_at` lies slightly (no actual sync occurred) is
-/// acceptable because (1) only this scheduler reads `last_sync_at` for
-/// `sync_type = "github_stats"`, and (2) the next real sync overwrites it.
+/// Writes to `sync_metadata.scheduler_baseline_at` rather than `last_sync_at`
+/// so the UI's "最終自動同期" doesn't misreport a phantom sync that never
+/// happened. `build_inputs` falls back to this column when `last_sync_at`
+/// is None.
 async fn persist_startup_baseline(db: &crate::database::Database, user_id: i64) {
-    if let Err(e) = db
-        .get_or_create_sync_metadata(user_id, GITHUB_STATS_SYNC_TYPE)
-        .await
-    {
-        eprintln!(
-            "Scheduler: persist_startup_baseline ensure-row failed: {}",
-            e
-        );
-        return;
-    }
-    let now = Utc::now().to_rfc3339();
     log_db_err(
         "persist_startup_baseline",
-        db.update_sync_metadata(
-            user_id,
-            GITHUB_STATS_SYNC_TYPE,
-            Some(now),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await,
+        db.record_scheduler_baseline(user_id, GITHUB_STATS_SYNC_TYPE, Utc::now())
+            .await,
     );
 }
 
@@ -547,6 +536,7 @@ mod tests {
             etag: None,
             rate_limit_remaining: Some(0),
             rate_limit_reset_at: Some(reset_db.to_rfc3339()),
+            scheduler_baseline_at: None,
             last_skipped_at: None,
             last_skipped_reason: None,
         };
@@ -571,6 +561,62 @@ mod tests {
         assert_eq!(
             inputs.rate_limit_reset_at.unwrap().timestamp(),
             fallback_reset.timestamp()
+        );
+    }
+
+    #[test]
+    fn build_inputs_uses_scheduler_baseline_when_no_real_sync() {
+        let now = Utc::now();
+        let baseline = now - chrono::Duration::minutes(20);
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: GITHUB_STATS_SYNC_TYPE.to_string(),
+            last_sync_at: None,
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: None,
+            rate_limit_reset_at: None,
+            scheduler_baseline_at: Some(baseline.to_rfc3339()),
+            last_skipped_at: None,
+            last_skipped_reason: None,
+        };
+        let settings = UserSettings::default();
+
+        let inputs = build_inputs(&settings, Some(&metadata), None, false, now);
+        // last_sync_at falls back to the synthetic baseline so decide_action
+        // sees a real elapsed time.
+        assert_eq!(
+            inputs.last_sync_at.unwrap().timestamp(),
+            baseline.timestamp()
+        );
+    }
+
+    #[test]
+    fn build_inputs_prefers_real_last_sync_over_baseline() {
+        let now = Utc::now();
+        let real_last = now - chrono::Duration::minutes(5);
+        let stale_baseline = now - chrono::Duration::days(3);
+        let metadata = SyncMetadata {
+            id: 1,
+            user_id: 1,
+            sync_type: GITHUB_STATS_SYNC_TYPE.to_string(),
+            last_sync_at: Some(real_last.to_rfc3339()),
+            last_sync_cursor: None,
+            etag: None,
+            rate_limit_remaining: None,
+            rate_limit_reset_at: None,
+            scheduler_baseline_at: Some(stale_baseline.to_rfc3339()),
+            last_skipped_at: None,
+            last_skipped_reason: None,
+        };
+        let settings = UserSettings::default();
+
+        let inputs = build_inputs(&settings, Some(&metadata), None, false, now);
+        // Real last_sync_at wins over the synthetic baseline.
+        assert_eq!(
+            inputs.last_sync_at.unwrap().timestamp(),
+            real_last.timestamp()
         );
     }
 

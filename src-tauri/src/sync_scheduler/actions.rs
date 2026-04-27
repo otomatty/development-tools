@@ -89,9 +89,16 @@ pub fn next_sync_at(inputs: &SchedulerInputs) -> Option<DateTime<Utc>> {
     if inputs.sync_interval_minutes <= 0 {
         return None;
     }
+    // Mirror `decide_action`: when rate-limited, the next sync isn't
+    // `last + interval` (often already in the past) but the rate-limit
+    // reset. Without this, the UI can show a past "next sync" timestamp
+    // while the scheduler is intentionally paused.
+    if let Some(rate_reset) = active_rate_limit_until(inputs) {
+        return Some(rate_reset);
+    }
     let interval = Duration::minutes(inputs.sync_interval_minutes as i64);
-    // Mirrors `decide_action`: a first-run user with sync_on_startup=false
-    // and no history is scheduled `interval` from now, not immediately.
+    // a user with sync_on_startup=false and no history is scheduled
+    // `interval` from now, not immediately.
     let baseline = match inputs.last_sync_at {
         Some(last) => last,
         None if !inputs.sync_on_startup => inputs.now,
@@ -100,7 +107,10 @@ pub fn next_sync_at(inputs: &SchedulerInputs) -> Option<DateTime<Utc>> {
     Some(baseline + interval)
 }
 
-fn check_rate_limit(inputs: &SchedulerInputs) -> Option<SchedulerAction> {
+/// Return the rate-limit reset time iff we're currently rate-limited (i.e.
+/// `decide_action` would return RateLimited). Shared between `decide_action`
+/// and `next_sync_at` so both surface a consistent next-sync prediction.
+fn active_rate_limit_until(inputs: &SchedulerInputs) -> Option<DateTime<Utc>> {
     let remaining = inputs.rate_limit_remaining?;
     if remaining > RATE_LIMIT_FLOOR {
         return None;
@@ -109,6 +119,11 @@ fn check_rate_limit(inputs: &SchedulerInputs) -> Option<SchedulerAction> {
     if reset <= inputs.now {
         return None;
     }
+    Some(reset)
+}
+
+fn check_rate_limit(inputs: &SchedulerInputs) -> Option<SchedulerAction> {
+    let reset = active_rate_limit_until(inputs)?;
     let until_reset = reset - inputs.now;
     Some(SchedulerAction::RateLimited {
         reason: skip_reasons::RATE_LIMITED,
@@ -324,6 +339,26 @@ mod tests {
         // last+30min = now-10min + 30min = now+20min
         assert!(diff.num_seconds() >= 19 * 60);
         assert!(diff.num_seconds() <= 21 * 60);
+    }
+
+    /// TC-011b: `next_sync_at` returns the rate-limit reset when actively
+    /// rate-limited, NOT `last + interval` (which can be in the past).
+    #[test]
+    fn next_sync_at_returns_rate_limit_reset_when_throttled() {
+        let now = Utc::now();
+        let reset = now + Duration::minutes(20);
+        let inputs = SchedulerInputs {
+            sync_interval_minutes: 60,
+            // last_sync_at + interval is in the past, but we're rate-limited
+            // so the actual next sync is at the reset.
+            last_sync_at: Some(now - Duration::hours(2)),
+            rate_limit_remaining: Some(0),
+            rate_limit_reset_at: Some(reset),
+            now,
+            ..base_inputs()
+        };
+        let projected = next_sync_at(&inputs).expect("next_sync_at should be Some");
+        assert_eq!(projected.timestamp(), reset.timestamp());
     }
 
     /// TC-012: `next_sync_at` is None when scheduling is disabled.

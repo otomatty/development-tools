@@ -228,7 +228,7 @@ impl Database {
             r#"
             SELECT id, user_id, sync_type, last_sync_at, last_sync_cursor,
                    etag, rate_limit_remaining, rate_limit_reset_at,
-                   last_skipped_at, last_skipped_reason
+                   last_skipped_at, last_skipped_reason, scheduler_baseline_at
             FROM sync_metadata
             WHERE user_id = ? AND sync_type = ?
             "#,
@@ -250,7 +250,38 @@ impl Database {
             rate_limit_reset_at: r.get("rate_limit_reset_at"),
             last_skipped_at: r.get("last_skipped_at"),
             last_skipped_reason: r.get("last_skipped_reason"),
+            scheduler_baseline_at: r.get("scheduler_baseline_at"),
         }))
+    }
+
+    /// Persist a synthetic interval baseline used by the scheduler when the
+    /// user opts out of startup sync and has no real sync history. Distinct
+    /// from `last_sync_at` so the UI doesn't surface this as a "last sync".
+    pub async fn record_scheduler_baseline(
+        &self,
+        user_id: i64,
+        sync_type: &str,
+        baseline_at: chrono::DateTime<chrono::Utc>,
+    ) -> DbResult<()> {
+        self.get_or_create_sync_metadata(user_id, sync_type).await?;
+
+        let baseline_str = baseline_at.to_rfc3339();
+        sqlx::query(
+            r#"
+            UPDATE sync_metadata
+            SET scheduler_baseline_at = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND sync_type = ?
+            "#,
+        )
+        .bind(&baseline_str)
+        .bind(user_id)
+        .bind(sync_type)
+        .execute(self.pool())
+        .await
+        .map_err(|e| crate::database::connection::DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
     }
 
     /// Update sync metadata after a sync operation

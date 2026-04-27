@@ -65,6 +65,10 @@ pub struct SyncMetadata {
     pub last_skipped_at: Option<String>,
     /// Reason the scheduler skipped a sync (e.g. "rate_limited")
     pub last_skipped_reason: Option<String>,
+    /// Synthetic interval baseline used when `sync_on_startup=false` and no
+    /// real sync has happened yet. Distinct from `last_sync_at` so the UI
+    /// doesn't show a fake "last sync" time for users who never synced.
+    pub scheduler_baseline_at: Option<String>,
 }
 
 impl SyncMetadata {
@@ -89,6 +93,15 @@ impl SyncMetadata {
     /// Parse last_skipped_at as DateTime<Utc>
     pub fn last_skipped_at_parsed(&self) -> Option<DateTime<Utc>> {
         self.last_skipped_at.as_ref().and_then(|s| {
+            DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        })
+    }
+
+    /// Parse scheduler_baseline_at as DateTime<Utc>
+    pub fn scheduler_baseline_at_parsed(&self) -> Option<DateTime<Utc>> {
+        self.scheduler_baseline_at.as_ref().and_then(|s| {
             DateTime::parse_from_rfc3339(s)
                 .ok()
                 .map(|dt| dt.with_timezone(&Utc))
@@ -354,6 +367,7 @@ mod tests {
             rate_limit_reset_at: None,
             last_skipped_at: None,
             last_skipped_reason: None,
+            scheduler_baseline_at: None,
         };
 
         let parsed = metadata.last_sync_at_parsed();
@@ -376,6 +390,7 @@ mod tests {
             rate_limit_reset_at: None,
             last_skipped_at: None,
             last_skipped_reason: None,
+            scheduler_baseline_at: None,
         };
 
         assert!(metadata.last_sync_at_parsed().is_none());
@@ -394,6 +409,7 @@ mod tests {
             rate_limit_reset_at: Some("2025-11-30T13:00:00Z".to_string()),
             last_skipped_at: None,
             last_skipped_reason: None,
+            scheduler_baseline_at: None,
         };
 
         let parsed = metadata.rate_limit_reset_at_parsed();

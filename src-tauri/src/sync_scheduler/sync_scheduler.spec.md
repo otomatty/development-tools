@@ -56,11 +56,20 @@ RateLimited { reason, seconds }      - レート制限解除を待つ
 
 履歴が無いケース（fresh install など）では：
 
-- 初回 + `sync_on_startup = false` → `now` を baseline と見なし、Sleep する
+- `sync_on_startup = false` → `now` を baseline と見なし、Sleep する
   （`interval` 後に最初の自動同期）。ユーザーが明示的に「起動時同期しない」を
   選んでいるため、catch-up でその意図を上書きしない。
-- それ以外（履歴無しの 2 回目以降など実質的に発生しないケース） → `RunSync`
-  で復帰させる。
+  - ランナーは初回 Sleep 直前に `sync_metadata.scheduler_baseline_at = now`
+    を永続化し、`build_inputs` が `last_sync_at` の代わりにこの列を
+    fallback として使う。`last_sync_at` を直接書き換えると UI の
+    「最終自動同期」に幻の同期時刻が表示されてしまうため列を分離。
+- `sync_on_startup = true` → `RunSync` で復帰させる。
+
+#### Rate limit 中の `next_sync_at`
+
+`next_sync_at` は rate limit 状態にあるとき `last + interval`（過去になる
+可能性あり）ではなく `rate_limit_reset_at` を返す。これにより
+`get_scheduler_status` が UI に「過去の時刻に次回同期」と誤表示するのを防ぐ。
 
 ### 並行制御
 
