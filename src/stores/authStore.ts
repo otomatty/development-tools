@@ -91,6 +91,15 @@ export const useAuth = create<AuthStore>((set, get) => ({
 // won't see the auto-prompt until they next reload.
 events
   .onAuthExpired((event) => {
+    // Cancel any in-flight `fetchAuthState` / `logout` so a stale success
+    // response can't sneak in after the event and overwrite the logged-out
+    // state we're about to set. Concrete failure mode without this bump:
+    // at startup, `fetchAuthState()` runs concurrently with the backend's
+    // startup token probe; the probe hits 401 and emits `auth-expired`,
+    // but the `getState` call (initiated before the credential was cleared)
+    // resolves with the still-cached `user` row and flips `isLoggedIn` back
+    // to true — leaving the UI in a phantom logged-in state.
+    ++authRequestSeq;
     useAuth.setState({
       state: { isLoggedIn: false, user: null },
       authExpired: event,

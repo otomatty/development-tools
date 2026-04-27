@@ -181,6 +181,30 @@ pub async fn run_startup_token_validation(app: AppHandle, state: &AppState) {
             // Token still works — nothing to do.
         }
         Ok(false) => {
+            // Re-check the active credential before clearing it. The user
+            // could have re-authenticated (or logged out, then back in as a
+            // different account) while the GitHub probe was in flight; the
+            // 401 we just observed applies to a token that's already been
+            // replaced. Forcing a logout here would wipe the freshly saved
+            // session and immediately undo the user's re-login.
+            //
+            // Compare the decrypted token rather than just the user id so an
+            // account-swap to the *same* GitHub user (rare, but possible
+            // after a manual revoke + re-grant) is also caught.
+            let still_same = match state.token_manager.get_access_token().await {
+                Ok(current) => current == access_token,
+                // NotLoggedIn / decrypt failure → user state changed under
+                // us; either way, don't clobber it.
+                Err(_) => false,
+            };
+            if !still_same {
+                eprintln!(
+                    "Startup auth check: stored token for user {} changed during validation; skipping logout",
+                    user.id
+                );
+                return;
+            }
+
             eprintln!(
                 "Startup auth check: GitHub rejected the stored token for user {}; clearing session",
                 user.id
