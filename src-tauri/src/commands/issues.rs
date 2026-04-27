@@ -707,9 +707,12 @@ fn convert_search_item(item: GitHubSearchItem, source: &str) -> MyOpenWorkItem {
 }
 
 fn is_network_or_rate_limit_error(error: &GitHubError) -> bool {
+    // `Incomplete` (Search API server-side timeout) is included here so the
+    // command falls back to the previous cache instead of caching a partial
+    // inbox as a successful refresh.
     matches!(
         error,
-        GitHubError::HttpRequest(_) | GitHubError::RateLimited(_)
+        GitHubError::HttpRequest(_) | GitHubError::RateLimited(_) | GitHubError::Incomplete(_)
     )
 }
 

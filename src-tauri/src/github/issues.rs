@@ -387,6 +387,17 @@ impl IssuesClient {
         let mut page: i32 = 1;
         loop {
             let response = self.search_issues(q, PER_PAGE, page).await?;
+            // GitHub sets `incomplete_results: true` when a search times out
+            // server-side (e.g. heavy index load). Caching a partial inbox
+            // would silently hide assigned/review-requested work until the
+            // next refresh, so we bail with a transient error and let the
+            // caller fall back to the previous cache.
+            if response.incomplete_results {
+                return Err(GitHubError::Incomplete(format!(
+                    "Search API returned incomplete_results=true on page {} (query: {})",
+                    page, q
+                )));
+            }
             let returned = response.items.len();
             all.extend(response.items);
             // Last page: GitHub returned fewer than the requested page size.
@@ -1190,6 +1201,32 @@ mod tests {
             item.repo_full_name(),
             "https://ghe.example.com/api/v3/repos/o/r"
         );
+    }
+
+    #[test]
+    fn search_response_deserializes_incomplete_results_flag() {
+        // Sanity check that the `incomplete_results` field round-trips
+        // through JSON — the pagination loop relies on it to decide
+        // whether to cache a partial page.
+        let json = r#"{
+            "total_count": 0,
+            "incomplete_results": true,
+            "items": []
+        }"#;
+        let response: GitHubSearchResponse =
+            serde_json::from_str(json).expect("parse search response");
+        assert!(response.incomplete_results);
+        assert_eq!(response.total_count, 0);
+        assert!(response.items.is_empty());
+
+        let complete_json = r#"{
+            "total_count": 1,
+            "incomplete_results": false,
+            "items": []
+        }"#;
+        let response: GitHubSearchResponse =
+            serde_json::from_str(complete_json).expect("parse complete response");
+        assert!(!response.incomplete_results);
     }
 
     #[test]

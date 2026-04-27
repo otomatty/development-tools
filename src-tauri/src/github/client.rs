@@ -34,6 +34,13 @@ pub enum GitHubError {
 
     #[error("GraphQL error: {0}")]
     GraphQL(String),
+
+    /// Search API returned `incomplete_results: true` (typically a server-side
+    /// search timeout under heavy indexing load). Treated as transient so
+    /// callers can retry / fall back to cache rather than committing partial
+    /// data — see Issue #183.
+    #[error("Incomplete results: {0}")]
+    Incomplete(String),
 }
 
 pub type GitHubResult<T> = Result<T, GitHubError>;

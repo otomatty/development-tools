@@ -123,11 +123,15 @@ pub async fn get_my_open_work_with_cache(
      優先して surface する。混在ケース（例: `assigned = HttpRequest`,
      `reviews = ApiError("500 …")`）でステイル・キャッシュにより本物の
      バックエンド障害を隠さないため。
-   - **ネットワーク / レート制限エラー（両方とも）**: `get_any_cache` で過去
+   - **ネットワーク / レート制限 / `Incomplete` エラー（両方とも）**: `get_any_cache` で過去
      キャッシュを取得し、
      - キャッシュあり → `CachedResponse { from_cache: true, cached_at, expires_at }` を返す
      - キャッシュなし → エラーを返す
      - DB エラー → `None` に潰さず、DB 障害をそのまま呼び出し元に返す
+     - `GitHubError::Incomplete` は Search API が `incomplete_results: true` を
+       返した（典型的にはサーバ側のサーチタイムアウト）ことを表す。
+       部分的な結果をキャッシュすると次回更新まで一部の Issue / PR が消えるため、
+       他の transient エラーと同じくフォールバックさせる。
 
 ### Search API クエリ
 
