@@ -93,6 +93,13 @@ export function useCachedFetch<T>(
   // Mirror of `data` for use inside event handlers that should not re-bind
   // every render.
   const hasDataRef = useRef(false);
+  // Monotonic "request epoch" bumped whenever the hook is disabled. A run that
+  // started under one epoch must not commit results under another — without
+  // this, a logout + immediate re-login as a different user could let the
+  // previous user's pending fetch resolve and overwrite the new session's
+  // (empty) state. `enabledRef` alone is not enough because both sessions see
+  // `enabled = true`; the epoch distinguishes them.
+  const requestEpochRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -104,15 +111,24 @@ export function useCachedFetch<T>(
   const run = useCallback(async (mode: 'initial' | 'revalidate') => {
     if (!enabledRef.current) return;
     if (inFlightRef.current) return;
+    const epochAtStart = requestEpochRef.current;
     inFlightRef.current = true;
     if (mode === 'initial') {
       setIsLoading(true);
     } else {
       setIsRevalidating(true);
     }
+    // Detect whether the run is still the live one for this epoch. A bumped
+    // epoch means the hook was disabled mid-flight; in that case the disable
+    // handler already reset `inFlightRef` and visible state, so we must drop
+    // anything we'd otherwise commit here.
+    const isStillLive = () =>
+      mountedRef.current &&
+      enabledRef.current &&
+      epochAtStart === requestEpochRef.current;
     try {
       const response = await fetcherRef.current();
-      if (!mountedRef.current || !enabledRef.current) return;
+      if (!isStillLive()) return;
       setData(response.data);
       hasDataRef.current = true;
       setFromCache(response.fromCache);
@@ -126,15 +142,21 @@ export function useCachedFetch<T>(
         lastFreshAtRef.current = Date.now();
       }
     } catch (e) {
-      if (!mountedRef.current || !enabledRef.current) return;
+      if (!isStillLive()) return;
       setError(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      inFlightRef.current = false;
-      if (mountedRef.current && enabledRef.current) {
-        if (mode === 'initial') {
-          setIsLoading(false);
-        } else {
-          setIsRevalidating(false);
+      // Only release the in-flight slot if we're still the live request.
+      // Otherwise the disable handler has already cleared it and a fresh
+      // run for the new epoch may have re-acquired it; clearing it again
+      // here would corrupt that newer run.
+      if (epochAtStart === requestEpochRef.current) {
+        inFlightRef.current = false;
+        if (mountedRef.current && enabledRef.current) {
+          if (mode === 'initial') {
+            setIsLoading(false);
+          } else {
+            setIsRevalidating(false);
+          }
         }
       }
     }
@@ -142,9 +164,13 @@ export function useCachedFetch<T>(
 
   // Initial load when enabled flips true; reset all state when it flips false
   // so a logout + login as a different user can't briefly show the previous
-  // user's stats.
+  // user's stats. We bump `requestEpochRef` and clear `inFlightRef` so any
+  // request that was in flight at the time of disable cannot commit results,
+  // and a re-enable can immediately start a new run.
   useEffect(() => {
     if (!enabled) {
+      requestEpochRef.current += 1;
+      inFlightRef.current = false;
       setData(null);
       hasDataRef.current = false;
       setFromCache(false);
