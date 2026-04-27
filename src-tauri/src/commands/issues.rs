@@ -8,9 +8,14 @@
 //! Parents (Files that import this module):
 //!   └─ src-tauri/src/lib.rs
 //! Dependencies:
+//!   ├─ src-tauri/src/auth/session.rs       (handle_unauthorized, map_github_result, reasons)
+//!   ├─ src-tauri/src/commands/auth.rs      (for auth state)
+//!   ├─ src-tauri/src/commands/github.rs    (CachedResponse envelope reused by *_with_cache)
+//!   ├─ src-tauri/src/database/models/cache.rs (cache_types / cache_durations for Issue #183)
 //!   ├─ src-tauri/src/database/models/project.rs
-//!   ├─ src-tauri/src/github/issues.rs
-//!   └─ src-tauri/src/commands/auth.rs (for auth state)
+//!   ├─ src-tauri/src/database/repository/cache.rs (save_cache / get_any_cache)
+//!   ├─ src-tauri/src/github/client.rs      (GitHubError variants)
+//!   └─ src-tauri/src/github/issues.rs      (IssuesClient + Search API types)
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
