@@ -100,30 +100,43 @@ impl std::fmt::Display for XpActionType {
     }
 }
 
+// =============================================================================
+// 公式 XP ルール（単一の真実）
+//
+// 仕様の根拠: `docs/prd/home-gamification.md` §3.3.2 経験値テーブル
+// および Issue #184 で確定された XP ルール。
+//
+// ここで定義した定数のみが XP 計算に使われる。`XpBreakdown::calculate` も
+// すべてこれらの定数を参照すること（ハードコード禁止）。
+// =============================================================================
+
 /// XP for a commit
 pub const COMMIT_XP: i32 = 10;
-/// XP for a pull request
-pub const PR_XP: i32 = 25;
-/// XP for a code review
-pub const REVIEW_XP: i32 = 15;
-/// XP for an issue
-pub const ISSUE_XP: i32 = 10;
+/// XP for creating a pull request
+pub const PR_XP: i32 = 30;
+/// XP for getting a pull request merged
+pub const PR_MERGED_XP: i32 = 50;
+/// XP for creating an issue
+pub const ISSUE_XP: i32 = 15;
+/// XP for closing/resolving an issue
+pub const ISSUE_CLOSED_XP: i32 = 40;
+/// XP for performing a code review
+pub const REVIEW_XP: i32 = 25;
+/// XP for receiving a star on a repository
+pub const STAR_XP: i32 = 5;
 /// XP for daily login
 pub const DAILY_LOGIN_XP: i32 = 5;
-/// XP bonus multiplier for streak (percentage)
+/// XP bonus multiplier for streak (percentage per day)
 pub const STREAK_BONUS_PERCENT: i32 = 10;
-/// Maximum streak bonus multiplier
+/// Maximum streak bonus multiplier (percent)
 pub const MAX_STREAK_BONUS_PERCENT: i32 = 100;
+/// Maximum streak days that contribute to XpBreakdown streak bonus
+pub const STREAK_BONUS_CAP_DAYS: i32 = 10;
 
 /// Calculate XP with streak bonus
 pub fn with_streak_bonus(base_xp: i32, streak: i32) -> i32 {
     let bonus_percent = (streak * STREAK_BONUS_PERCENT).min(MAX_STREAK_BONUS_PERCENT);
     base_xp + (base_xp * bonus_percent / 100)
-}
-
-/// Calculate total XP from activities
-pub fn calculate_activity_xp(commits: i32, prs: i32, reviews: i32, issues: i32) -> i32 {
-    commits * COMMIT_XP + prs * PR_XP + reviews * REVIEW_XP + issues * ISSUE_XP
 }
 
 /// XP breakdown for sync result
@@ -152,13 +165,13 @@ impl XpBreakdown {
         stars: i32,
         streak: i32,
     ) -> Self {
-        let commits_xp = commits * 10;
-        let prs_created_xp = prs_created * 25;
-        let prs_merged_xp = prs_merged * 50;
-        let issues_created_xp = issues_created * 5;
-        let issues_closed_xp = issues_closed * 10;
-        let reviews_xp = reviews * 15;
-        let stars_xp = stars * 5;
+        let commits_xp = commits * COMMIT_XP;
+        let prs_created_xp = prs_created * PR_XP;
+        let prs_merged_xp = prs_merged * PR_MERGED_XP;
+        let issues_created_xp = issues_created * ISSUE_XP;
+        let issues_closed_xp = issues_closed * ISSUE_CLOSED_XP;
+        let reviews_xp = reviews * REVIEW_XP;
+        let stars_xp = stars * STAR_XP;
 
         let base_total = commits_xp
             + prs_created_xp
@@ -169,7 +182,7 @@ impl XpBreakdown {
             + stars_xp;
 
         let streak_bonus_xp = if streak > 0 {
-            (base_total * streak.min(10)) / 100
+            (base_total * streak.min(STREAK_BONUS_CAP_DAYS)) / 100
         } else {
             0
         };
@@ -193,8 +206,9 @@ impl XpBreakdown {
 /// XP values module (for backward compatibility)
 pub mod xp {
     pub use super::{
-        calculate_activity_xp, with_streak_bonus, XpActionType, XpBreakdown, COMMIT_XP,
-        DAILY_LOGIN_XP, ISSUE_XP, MAX_STREAK_BONUS_PERCENT, PR_XP, REVIEW_XP, STREAK_BONUS_PERCENT,
+        with_streak_bonus, XpActionType, XpBreakdown, COMMIT_XP, DAILY_LOGIN_XP, ISSUE_CLOSED_XP,
+        ISSUE_XP, MAX_STREAK_BONUS_PERCENT, PR_MERGED_XP, PR_XP, REVIEW_XP, STAR_XP,
+        STREAK_BONUS_CAP_DAYS, STREAK_BONUS_PERCENT,
     };
 }
 
@@ -215,10 +229,64 @@ mod tests {
     }
 
     #[test]
-    fn test_activity_xp() {
-        let xp = calculate_activity_xp(10, 2, 5, 3);
-        // 10 commits * 10 + 2 PRs * 25 + 5 reviews * 15 + 3 issues * 10
-        // = 100 + 50 + 75 + 30 = 255
-        assert_eq!(xp, 255);
+    fn test_xp_constants_match_spec() {
+        // 公式仕様（docs/prd/home-gamification.md §3.3.2 / Issue #184）と
+        // 定数値が一致していることを保証する。
+        assert_eq!(COMMIT_XP, 10);
+        assert_eq!(PR_XP, 30);
+        assert_eq!(PR_MERGED_XP, 50);
+        assert_eq!(ISSUE_XP, 15);
+        assert_eq!(ISSUE_CLOSED_XP, 40);
+        assert_eq!(REVIEW_XP, 25);
+        assert_eq!(STAR_XP, 5);
+    }
+
+    #[test]
+    fn test_breakdown_zero_streak() {
+        // 1 commit / 1 PR 作成 / 1 PR マージ / 1 Issue 作成 / 1 Issue 解決 / 1 レビュー / 1 スター
+        // 期待値: 10 + 30 + 50 + 15 + 40 + 25 + 5 = 175
+        let bd = XpBreakdown::calculate(1, 1, 1, 1, 1, 1, 1, 0);
+        assert_eq!(bd.commits_xp, 10);
+        assert_eq!(bd.prs_created_xp, 30);
+        assert_eq!(bd.prs_merged_xp, 50);
+        assert_eq!(bd.issues_created_xp, 15);
+        assert_eq!(bd.issues_closed_xp, 40);
+        assert_eq!(bd.reviews_xp, 25);
+        assert_eq!(bd.stars_xp, 5);
+        assert_eq!(bd.streak_bonus_xp, 0);
+        assert_eq!(bd.total_xp, 175);
+    }
+
+    #[test]
+    fn test_breakdown_with_streak() {
+        // base = 175, streak = 5 → bonus = 175 * 5 / 100 = 8 (i32 切り捨て)
+        let bd = XpBreakdown::calculate(1, 1, 1, 1, 1, 1, 1, 5);
+        assert_eq!(bd.streak_bonus_xp, 8);
+        assert_eq!(bd.total_xp, 183);
+    }
+
+    #[test]
+    fn test_breakdown_streak_capped_at_10_days() {
+        // streak = 10 → bonus = 175 * 10 / 100 = 17
+        let bd_10 = XpBreakdown::calculate(1, 1, 1, 1, 1, 1, 1, 10);
+        // streak = 100 → 同じく 10 日にキャップされるので bonus = 17
+        let bd_100 = XpBreakdown::calculate(1, 1, 1, 1, 1, 1, 1, 100);
+        assert_eq!(bd_10.streak_bonus_xp, 17);
+        assert_eq!(bd_10.total_xp, 192);
+        assert_eq!(bd_100.streak_bonus_xp, bd_10.streak_bonus_xp);
+        assert_eq!(bd_100.total_xp, bd_10.total_xp);
+    }
+
+    #[test]
+    fn test_breakdown_uses_constants_not_hardcoded() {
+        // 個別カウント × 定数 で計算されることをチェック
+        let bd = XpBreakdown::calculate(3, 2, 1, 4, 2, 5, 6, 0);
+        assert_eq!(bd.commits_xp, 3 * COMMIT_XP);
+        assert_eq!(bd.prs_created_xp, 2 * PR_XP);
+        assert_eq!(bd.prs_merged_xp, 1 * PR_MERGED_XP);
+        assert_eq!(bd.issues_created_xp, 4 * ISSUE_XP);
+        assert_eq!(bd.issues_closed_xp, 2 * ISSUE_CLOSED_XP);
+        assert_eq!(bd.reviews_xp, 5 * REVIEW_XP);
+        assert_eq!(bd.stars_xp, 6 * STAR_XP);
     }
 }
