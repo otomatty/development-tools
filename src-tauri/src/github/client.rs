@@ -800,6 +800,167 @@ impl GitHubClient {
         })
     }
 
+    // ========================================================================
+    // PR Progress Methods (Issue #185)
+    // ========================================================================
+
+    /// Hard cap on the number of PRs returned by `get_my_pr_progress`.
+    ///
+    /// Each PR node costs ~5 GraphQL points (mergeable + reviewDecision +
+    /// last commit's statusCheckRollup). 200 keeps the worst case at
+    /// ~1k points while covering anyone with a realistic open-PR queue.
+    pub const PR_PROGRESS_MAX_RESULTS: i32 = 200;
+
+    /// Fetch the authenticated user's open PRs with merge / review / checks
+    /// state aggregated.
+    ///
+    /// Pagination: GraphQL allows up to 100 nodes per page; we page until we
+    /// hit `PR_PROGRESS_MAX_RESULTS` or run out of results, whichever comes
+    /// first. The returned `truncated` flag tells the UI when the cap was
+    /// reached.
+    pub async fn get_my_pr_progress(&self) -> GitHubResult<PrProgress> {
+        const PAGE_SIZE: i32 = 50;
+        let query = r#"
+            query($cursor: String, $first: Int!) {
+                viewer {
+                    pullRequests(
+                        first: $first
+                        after: $cursor
+                        states: [OPEN]
+                        orderBy: { field: UPDATED_AT, direction: DESC }
+                    ) {
+                        totalCount
+                        pageInfo {
+                            hasNextPage
+                            endCursor
+                        }
+                        nodes {
+                            id
+                            number
+                            title
+                            url
+                            isDraft
+                            mergeable
+                            reviewDecision
+                            createdAt
+                            updatedAt
+                            repository {
+                                nameWithOwner
+                                url
+                            }
+                            commits(last: 1) {
+                                nodes {
+                                    commit {
+                                        statusCheckRollup {
+                                            state
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        "#;
+
+        let mut all_nodes: Vec<PrProgressNode> = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut total_count: i32 = 0;
+        let mut truncated = false;
+
+        loop {
+            let variables = serde_json::json!({
+                "first": PAGE_SIZE,
+                "cursor": cursor,
+            });
+
+            let response: PrProgressQueryResponse = self.graphql(query, Some(variables)).await?;
+
+            let connection = response
+                .viewer
+                .ok_or_else(|| {
+                    GitHubError::GraphQL("viewer field missing from response".to_string())
+                })?
+                .pull_requests;
+
+            if let Some(count) = connection.total_count {
+                total_count = count;
+            }
+
+            all_nodes.extend(connection.nodes);
+
+            // Cap on results — bail out before issuing the next page.
+            if all_nodes.len() >= Self::PR_PROGRESS_MAX_RESULTS as usize {
+                all_nodes.truncate(Self::PR_PROGRESS_MAX_RESULTS as usize);
+                if total_count > all_nodes.len() as i32 {
+                    truncated = true;
+                }
+                break;
+            }
+
+            match connection.page_info {
+                Some(info) if info.has_next_page => {
+                    cursor = info.end_cursor;
+                    if cursor.is_none() {
+                        // Defensive: `hasNextPage = true` without an
+                        // `endCursor` would loop forever.
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        Ok(Self::aggregate_pr_progress(
+            all_nodes,
+            total_count,
+            truncated,
+        ))
+    }
+
+    /// Pure aggregator: turn raw GraphQL nodes into the flat
+    /// `PrProgress` payload the frontend consumes. Split out so unit tests
+    /// can exercise the mapping without hitting the network.
+    pub fn aggregate_pr_progress(
+        nodes: Vec<PrProgressNode>,
+        total_count: i32,
+        truncated: bool,
+    ) -> PrProgress {
+        let items = nodes
+            .into_iter()
+            .map(|node| {
+                // `commits(last: 1)` gives at most one element; pull its
+                // rollup state if present.
+                let checks_state = node
+                    .commits
+                    .and_then(|c| c.nodes.into_iter().next())
+                    .and_then(|n| n.commit.status_check_rollup)
+                    .map(|r| r.state);
+
+                PrProgressItem {
+                    id: node.id,
+                    number: node.number,
+                    title: node.title,
+                    url: node.url,
+                    repo_full_name: node.repository.name_with_owner,
+                    repo_url: node.repository.url,
+                    is_draft: node.is_draft,
+                    mergeable: node.mergeable,
+                    review_decision: node.review_decision,
+                    checks_state,
+                    created_at: node.created_at,
+                    updated_at: node.updated_at,
+                }
+            })
+            .collect();
+
+        PrProgress {
+            items,
+            total_count,
+            truncated,
+        }
+    }
+
     /// Check if rate limit is critical (below 20% remaining)
     pub fn is_rate_limit_critical(rate_limit: &RateLimitDetailed) -> bool {
         let core_critical = rate_limit.core.limit > 0
@@ -1071,5 +1232,121 @@ mod tests {
             "Expected streak of at least 2 with grace period, got {}",
             weekly
         );
+    }
+
+    // ========================================================================
+    // PR progress aggregation tests (Issue #185)
+    // ========================================================================
+
+    fn make_pr_node(
+        id: &str,
+        number: i32,
+        mergeable: &str,
+        review_decision: Option<&str>,
+        rollup_state: Option<&str>,
+    ) -> PrProgressNode {
+        let commits = rollup_state.map(|state| PrProgressCommits {
+            nodes: vec![PrProgressCommitNode {
+                commit: PrProgressCommit {
+                    status_check_rollup: Some(PrProgressStatusCheckRollup {
+                        state: state.to_string(),
+                    }),
+                },
+            }],
+        });
+
+        PrProgressNode {
+            id: id.to_string(),
+            number,
+            title: format!("PR #{}", number),
+            url: format!("https://github.com/octo/test/pull/{}", number),
+            is_draft: false,
+            mergeable: mergeable.to_string(),
+            review_decision: review_decision.map(|s| s.to_string()),
+            created_at: "2026-04-01T12:00:00Z".to_string(),
+            updated_at: "2026-04-02T12:00:00Z".to_string(),
+            repository: PrProgressRepository {
+                name_with_owner: "octo/test".to_string(),
+                url: "https://github.com/octo/test".to_string(),
+            },
+            commits,
+        }
+    }
+
+    #[test]
+    fn aggregate_pr_progress_maps_basic_fields() {
+        let node = make_pr_node("PR_1", 7, "MERGEABLE", Some("APPROVED"), Some("SUCCESS"));
+        let progress = GitHubClient::aggregate_pr_progress(vec![node], 1, false);
+
+        assert_eq!(progress.total_count, 1);
+        assert!(!progress.truncated);
+        assert_eq!(progress.items.len(), 1);
+
+        let item = &progress.items[0];
+        assert_eq!(item.id, "PR_1");
+        assert_eq!(item.number, 7);
+        assert_eq!(item.title, "PR #7");
+        assert_eq!(item.url, "https://github.com/octo/test/pull/7");
+        assert_eq!(item.repo_full_name, "octo/test");
+        assert_eq!(item.repo_url, "https://github.com/octo/test");
+        assert!(!item.is_draft);
+        assert_eq!(item.mergeable, "MERGEABLE");
+        assert_eq!(item.review_decision.as_deref(), Some("APPROVED"));
+        assert_eq!(item.checks_state.as_deref(), Some("SUCCESS"));
+    }
+
+    #[test]
+    fn aggregate_pr_progress_handles_missing_rollup() {
+        // No `commits` payload (e.g. brand-new PR with no head commit yet, or
+        // a PR where statusCheckRollup hasn't been computed). The aggregator
+        // must fall through to `None` rather than panic on the empty Vec.
+        let node = make_pr_node("PR_2", 8, "UNKNOWN", None, None);
+        let progress = GitHubClient::aggregate_pr_progress(vec![node], 1, false);
+
+        let item = &progress.items[0];
+        assert_eq!(item.mergeable, "UNKNOWN");
+        assert!(item.review_decision.is_none());
+        assert!(
+            item.checks_state.is_none(),
+            "expected no checks_state when rollup is absent"
+        );
+    }
+
+    #[test]
+    fn aggregate_pr_progress_preserves_order_and_total() {
+        // Order in == order out: callers rely on the GraphQL `orderBy:
+        // UPDATED_AT, DESC` to bubble the freshest PRs to the top, and the
+        // aggregator must not re-shuffle them.
+        let nodes = vec![
+            make_pr_node(
+                "PR_A",
+                1,
+                "MERGEABLE",
+                Some("REVIEW_REQUIRED"),
+                Some("PENDING"),
+            ),
+            make_pr_node(
+                "PR_B",
+                2,
+                "CONFLICTING",
+                Some("CHANGES_REQUESTED"),
+                Some("FAILURE"),
+            ),
+            make_pr_node("PR_C", 3, "MERGEABLE", None, None),
+        ];
+        let progress = GitHubClient::aggregate_pr_progress(nodes, 5, true);
+
+        assert_eq!(progress.total_count, 5);
+        assert!(progress.truncated);
+        assert_eq!(
+            progress.items.iter().map(|i| i.number).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(progress.items[1].mergeable, "CONFLICTING");
+        assert_eq!(
+            progress.items[1].review_decision.as_deref(),
+            Some("CHANGES_REQUESTED")
+        );
+        assert_eq!(progress.items[1].checks_state.as_deref(), Some("FAILURE"));
     }
 }

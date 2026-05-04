@@ -30,6 +30,7 @@ use crate::database::models::project::{
 };
 use crate::github::client::GitHubError;
 use crate::github::issues::{generate_actions_template, GitHubSearchItem, IssuesClient};
+use crate::github::{GitHubClient, PrProgress};
 
 /// Get all projects for the current user
 #[tauri::command]
@@ -848,6 +849,105 @@ pub async fn get_my_open_work_with_cache(
                 None => Err(format!(
                     "Search APIにアクセスできず、キャッシュもありません: {}",
                     representative
+                )),
+            }
+        }
+    }
+}
+
+// ============================================================================
+// PR Progress dashboard panel (Issue #185)
+// ============================================================================
+
+/// Fetch the authenticated user's open PRs with mergeable / checks /
+/// reviewDecision aggregated, with cache fallback.
+///
+/// Behaviour mirrors `get_my_open_work_with_cache`:
+/// - Success → cache + return `from_cache: false`.
+/// - Network / rate-limit error → fall back to last cached payload (any age)
+///   if available, else surface the error.
+/// - 401 → trigger the central auth-expired flow; do not fall back to cache.
+///
+/// Cost: GraphQL 5000-points/hour budget. Each PR node costs ~5 points and
+/// the query is capped at 200 PRs (4 pages × 50). The 5-minute SQLite TTL
+/// keeps us well under the budget even with revalidate-on-focus.
+#[tauri::command]
+pub async fn get_my_pr_progress_with_cache(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<PrProgress>, String> {
+    let user_id = get_current_user_id(&state).await?;
+    let access_token = get_access_token(&state).await?;
+    let client = GitHubClient::new(access_token);
+
+    match client.get_my_pr_progress().await {
+        Ok(payload) => {
+            let payload_json = serde_json::to_string(&payload)
+                .map_err(|e| format!("Failed to serialize pr_progress: {}", e))?;
+
+            let now = Utc::now();
+            let expires_at =
+                now + chrono::Duration::minutes(crate::database::cache_durations::MY_PR_PROGRESS);
+
+            // Best-effort cache write — a failure here shouldn't block the
+            // response. Mirrors `get_my_open_work_with_cache`.
+            let _ = state
+                .db
+                .save_cache(
+                    user_id,
+                    crate::database::cache_types::MY_PR_PROGRESS,
+                    &payload_json,
+                    expires_at,
+                )
+                .await;
+
+            Ok(CachedResponse {
+                data: payload,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Err(GitHubError::Unauthorized) => {
+            handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+            Err(GitHubError::Unauthorized.to_string())
+        }
+        Err(api_error) => {
+            // Only network / rate-limit errors warrant cache fallback —
+            // surface anything else (GraphQL schema error, JSON parse
+            // failure, etc.) so we don't mask real bugs with stale data.
+            if !matches!(
+                &api_error,
+                GitHubError::HttpRequest(_) | GitHubError::RateLimited(_)
+            ) {
+                return Err(format!("GitHub GraphQL error: {}", api_error));
+            }
+
+            eprintln!(
+                "PR progress fetch failed, attempting cache fallback: {}",
+                api_error
+            );
+
+            let cache_result = state
+                .db
+                .get_any_cache(user_id, crate::database::cache_types::MY_PR_PROGRESS)
+                .await
+                .map_err(|e| format!("Failed to read pr_progress cache: {}", e))?;
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let payload: PrProgress = serde_json::from_str(&data_json)
+                        .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    Ok(CachedResponse {
+                        data: payload,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!(
+                    "GitHub APIにアクセスできず、キャッシュもありません: {}",
+                    api_error
                 )),
             }
         }

@@ -51,6 +51,8 @@ use commands::{
     get_level_info,
     // Cross-repository "Today / Inbox" command (Issue #183)
     get_my_open_work_with_cache,
+    // PR progress dashboard panel command (Issue #185)
+    get_my_pr_progress_with_cache,
     get_near_completion_badges,
     get_project,
     get_project_issues,
@@ -240,6 +242,7 @@ pub fn run() {
             update_issue_status,
             create_github_issue,
             get_my_open_work_with_cache,
+            get_my_pr_progress_with_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

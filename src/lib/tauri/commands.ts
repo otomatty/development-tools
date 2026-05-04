@@ -27,6 +27,7 @@ import type {
   CachedIssue,
   KanbanBoard,
   MyOpenWork,
+  PrProgress,
   LevelInfo,
   Badge,
   BadgeDefinition,
@@ -288,6 +289,17 @@ export const issues = {
    */
   getMyOpenWorkWithCache: (): Promise<CachedResponse<MyOpenWork>> =>
     invoke<CachedResponse<MyOpenWork>>('get_my_open_work_with_cache'),
+
+  /**
+   * PR progress dashboard: every Open PR the user has authored, annotated
+   * with mergeable / checks / reviewDecision state.
+   *
+   * Backed by GitHub's GraphQL API with a 5-minute SQLite cache.
+   *
+   * Related: Issue #185
+   */
+  getMyPrProgressWithCache: (): Promise<CachedResponse<PrProgress>> =>
+    invoke<CachedResponse<PrProgress>>('get_my_pr_progress_with_cache'),
 };
 
 // ============================================================================

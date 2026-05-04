@@ -388,3 +388,55 @@ export function priorityWeight(priority: IssuePriority | null): number {
   }
 }
 
+// ===========================================================================
+// PR Progress dashboard panel (Issue #185)
+// ===========================================================================
+
+/// GraphQL `MergeableState` enum values surfaced verbatim from the API.
+export type PrMergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+
+/// GraphQL `PullRequestReviewDecision` enum values surfaced verbatim.
+export type PrReviewDecision =
+  | 'APPROVED'
+  | 'CHANGES_REQUESTED'
+  | 'REVIEW_REQUIRED';
+
+/// GraphQL `StatusState` enum values for the head commit's rollup.
+export type PrChecksState =
+  | 'SUCCESS'
+  | 'FAILURE'
+  | 'PENDING'
+  | 'ERROR'
+  | 'EXPECTED';
+
+/// One row in the PR progress dashboard panel.
+///
+/// Mirrors `github::types::PrProgressItem` on the backend.
+export interface PrProgressItem {
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  repoFullName: string;
+  repoUrl: string;
+  isDraft: boolean;
+  /// `MERGEABLE` / `CONFLICTING` / `UNKNOWN`.
+  mergeable: PrMergeable | string;
+  /// `null` when the PR has no review requirement / no reviewers yet.
+  reviewDecision: PrReviewDecision | string | null;
+  /// `null` when there are no checks configured / rollup is not yet computed.
+  checksState: PrChecksState | string | null;
+  /// ISO8601.
+  createdAt: string;
+  /// ISO8601.
+  updatedAt: string;
+}
+
+/// Aggregated payload returned by `get_my_pr_progress_with_cache`.
+export interface PrProgress {
+  items: PrProgressItem[];
+  totalCount: number;
+  /// True when GraphQL pagination cut us off before exhausting the list.
+  truncated: boolean;
+}
+

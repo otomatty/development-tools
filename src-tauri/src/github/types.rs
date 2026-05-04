@@ -323,3 +323,123 @@ pub struct GraphQLRateLimit {
     pub remaining: i32,
     pub reset_at: String,
 }
+
+// ============================================================================
+// PR Progress Types (Issue #185 — G-04 PR progress dashboard panel)
+// ============================================================================
+
+/// Aggregated GraphQL response for the viewer's open PRs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressQueryResponse {
+    pub viewer: Option<PrProgressViewer>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressViewer {
+    pub pull_requests: PrProgressConnection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressConnection {
+    pub nodes: Vec<PrProgressNode>,
+    pub page_info: Option<PageInfo>,
+    pub total_count: Option<i32>,
+}
+
+/// Raw PR node returned by the `viewer { pullRequests }` query.
+///
+/// `mergeable` is GraphQL's `MergeableState` (`MERGEABLE` / `CONFLICTING` /
+/// `UNKNOWN`); `review_decision` is `PullRequestReviewDecision`
+/// (`APPROVED` / `CHANGES_REQUESTED` / `REVIEW_REQUIRED`) — both are
+/// surfaced verbatim so the frontend can render its own labels.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressNode {
+    pub id: String,
+    pub number: i32,
+    pub title: String,
+    pub url: String,
+    pub is_draft: bool,
+    pub mergeable: String,
+    pub review_decision: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub repository: PrProgressRepository,
+    pub commits: Option<PrProgressCommits>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressRepository {
+    pub name_with_owner: String,
+    pub url: String,
+}
+
+/// `commits(last: 1)` is the documented way to get the rollup state for the
+/// PR's head commit — `statusCheckRollup` lives on `Commit`, not on the PR
+/// itself.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressCommits {
+    pub nodes: Vec<PrProgressCommitNode>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressCommitNode {
+    pub commit: PrProgressCommit,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressCommit {
+    pub status_check_rollup: Option<PrProgressStatusCheckRollup>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressStatusCheckRollup {
+    /// `SUCCESS` / `FAILURE` / `PENDING` / `ERROR` / `EXPECTED`.
+    pub state: String,
+}
+
+/// Flattened PR progress row returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgressItem {
+    pub id: String,
+    pub number: i32,
+    pub title: String,
+    pub url: String,
+    pub repo_full_name: String,
+    pub repo_url: String,
+    pub is_draft: bool,
+    /// GraphQL `MergeableState` — `MERGEABLE` / `CONFLICTING` / `UNKNOWN`.
+    pub mergeable: String,
+    /// GraphQL `PullRequestReviewDecision`. `None` means the PR has no
+    /// review requirement / no reviewers yet — UI distinguishes this from
+    /// `REVIEW_REQUIRED`.
+    pub review_decision: Option<String>,
+    /// Last commit's `statusCheckRollup.state`, or `None` if there are no
+    /// checks configured / the rollup hasn't computed yet.
+    pub checks_state: Option<String>,
+    /// ISO8601.
+    pub created_at: String,
+    /// ISO8601.
+    pub updated_at: String,
+}
+
+/// Top-level summary of all open PRs the viewer authored.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PrProgress {
+    pub items: Vec<PrProgressItem>,
+    pub total_count: i32,
+    /// True when GraphQL pagination cut us off before exhausting the list.
+    /// The UI uses this to render a "showing first N of M" hint so users
+    /// with very large PR queues aren't misled.
+    pub truncated: bool,
+}
