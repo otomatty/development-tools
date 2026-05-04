@@ -1009,7 +1009,9 @@ mod tests {
 
     // TC-004: 401 must NOT be classified as transient — the command needs to
     // fire the auth-expired flow instead of serving stale cache.
-    // ApiError / NotFound / GraphQL likewise are surfaced rather than masked.
+    // ApiError / NotFound / GraphQL / JsonParse likewise are surfaced rather
+    // than masked: a malformed Search API payload is a real bug, not a
+    // transient hiccup, and serving stale cache would hide it.
     #[test]
     fn classifies_hard_errors_as_non_transient() {
         assert!(!is_network_or_rate_limit_error(&GitHubError::Unauthorized));
@@ -1021,6 +1023,10 @@ mod tests {
         )));
         assert!(!is_network_or_rate_limit_error(&GitHubError::GraphQL(
             "y".into()
+        )));
+        let json_err = serde_json::from_str::<i32>("not a number").unwrap_err();
+        assert!(!is_network_or_rate_limit_error(&GitHubError::JsonParse(
+            json_err
         )));
     }
 }
