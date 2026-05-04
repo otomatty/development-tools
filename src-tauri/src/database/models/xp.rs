@@ -179,43 +179,47 @@ impl XpBreakdown {
         stars: i32,
         streak: i32,
     ) -> Self {
-        let commits_xp = commits * COMMIT_XP;
-        let prs_created_xp = prs_created * PR_XP;
-        let prs_merged_xp = prs_merged * PR_MERGED_XP;
-        let issues_created_xp = issues_created * ISSUE_XP;
-        let issues_closed_xp = issues_closed * ISSUE_CLOSED_XP;
-        let reviews_xp = reviews * REVIEW_XP;
-        let stars_xp = stars * STAR_XP;
+        // 入力カウントが極端に大きいケース（API 側に上限がない、または将来の拡張）でも
+        // 個別積・合計でラップアラウンドしないよう、内部計算はすべて i64 で行う。
+        // 構造体フィールドは i32 のため、最後に saturating でクランプして格納する。
+        let saturate = |v: i64| v.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
 
-        let base_total = commits_xp
-            + prs_created_xp
-            + prs_merged_xp
-            + issues_created_xp
-            + issues_closed_xp
-            + reviews_xp
-            + stars_xp;
+        let commits_xp_i64 = commits as i64 * COMMIT_XP as i64;
+        let prs_created_xp_i64 = prs_created as i64 * PR_XP as i64;
+        let prs_merged_xp_i64 = prs_merged as i64 * PR_MERGED_XP as i64;
+        let issues_created_xp_i64 = issues_created as i64 * ISSUE_XP as i64;
+        let issues_closed_xp_i64 = issues_closed as i64 * ISSUE_CLOSED_XP as i64;
+        let reviews_xp_i64 = reviews as i64 * REVIEW_XP as i64;
+        let stars_xp_i64 = stars as i64 * STAR_XP as i64;
 
-        // ストリークボーナスは `base_total * min(streak, STREAK_BONUS_CAP_DAYS) / 100`。
+        let base_total_i64 = commits_xp_i64
+            + prs_created_xp_i64
+            + prs_merged_xp_i64
+            + issues_created_xp_i64
+            + issues_closed_xp_i64
+            + reviews_xp_i64
+            + stars_xp_i64;
+
+        // ストリークボーナス: `base_total * min(streak, STREAK_BONUS_CAP_DAYS) / 100`。
         // 1 日あたり +1%、上限 `STREAK_BONUS_CAP_DAYS`% (= 10%)。
-        // 大量の活動 × 長期ストリークでは i32 上限（≈21 億）に到達しうるため i64 で計算する。
-        let streak_bonus_xp = if streak > 0 {
-            ((base_total as i64 * streak.min(STREAK_BONUS_CAP_DAYS) as i64) / 100) as i32
+        let streak_bonus_xp_i64 = if streak > 0 {
+            (base_total_i64 * streak.min(STREAK_BONUS_CAP_DAYS) as i64) / 100
         } else {
             0
         };
 
-        let total_xp = base_total + streak_bonus_xp;
+        let total_xp_i64 = base_total_i64 + streak_bonus_xp_i64;
 
         Self {
-            commits_xp,
-            prs_created_xp,
-            prs_merged_xp,
-            issues_created_xp,
-            issues_closed_xp,
-            reviews_xp,
-            stars_xp,
-            streak_bonus_xp,
-            total_xp,
+            commits_xp: saturate(commits_xp_i64),
+            prs_created_xp: saturate(prs_created_xp_i64),
+            prs_merged_xp: saturate(prs_merged_xp_i64),
+            issues_created_xp: saturate(issues_created_xp_i64),
+            issues_closed_xp: saturate(issues_closed_xp_i64),
+            reviews_xp: saturate(reviews_xp_i64),
+            stars_xp: saturate(stars_xp_i64),
+            streak_bonus_xp: saturate(streak_bonus_xp_i64),
+            total_xp: saturate(total_xp_i64),
         }
     }
 }
@@ -306,5 +310,14 @@ mod tests {
         assert_eq!(bd.issues_closed_xp, 2 * ISSUE_CLOSED_XP);
         assert_eq!(bd.reviews_xp, 5 * REVIEW_XP);
         assert_eq!(bd.stars_xp, 6 * STAR_XP);
+    }
+
+    #[test]
+    fn test_breakdown_saturates_on_overflow() {
+        // i32::MAX 個のコミット × COMMIT_XP(=10) は i32 範囲を大きく超えるが、
+        // 内部 i64 計算 → 末端 saturating cast によってラップアラウンドせず i32::MAX に丸まる。
+        let bd = XpBreakdown::calculate(i32::MAX, 0, 0, 0, 0, 0, 0, 0);
+        assert_eq!(bd.commits_xp, i32::MAX);
+        assert_eq!(bd.total_xp, i32::MAX);
     }
 }
