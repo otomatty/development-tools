@@ -126,18 +126,9 @@ pub const REVIEW_XP: i32 = 25;
 pub const STAR_XP: i32 = 5;
 /// XP for daily login
 pub const DAILY_LOGIN_XP: i32 = 5;
-/// XP bonus multiplier for streak (percentage per day)
-pub const STREAK_BONUS_PERCENT: i32 = 10;
-/// Maximum streak bonus multiplier (percent)
-pub const MAX_STREAK_BONUS_PERCENT: i32 = 100;
-/// Maximum streak days that contribute to XpBreakdown streak bonus
+/// Maximum streak days that contribute to `XpBreakdown::calculate` のストリークボーナス。
+/// `min(streak, STREAK_BONUS_CAP_DAYS)` 日まで反映され、上限到達時は base_total の +10% となる。
 pub const STREAK_BONUS_CAP_DAYS: i32 = 10;
-
-/// Calculate XP with streak bonus
-pub fn with_streak_bonus(base_xp: i32, streak: i32) -> i32 {
-    let bonus_percent = (streak * STREAK_BONUS_PERCENT).min(MAX_STREAK_BONUS_PERCENT);
-    base_xp + (base_xp * bonus_percent / 100)
-}
 
 /// XP breakdown for sync result
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -227,27 +218,14 @@ impl XpBreakdown {
 /// XP values module (for backward compatibility)
 pub mod xp {
     pub use super::{
-        with_streak_bonus, XpActionType, XpBreakdown, COMMIT_XP, DAILY_LOGIN_XP, ISSUE_CLOSED_XP,
-        ISSUE_XP, MAX_STREAK_BONUS_PERCENT, PR_MERGED_XP, PR_XP, REVIEW_XP, STAR_XP,
-        STREAK_BONUS_CAP_DAYS, STREAK_BONUS_PERCENT,
+        XpActionType, XpBreakdown, COMMIT_XP, DAILY_LOGIN_XP, ISSUE_CLOSED_XP, ISSUE_XP,
+        PR_MERGED_XP, PR_XP, REVIEW_XP, STAR_XP, STREAK_BONUS_CAP_DAYS,
     };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_streak_bonus() {
-        // No streak
-        assert_eq!(with_streak_bonus(100, 0), 100);
-        // 5 day streak = 50% bonus
-        assert_eq!(with_streak_bonus(100, 5), 150);
-        // 10 day streak = 100% bonus (max)
-        assert_eq!(with_streak_bonus(100, 10), 200);
-        // 15 day streak = still 100% bonus (capped)
-        assert_eq!(with_streak_bonus(100, 15), 200);
-    }
 
     #[test]
     fn test_xp_constants_match_spec() {
