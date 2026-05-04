@@ -885,3 +885,140 @@ async fn get_access_token(state: &State<'_, AppState>) -> Result<String, String>
         .await
         .map_err(|e| format!("Failed to get token: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::github::issues::{GitHubAssignee, GitHubLabel, GitHubSearchItem};
+    use chrono::TimeZone;
+
+    fn make_search_item(
+        repository_url: &str,
+        pull_request: Option<serde_json::Value>,
+        labels: Vec<&str>,
+    ) -> GitHubSearchItem {
+        let created = Utc.with_ymd_and_hms(2026, 4, 1, 12, 0, 0).unwrap();
+        let updated = Utc.with_ymd_and_hms(2026, 4, 2, 12, 0, 0).unwrap();
+        GitHubSearchItem {
+            id: 42,
+            number: 7,
+            title: "example".into(),
+            body: None,
+            state: "open".into(),
+            state_reason: None,
+            html_url: "https://github.com/octo/test/issues/7".into(),
+            repository_url: repository_url.into(),
+            labels: labels
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| GitHubLabel {
+                    id: i as i64,
+                    name: name.to_string(),
+                    color: "ededed".into(),
+                    description: None,
+                })
+                .collect(),
+            assignee: Some(GitHubAssignee {
+                id: 1,
+                login: "alice".into(),
+                avatar_url: "https://avatars.githubusercontent.com/u/1".into(),
+            }),
+            assignees: None,
+            user: Some(GitHubAssignee {
+                id: 2,
+                login: "bob".into(),
+                avatar_url: "https://avatars.githubusercontent.com/u/2".into(),
+            }),
+            created_at: created,
+            updated_at: updated,
+            closed_at: None,
+            pull_request,
+        }
+    }
+
+    // TC-001: aggregating logic — verify the issue / source / labels / metadata
+    // mapping for an `assigned` row.
+    #[test]
+    fn convert_search_item_maps_assigned_issue() {
+        let item = make_search_item(
+            "https://api.github.com/repos/octo/test",
+            None,
+            vec!["bug", "priority:high"],
+        );
+
+        let row = convert_search_item(item, "assigned");
+
+        assert_eq!(row.kind, "issue");
+        assert_eq!(row.source, "assigned");
+        assert_eq!(row.repo_owner, "octo");
+        assert_eq!(row.repo_name, "test");
+        assert_eq!(row.repo_full_name, "octo/test");
+        assert_eq!(row.priority.as_deref(), Some("high"));
+        assert_eq!(row.labels, vec!["bug".to_string(), "priority:high".to_string()]);
+        assert_eq!(row.assignee_login.as_deref(), Some("alice"));
+        assert_eq!(row.author_login.as_deref(), Some("bob"));
+    }
+
+    // TC-001 + TC-006: PR detection through `is_pull_request` flows into
+    // `kind = "pull_request"` for review-requested rows.
+    #[test]
+    fn convert_search_item_maps_review_requested_pull_request() {
+        let item = make_search_item(
+            "https://api.github.com/repos/octo/test",
+            Some(serde_json::json!({"url": "..."})),
+            vec![],
+        );
+
+        let row = convert_search_item(item, "review_requested");
+
+        assert_eq!(row.kind, "pull_request");
+        assert_eq!(row.source, "review_requested");
+        assert!(row.priority.is_none());
+        assert!(row.labels.is_empty());
+    }
+
+    // TC-007: a GHES (or any unexpected host) `repository_url` must not be
+    // mis-parsed into a wrong owner/repo. Falling back to the raw URL keeps
+    // the link clickable without inventing a bogus repo path.
+    #[test]
+    fn convert_search_item_falls_back_to_url_for_unexpected_host() {
+        let item = make_search_item(
+            "https://ghe.example.com/api/v3/repos/o/r",
+            None,
+            vec![],
+        );
+
+        let row = convert_search_item(item, "assigned");
+
+        assert_eq!(row.repo_owner, "");
+        assert_eq!(row.repo_name, "");
+        assert_eq!(row.repo_full_name, "https://ghe.example.com/api/v3/repos/o/r");
+    }
+
+    // TC-002 / TC-005: rate-limit and incomplete-results errors must be
+    // classified as transient so the command falls back to cached data.
+    #[test]
+    fn classifies_transient_errors_as_network_or_rate_limit() {
+        assert!(is_network_or_rate_limit_error(&GitHubError::RateLimited(0)));
+        assert!(is_network_or_rate_limit_error(&GitHubError::Incomplete(
+            "search timeout".into()
+        )));
+    }
+
+    // TC-004: 401 must NOT be classified as transient — the command needs to
+    // fire the auth-expired flow instead of serving stale cache.
+    // ApiError / NotFound / GraphQL likewise are surfaced rather than masked.
+    #[test]
+    fn classifies_hard_errors_as_non_transient() {
+        assert!(!is_network_or_rate_limit_error(&GitHubError::Unauthorized));
+        assert!(!is_network_or_rate_limit_error(&GitHubError::ApiError(
+            "500 internal".into()
+        )));
+        assert!(!is_network_or_rate_limit_error(&GitHubError::NotFound(
+            "x".into()
+        )));
+        assert!(!is_network_or_rate_limit_error(&GitHubError::GraphQL(
+            "y".into()
+        )));
+    }
+}
