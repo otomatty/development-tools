@@ -155,6 +155,20 @@ pub struct XpBreakdown {
 }
 
 impl XpBreakdown {
+    /// 同期で得た差分活動量から XP 内訳を算出する。
+    ///
+    /// # 戻り値の `total_xp` について
+    ///
+    /// `total_xp = (各活動 XP の合計) + streak_bonus_xp` であり、**ここで計算する
+    /// 活動ベースのストリークボーナス（1 日あたり +1%、最大 `STREAK_BONUS_CAP_DAYS`%）は
+    /// すでに `total_xp` に含まれている**。
+    ///
+    /// 呼び出し側でマイルストーンボーナス等、別系統のストリークボーナスを加算する場合は
+    /// `total_xp` ではなく、内訳との整合を保つために以下のいずれかにすること:
+    /// - 別 XP 行として `xp_history` に記録する（現行の `commands/github.rs` の方式）
+    /// - 表示用合計を作る際は `total_xp + 外部ボーナス` と明示的に組み立てる
+    ///
+    /// 二重計上を避けるため、本関数の戻り値の `streak_bonus_xp` を再度足さないこと。
     pub fn calculate(
         commits: i32,
         prs_created: i32,
@@ -181,8 +195,11 @@ impl XpBreakdown {
             + reviews_xp
             + stars_xp;
 
+        // ストリークボーナスは `base_total * min(streak, STREAK_BONUS_CAP_DAYS) / 100`。
+        // 1 日あたり +1%、上限 `STREAK_BONUS_CAP_DAYS`% (= 10%)。
+        // 大量の活動 × 長期ストリークでは i32 上限（≈21 億）に到達しうるため i64 で計算する。
         let streak_bonus_xp = if streak > 0 {
-            (base_total * streak.min(STREAK_BONUS_CAP_DAYS)) / 100
+            ((base_total as i64 * streak.min(STREAK_BONUS_CAP_DAYS) as i64) / 100) as i32
         } else {
             0
         };
@@ -239,6 +256,7 @@ mod tests {
         assert_eq!(ISSUE_CLOSED_XP, 40);
         assert_eq!(REVIEW_XP, 25);
         assert_eq!(STAR_XP, 5);
+        assert_eq!(DAILY_LOGIN_XP, 5);
     }
 
     #[test]
