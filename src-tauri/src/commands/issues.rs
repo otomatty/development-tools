@@ -954,7 +954,10 @@ mod tests {
         assert_eq!(row.repo_name, "test");
         assert_eq!(row.repo_full_name, "octo/test");
         assert_eq!(row.priority.as_deref(), Some("high"));
-        assert_eq!(row.labels, vec!["bug".to_string(), "priority:high".to_string()]);
+        assert_eq!(
+            row.labels,
+            vec!["bug".to_string(), "priority:high".to_string()]
+        );
         assert_eq!(row.assignee_login.as_deref(), Some("alice"));
         assert_eq!(row.author_login.as_deref(), Some("bob"));
     }
@@ -982,17 +985,16 @@ mod tests {
     // the link clickable without inventing a bogus repo path.
     #[test]
     fn convert_search_item_falls_back_to_url_for_unexpected_host() {
-        let item = make_search_item(
-            "https://ghe.example.com/api/v3/repos/o/r",
-            None,
-            vec![],
-        );
+        let item = make_search_item("https://ghe.example.com/api/v3/repos/o/r", None, vec![]);
 
         let row = convert_search_item(item, "assigned");
 
         assert_eq!(row.repo_owner, "");
         assert_eq!(row.repo_name, "");
-        assert_eq!(row.repo_full_name, "https://ghe.example.com/api/v3/repos/o/r");
+        assert_eq!(
+            row.repo_full_name,
+            "https://ghe.example.com/api/v3/repos/o/r"
+        );
     }
 
     // TC-002 / TC-005: rate-limit and incomplete-results errors must be
