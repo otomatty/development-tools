@@ -862,25 +862,33 @@ pub async fn get_my_open_work_with_cache(
 /// True when the GitHub error is a transient rate-limit / network condition
 /// that should degrade to cached data rather than bubble up as a hard error.
 ///
-/// `HttpRequest` (transport failure) and `RateLimited` (primary REST limit)
-/// are obvious. `GraphQL` is matched conditionally because GitHub's
-/// GraphQL secondary / abuse limits often surface as HTTP 200 with an
-/// `errors` payload — `graphql()` flattens those into `GraphQL` and we'd
-/// otherwise lose the cache fallback even though the failure is transient.
+/// `HttpRequest` (transport failure) and `RateLimited` (primary REST limit
+/// — `check_rate_limit` only fires when `x-ratelimit-remaining: 0`) are
+/// obvious. `GraphQL` and `ApiError` are matched conditionally:
+/// - `GraphQL`: GitHub's GraphQL primary / secondary limits sometimes
+///   arrive as HTTP 200 + `errors` payload, which `graphql()` flattens
+///   into this variant.
+/// - `ApiError`: secondary / abuse limits frequently come back as HTTP
+///   403 *without* `x-ratelimit-remaining: 0`, so `check_rate_limit` lets
+///   them through and `graphql()` maps them to `ApiError(body)`. The
+///   body text carries GitHub's rate-limit explanation, which the same
+///   message classifier picks up.
 fn is_pr_progress_fallback_eligible(error: &GitHubError) -> bool {
     match error {
         GitHubError::HttpRequest(_) | GitHubError::RateLimited(_) => true,
-        GitHubError::GraphQL(message) => is_graphql_rate_limit_message(message),
+        GitHubError::GraphQL(message) | GitHubError::ApiError(message) => {
+            is_rate_limit_message(message)
+        }
         _ => false,
     }
 }
 
-/// Best-effort detection of a GraphQL rate-limit error message. Substring
-/// matched (case-insensitive) against the documented signatures for primary,
-/// secondary, and abuse rate limits — exact strings are not part of GitHub's
-/// public contract, so we keep this conservative and string-based rather than
-/// asserting on a particular `errors[].type`.
-fn is_graphql_rate_limit_message(message: &str) -> bool {
+/// Best-effort detection of a rate-limit error message. Substring matched
+/// (case-insensitive) against the documented signatures for primary,
+/// secondary, and abuse rate limits — exact strings are not part of
+/// GitHub's public contract, so we keep this conservative and
+/// string-based rather than asserting on a particular `errors[].type`.
+fn is_rate_limit_message(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("rate limit") || lower.contains("abuse")
 }
@@ -1184,11 +1192,21 @@ mod tests {
         assert!(is_pr_progress_fallback_eligible(&GitHubError::GraphQL(
             "abuse detection mechanism".into()
         )));
+        // ApiError covers the 403 secondary-limit shape where
+        // `x-ratelimit-remaining` is not 0 and `graphql()` falls through
+        // to the generic non-success branch with the response body text.
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::ApiError(
+            "Status 403: You have exceeded a secondary rate limit".into()
+        )));
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::ApiError(
+            "Status 403: API rate limit exceeded".into()
+        )));
     }
 
     // Real GraphQL bugs (schema mismatch, validation errors, etc.) must NOT
     // be masked by cache fallback — those need to surface so we can fix
-    // them. Likewise for Unauthorized / NotFound / ApiError / JsonParse.
+    // them. Likewise for Unauthorized / NotFound / non-rate-limit ApiError
+    // / JsonParse.
     #[test]
     fn pr_progress_fallback_eligible_excludes_real_bugs() {
         assert!(!is_pr_progress_fallback_eligible(&GitHubError::GraphQL(
@@ -1200,8 +1218,10 @@ mod tests {
         assert!(!is_pr_progress_fallback_eligible(&GitHubError::NotFound(
             "x".into()
         )));
+        // Generic 5xx / non-rate-limit ApiError must still surface — we
+        // only fall back when the body carries a rate-limit signature.
         assert!(!is_pr_progress_fallback_eligible(&GitHubError::ApiError(
-            "500".into()
+            "Status 500: internal server error".into()
         )));
     }
 }
