@@ -16,6 +16,7 @@ import type {
   XpGainedEvent,
   StreakMilestoneEvent,
   BadgeEarnedEvent,
+  NotificationsUpdatedEvent,
 } from '@/types';
 
 // ============================================================================
@@ -71,5 +72,23 @@ export const events = {
    */
   onBadgeEarned: (callback: (event: BadgeEarnedEvent) => void): Promise<UnlistenFn> =>
     listen<BadgeEarnedEvent>('badge-earned', (event) => callback(event.payload)),
+
+  // ============================================================================
+  // GitHub Notifications Events (Issue #186)
+  // ============================================================================
+
+  /**
+   * Listen for changes to the authenticated user's GitHub notifications.
+   *
+   * Emitted by the background scheduler whenever a poll observes a
+   * non-304 response. The frontend should treat this as a cue to re-fetch
+   * the notifications list.
+   */
+  onNotificationsUpdated: (
+    callback: (event: NotificationsUpdatedEvent) => void,
+  ): Promise<UnlistenFn> =>
+    listen<NotificationsUpdatedEvent>('notifications-updated', (event) =>
+      callback(event.payload),
+    ),
 };
 

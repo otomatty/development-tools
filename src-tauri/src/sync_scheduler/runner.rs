@@ -14,6 +14,7 @@ use tokio::sync::{Notify, RwLock};
 use crate::auth::{classify_unauthorized, handle_unauthorized, reasons};
 use crate::commands::auth::AppState;
 use crate::commands::github::run_github_sync;
+use crate::commands::notifications::run_notifications_sync;
 use crate::database::models::code_stats::SyncMetadata;
 use crate::database::models::UserSettings;
 use crate::github::client::GitHubError;
@@ -151,6 +152,17 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                         // A successful sync invalidates any in-memory rate-limit
                         // fallback we may have been carrying.
                         rate_limit_reset_fallback = None;
+
+                        // Piggyback the GitHub Notifications poll on the stats
+                        // sync tick (Issue #186). The notifications endpoint
+                        // is conditional via ETag so a 304 costs zero rate
+                        // budget; an actual modification emits the
+                        // `notifications-updated` event for the UI. Failures
+                        // here must not unwind the stats success — log and
+                        // continue.
+                        if let Err(e) = run_notifications_sync(&app, state.inner()).await {
+                            eprintln!("Scheduler: notifications sync failed: {}", e);
+                        }
                     }
                     Err(err_msg) => {
                         eprintln!("Scheduler: scheduled sync failed: {}", err_msg);

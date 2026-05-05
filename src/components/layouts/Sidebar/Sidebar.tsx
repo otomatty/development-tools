@@ -12,6 +12,7 @@
 
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from '@/components/icons';
+import { NotificationsButton } from '@/components/features/notifications';
 import { SidebarItem } from './SidebarItem';
 
 interface NavItem {
@@ -76,19 +77,23 @@ export const Sidebar = () => {
       <div className="p-3 border-t border-slate-700/50">
         <div className="flex items-center justify-between">
           <div className="text-xs text-dt-text-sub">v0.1.0</div>
-          {/* Settings button */}
-          <Link
-            to="/settings"
-            className={`p-2 rounded-lg transition-all duration-200 ${
-              isSettingsActive
-                ? 'bg-gm-accent-cyan/20 text-gm-accent-cyan'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-dt-text'
-            }`}
-            title="Settings"
-            aria-label="Settings"
-          >
-            <Icon name="settings" className="w-5 h-5" />
-          </Link>
+          <div className="flex items-center gap-1">
+            {/* Notifications button (Issue #186) */}
+            <NotificationsButton />
+            {/* Settings button */}
+            <Link
+              to="/settings"
+              className={`p-2 rounded-lg transition-all duration-200 ${
+                isSettingsActive
+                  ? 'bg-gm-accent-cyan/20 text-gm-accent-cyan'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-dt-text'
+              }`}
+              title="Settings"
+              aria-label="Settings"
+            >
+              <Icon name="settings" className="w-5 h-5" />
+            </Link>
+          </div>
         </div>
       </div>
     </aside>

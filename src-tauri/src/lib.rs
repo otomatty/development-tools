@@ -54,6 +54,9 @@ use commands::{
     // PR progress dashboard panel command (Issue #185)
     get_my_pr_progress_with_cache,
     get_near_completion_badges,
+    // GitHub Notifications commands (Issue #186)
+    get_notifications,
+    mark_notification_read,
     get_project,
     get_project_issues,
     get_projects,
@@ -243,6 +246,9 @@ pub fn run() {
             create_github_issue,
             get_my_open_work_with_cache,
             get_my_pr_progress_with_cache,
+            // GitHub Notifications commands (Issue #186)
+            get_notifications,
+            mark_notification_read,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

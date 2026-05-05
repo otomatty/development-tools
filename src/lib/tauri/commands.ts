@@ -48,6 +48,7 @@ import type {
   CachedResponse,
   CacheStats,
   SchedulerStatus,
+  NotificationsPayload,
 } from '@/types';
 
 // ============================================================================
@@ -468,6 +469,31 @@ export const github = {
    */
   getUserStatsWithCache: (): Promise<CachedResponse<UserStats>> =>
     invoke<CachedResponse<UserStats>>('get_user_stats_with_cache'),
+};
+
+// ============================================================================
+// GitHub Notifications Commands (Issue #186)
+// ============================================================================
+
+export const notifications = {
+  /**
+   * Fetch the authenticated user's GitHub notifications.
+   *
+   * Backed by `GET /notifications` with an ETag-based conditional request,
+   * so a poll that observes no changes costs zero rate-limit budget. When
+   * the server returns 304, the payload's `fromCache` is true and `items`
+   * is empty — keep showing whatever was rendered previously.
+   */
+  list: (): Promise<NotificationsPayload> =>
+    invoke<NotificationsPayload>('get_notifications'),
+
+  /**
+   * Mark a single notification thread as read on GitHub.
+   *
+   * `threadId` is the `id` field on a NotificationItem.
+   */
+  markRead: (threadId: string): Promise<void> =>
+    invoke<void>('mark_notification_read', { threadId }),
 };
 
 // ============================================================================

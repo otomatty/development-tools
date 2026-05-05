@@ -9,6 +9,7 @@ export * from './challenge';
 export * from './gamification';
 export * from './issue';
 export * from './network';
+export * from './notifications';
 export * from './settings';
 export * from './ui';
 

@@ -3,6 +3,7 @@ pub mod challenge;
 pub mod gamification;
 pub mod github;
 pub mod issues;
+pub mod notifications;
 pub mod scheduler;
 pub mod settings;
 
@@ -11,5 +12,6 @@ pub use challenge::*;
 pub use gamification::*;
 pub use github::*;
 pub use issues::*;
+pub use notifications::*;
 pub use scheduler::*;
 pub use settings::*;

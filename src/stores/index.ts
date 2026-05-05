@@ -12,6 +12,7 @@
 // Export all stores
 export * from './authStore';
 export * from './navigationStore';
+export * from './notificationsStore';
 export * from './settingsStore';
 export * from './networkStore';
 export * from './animationStore';
