@@ -128,10 +128,15 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
   },
 
   markRead: async (threadId: string) => {
-    // Optimistic update: mark the row read locally before the API call so
-    // the bell badge reacts instantly.
+    // Optimistic update: drop the row from the list locally so the
+    // dropdown matches the backend's unread-only contract immediately
+    // (the next `notifications.list()` calls `list_notifications(...,
+    // false)` server-side, which already filters out read threads).
+    // Toggling `unread: false` while keeping the row visible would
+    // leave a "read but still in the list" zombie until the next
+    // refresh.
     const prev = get().items;
-    const updated = prev.map((n) => (n.id === threadId ? { ...n, unread: false } : n));
+    const updated = prev.filter((n) => n.id !== threadId);
     set((s) => ({
       items: updated,
       unreadCount: updated.filter((n) => n.unread).length,

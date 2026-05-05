@@ -169,4 +169,18 @@ impl Database {
 
         Ok(result.rows_affected())
     }
+
+    /// Delete a single cache entry by `(user_id, data_type)`. Used to purge
+    /// targeted payloads (e.g. notifications) on logout without dropping
+    /// the rest of the user's cache.
+    pub async fn delete_cache_entry(&self, user_id: i64, data_type: &str) -> DbResult<u64> {
+        let result = sqlx::query("DELETE FROM activity_cache WHERE user_id = ? AND data_type = ?")
+            .bind(user_id)
+            .bind(data_type)
+            .execute(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result.rows_affected())
+    }
 }
