@@ -151,8 +151,15 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
         // self-throttled via `notifications_due_to_poll`, which honours
         // both GitHub's `x-poll-interval` hint and any persisted
         // rate-limit reset.
-        if notifications_due_to_poll(state.inner(), user.id, notifications_next_allowed_at, now)
-            .await
+        //
+        // Honour `background_sync = false` here too: the contract is
+        // "background API activity halts when the user opts out", and
+        // notifications are pure background activity (the user can still
+        // refresh manually via the bell button which calls
+        // `get_notifications` directly).
+        if settings.background_sync
+            && notifications_due_to_poll(state.inner(), user.id, notifications_next_allowed_at, now)
+                .await
         {
             match run_notifications_sync(&app, state.inner()).await {
                 Ok(NotificationsSyncOutcome::Ok {

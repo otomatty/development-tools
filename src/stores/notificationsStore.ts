@@ -23,6 +23,15 @@ interface NotificationsStore {
   error: string | null;
   /** ISO8601 timestamp of the last successful refresh. */
   lastFetchedAt: string | null;
+  /**
+   * Monotonic counter bumped on every state-mutating action (fetch start,
+   * setFromEvent, reset, markRead). In-flight fetches capture this on
+   * launch and discard their result if it changed while they were
+   * awaiting the API — this prevents user A's response from being
+   * written back into the store after user A logged out and user B
+   * already started a new session.
+   */
+  sessionGen: number;
 
   fetch: () => Promise<void>;
   /** Replace the list directly (used by the `notifications-updated` event). */
@@ -42,6 +51,7 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
   isLoading: false,
   error: null,
   lastFetchedAt: null,
+  sessionGen: 0,
 
   fetch: async () => {
     // Skip when logged out — the backend would return "Not logged in" and
@@ -49,13 +59,16 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
     // 0 without flashing an error.
     if (!useAuth.getState().state.isLoggedIn) return;
 
+    // Capture the session generation at launch. If `reset()` (logout) or
+    // a `setFromEvent` push runs while we're awaiting the API, the
+    // captured value will mismatch on resume and we drop the response —
+    // otherwise an in-flight fetch from user A could overwrite user B's
+    // empty state after an account switch.
+    const launchGen = get().sessionGen;
     set({ isLoading: true, error: null });
     try {
       const payload = await notificationsApi.list();
-      // The backend serves cached items on 304 (`fromCache=true`), so we
-      // can replace the local list either way — `items` is always the
-      // canonical view. The `fromCache` flag is preserved for diagnostics
-      // but doesn't change the update logic.
+      if (get().sessionGen !== launchGen) return;
       set({
         items: payload.items,
         unreadCount: payload.unreadCount,
@@ -63,6 +76,7 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
         lastFetchedAt: new Date().toISOString(),
       });
     } catch (e) {
+      if (get().sessionGen !== launchGen) return;
       set({
         isLoading: false,
         error: typeof e === 'string' ? e : (e as Error).message ?? 'Failed to fetch notifications',
@@ -71,22 +85,27 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
   },
 
   setFromEvent: (items, unreadCount) => {
-    set({
+    set((s) => ({
       items,
       unreadCount,
       error: null,
       lastFetchedAt: new Date().toISOString(),
-    });
+      sessionGen: s.sessionGen + 1,
+    }));
   },
 
   reset: () => {
-    set({
+    // Bumping `sessionGen` here is what closes the cross-account leak —
+    // any fetch in flight at logout time will compare against the new
+    // value on resume and drop its response.
+    set((s) => ({
       items: [],
       unreadCount: 0,
       isLoading: false,
       error: null,
       lastFetchedAt: null,
-    });
+      sessionGen: s.sessionGen + 1,
+    }));
   },
 
   markRead: async (threadId: string) => {
@@ -94,7 +113,11 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
     // the bell badge reacts instantly.
     const prev = get().items;
     const updated = prev.map((n) => (n.id === threadId ? { ...n, unread: false } : n));
-    set({ items: updated, unreadCount: updated.filter((n) => n.unread).length });
+    set((s) => ({
+      items: updated,
+      unreadCount: updated.filter((n) => n.unread).length,
+      sessionGen: s.sessionGen + 1,
+    }));
 
     try {
       await notificationsApi.markRead(threadId);
