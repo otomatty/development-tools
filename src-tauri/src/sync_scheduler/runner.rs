@@ -187,6 +187,17 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                 }
                 Err(e) => {
                     eprintln!("Scheduler: notifications sync failed: {}", e);
+                    // Apply a minimum backoff on transient failures so a
+                    // network outage doesn't translate into a tight retry
+                    // loop (the loop's stats-side sleep can be capped to
+                    // 0 by `cap_sleep_for_notifications` if
+                    // `notifications_next_allowed` is in the past, so we
+                    // need an active future floor here).
+                    notifications_next_allowed = Some((
+                        user.id,
+                        Utc::now()
+                            + chrono::Duration::seconds(NOTIFICATIONS_FAILURE_BACKOFF_SECONDS),
+                    ));
                 }
             }
         }
@@ -548,14 +559,24 @@ async fn set_status_logged_out(status: &RwLock<SchedulerStatus>) {
     };
 }
 
+/// Minimum backoff applied after `run_notifications_sync` returns a
+/// transient error so a network outage can't translate into a tight
+/// retry loop. The notifications poll naturally re-tries after this
+/// window expires.
+const NOTIFICATIONS_FAILURE_BACKOFF_SECONDS: i64 = 60;
+
 /// Cap a stats-decided sleep so the notifications poll cadence isn't
 /// starved when stats has a long backoff (rate-limit failure, etc.).
 /// Without this, `MAX_FAILURE_SLEEP_SECONDS` (30 min) on the stats side
 /// would freeze the inbox for that long even when the notifications
 /// endpoint has plenty of budget. Returns the smaller of the intended
 /// stats sleep and the time until notifications are next allowed to
-/// poll (defaulting to `MAX_SLEEP_SECONDS` when there's no in-memory
-/// hint, since that's already the loop's natural cap on responsiveness).
+/// poll.
+///
+/// A past `next_allowed` (or `None`) is treated as "no constraint" and
+/// the cap falls back to `MAX_SLEEP_SECONDS` rather than 0 — otherwise
+/// a stale-but-expired hint would let the scheduler busy-loop on a
+/// failing notifications endpoint at zero-sleep intervals.
 fn cap_sleep_for_notifications(
     intended: u64,
     notifications_next_allowed: Option<&(i64, DateTime<Utc>)>,
@@ -563,7 +584,7 @@ fn cap_sleep_for_notifications(
     now: DateTime<Utc>,
 ) -> u64 {
     let notif_wake = match notifications_next_allowed {
-        Some(&(uid, at)) if uid == user_id => (at - now).num_seconds().max(0) as u64,
+        Some(&(uid, at)) if uid == user_id && at > now => (at - now).num_seconds() as u64,
         _ => MAX_SLEEP_SECONDS,
     };
     intended.min(notif_wake)
