@@ -420,12 +420,15 @@ export interface PrProgressItem {
   repoFullName: string;
   repoUrl: string;
   isDraft: boolean;
-  /// `MERGEABLE` / `CONFLICTING` / `UNKNOWN`.
-  mergeable: PrMergeable | string;
+  /// `MERGEABLE` / `CONFLICTING` / `UNKNOWN`. The intersection with
+  /// `(string & {})` keeps the union from collapsing to plain `string`, so
+  /// IDEs still suggest the known literals while we tolerate any future
+  /// GraphQL enum value the backend may forward.
+  mergeable: PrMergeable | (string & {});
   /// `null` when the PR has no review requirement / no reviewers yet.
-  reviewDecision: PrReviewDecision | string | null;
+  reviewDecision: PrReviewDecision | (string & {}) | null;
   /// `null` when there are no checks configured / rollup is not yet computed.
-  checksState: PrChecksState | string | null;
+  checksState: PrChecksState | (string & {}) | null;
   /// ISO8601.
   createdAt: string;
   /// ISO8601.

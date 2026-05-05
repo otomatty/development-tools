@@ -62,6 +62,7 @@ const iconNameMap: Record<string, keyof typeof LucideIcons> = {
   'git-merge': 'GitMerge',
   'git-pull-request': 'GitPullRequest',
   'git-pull-request-closed': 'GitPullRequestClosed',
+  'git-pull-request-draft': 'GitPullRequestDraft',
   'clock': 'Clock',
   'github': 'Github',
   'link': 'Link',

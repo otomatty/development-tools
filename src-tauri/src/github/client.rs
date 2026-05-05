@@ -819,7 +819,9 @@ impl GitHubClient {
     /// first. The returned `truncated` flag tells the UI when the cap was
     /// reached.
     pub async fn get_my_pr_progress(&self) -> GitHubResult<PrProgress> {
-        const PAGE_SIZE: i32 = 50;
+        // GraphQL caps `first` at 100; using the max minimises round-trips
+        // for users approaching the 200-PR ceiling.
+        const PAGE_SIZE: i32 = 100;
         let query = r#"
             query($cursor: String, $first: Int!) {
                 viewer {

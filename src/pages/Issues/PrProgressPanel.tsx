@@ -175,7 +175,7 @@ const PrRow = ({ item }: { item: PrProgressItem }) => {
           aria-label={item.isDraft ? 'Draft Pull Request' : 'Pull Request'}
         >
           <Icon
-            name={item.isDraft ? 'git-pull-request-closed' : 'git-pull-request'}
+            name={item.isDraft ? 'git-pull-request-draft' : 'git-pull-request'}
             className="w-4 h-4"
           />
         </span>
