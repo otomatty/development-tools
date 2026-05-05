@@ -43,6 +43,9 @@ pub mod cache_types {
     /// GitHub Notifications list (cached so a 304 response can still serve
     /// the UI without forcing a re-fetch). See Issue #186.
     pub const GITHUB_NOTIFICATIONS: &str = "github_notifications";
+    /// Recent activity feed payload backing the home timeline
+    /// (`/users/{u}/events`). See Issue #187.
+    pub const ACTIVITY_FEED: &str = "activity_feed";
 }
 
 /// Default cache durations in minutes
@@ -74,4 +77,8 @@ pub mod cache_durations {
     /// Notifications data isn't sensitive enough to justify a short TTL,
     /// and the row is overwritten on every successful sync.
     pub const GITHUB_NOTIFICATIONS: i64 = 60 * 24 * 365;
+    /// Activity timeline cache duration (5 minutes).
+    /// REST budget is 5000 req/hr — even with revalidate-on-focus the
+    /// 5-minute TTL keeps refresh load negligible.
+    pub const ACTIVITY_FEED: i64 = 5;
 }

@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { LoginCard } from '../../components/features/auth';
+import { ActivityTimeline } from '../../components/features/activity';
 import { DashboardContent, XpNotification } from '../../components/features/gamification';
 import { useAuth } from '../../stores/authStore';
 import { useCachedFetch } from '../../hooks/useCachedFetch';
@@ -24,6 +25,9 @@ import { CacheStatusBanner } from './CacheStatusBanner';
 
 const STATS_STALE_TIME_MS = 30 * 60 * 1000; // 30 minutes
 const USER_STATS_STALE_TIME_MS = 60 * 60 * 1000; // 60 minutes
+// Backend caches the events payload for 5 minutes — match it on the client
+// so a focus-revalidation triggers a fresh fetch instead of replaying cache.
+const ACTIVITY_STALE_TIME_MS = 5 * 60 * 1000;
 
 // Home skeleton loader
 const HomeSkeleton = () => (
@@ -53,6 +57,11 @@ export const Home = () => {
   const userStatsQuery = useCachedFetch(github.getUserStatsWithCache, {
     enabled,
     staleTime: USER_STATS_STALE_TIME_MS,
+  });
+
+  const activityQuery = useCachedFetch(github.getActivityFeedWithCache, {
+    enabled,
+    staleTime: ACTIVITY_STALE_TIME_MS,
   });
 
   // `level_info` does not yet have a `_with_cache` variant — it is computed
@@ -143,6 +152,15 @@ export const Home = () => {
             githubStats={githubStatsQuery.data}
             statsDiff={null}
           />
+          <div className="mt-6">
+            <ActivityTimeline
+              items={activityQuery.data?.items ?? null}
+              isLoading={activityQuery.isLoading}
+              isRevalidating={activityQuery.isRevalidating}
+              error={activityQuery.error}
+              onRetry={() => void activityQuery.revalidate()}
+            />
+          </div>
         </>
       ) : (
         <LoginCard />

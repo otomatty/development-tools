@@ -49,6 +49,7 @@ import type {
   CacheStats,
   SchedulerStatus,
   NotificationsPayload,
+  ActivityFeed,
 } from '@/types';
 
 // ============================================================================
@@ -469,6 +470,18 @@ export const github = {
    */
   getUserStatsWithCache: (): Promise<CachedResponse<UserStats>> =>
     invoke<CachedResponse<UserStats>>('get_user_stats_with_cache'),
+
+  /**
+   * Recent activity timeline backed by GitHub `/users/{u}/events`.
+   *
+   * GitHub's endpoint already caps the response at the last 90 days /
+   * 300 events; the backend normalises each event into a flat row and
+   * applies a 5-minute SQLite cache.
+   *
+   * Related: Issue #187
+   */
+  getActivityFeedWithCache: (): Promise<CachedResponse<ActivityFeed>> =>
+    invoke<CachedResponse<ActivityFeed>>('get_activity_feed_with_cache'),
 };
 
 // ============================================================================
