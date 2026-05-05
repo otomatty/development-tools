@@ -129,6 +129,12 @@ pub async fn get_notifications(
     let raw_result = client
         .list_notifications(prior_etag.as_deref(), false)
         .await;
+    // Snapshot the unauthorized variant *before* `map_github_result`
+    // consumes the result. Matching on the typed error here is more
+    // robust than string-matching the Display output, which would silently
+    // start treating 401s as cacheable transient failures the moment the
+    // error message is reworded or localised.
+    let unauthorized = matches!(&raw_result, Err(GitHubError::Unauthorized));
 
     // For transient failures (network blip, GitHub 5xx, even rate limit)
     // we'd rather serve the user's last-known list than return a hard
@@ -137,10 +143,7 @@ pub async fn get_notifications(
     let response = match map_github_result(&app, state.inner(), raw_result).await {
         Ok(r) => r,
         Err(err_msg) => {
-            // The string is what `GitHubError::Display` produces. Auth-
-            // expired keeps the original error contract — UI surfaces a
-            // re-login prompt instead of stale data.
-            if err_msg.contains("Authentication failed") {
+            if unauthorized {
                 return Err(err_msg);
             }
             eprintln!(

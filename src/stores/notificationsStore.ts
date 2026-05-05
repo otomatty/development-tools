@@ -94,9 +94,16 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
   },
 
   setFromEvent: (items, unreadCount) => {
+    // Setting `isLoading: false` here is belt-and-suspenders: fetch()'s
+    // stale-discard branches already clear the spinner when their
+    // response comes back to a bumped sessionGen, but if a render
+    // happens in the brief window between this update and that
+    // discard, the user would otherwise see the new items rendered
+    // alongside a stale spinner.
     set((s) => ({
       items,
       unreadCount,
+      isLoading: false,
       error: null,
       lastFetchedAt: new Date().toISOString(),
       sessionGen: s.sessionGen + 1,
