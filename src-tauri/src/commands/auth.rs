@@ -78,11 +78,40 @@ pub async fn get_auth_state(state: State<'_, AppState>) -> Result<AuthState, Str
 /// Logout current user
 #[command]
 pub async fn logout(state: State<'_, AppState>) -> Result<(), String> {
+    // Capture the user *before* the token wipe so we can purge their
+    // notifications cache below — once `logout()` clears the token,
+    // `get_current_user()` still works (logout preserves user data) so
+    // technically either order works, but capturing here avoids a race
+    // if the order ever changes.
+    let user_id = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|u| u.id);
+
     state
         .token_manager
         .logout()
         .await
         .map_err(|e| e.to_string())?;
+
+    // Purge the notifications cache so issue / PR titles and repo names
+    // captured while logged in don't sit in the local DB indefinitely
+    // (the cache TTL is intentionally long so it survives
+    // `clear_expired_cache`'s startup sweep, but a logout is an explicit
+    // signal that the data is no longer needed). The ETag / cursor in
+    // `sync_metadata` are non-sensitive hashes and are kept so a re-login
+    // can resume conditional polling.
+    if let Some(uid) = user_id {
+        if let Err(e) = state
+            .db
+            .delete_cache_entry(uid, crate::database::cache_types::GITHUB_NOTIFICATIONS)
+            .await
+        {
+            eprintln!("Failed to purge notifications cache on logout: {}", e);
+        }
+    }
 
     Ok(())
 }

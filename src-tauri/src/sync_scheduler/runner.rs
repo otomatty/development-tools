@@ -14,6 +14,9 @@ use tokio::sync::{Notify, RwLock};
 use crate::auth::{classify_unauthorized, handle_unauthorized, reasons};
 use crate::commands::auth::AppState;
 use crate::commands::github::run_github_sync;
+use crate::commands::notifications::{
+    run_notifications_sync, NotificationsSyncOutcome, GITHUB_NOTIFICATIONS_SYNC_TYPE,
+};
 use crate::database::models::code_stats::SyncMetadata;
 use crate::database::models::UserSettings;
 use crate::github::client::GitHubError;
@@ -21,6 +24,7 @@ use crate::github::client::GitHubError;
 use super::actions::{decide_action, next_sync_at};
 use super::state::{
     skip_reasons, SchedulerAction, SchedulerInputs, SchedulerStatus, GITHUB_STATS_SYNC_TYPE,
+    MAX_SLEEP_SECONDS,
 };
 
 /// Handle returned by [`start_scheduler`] and stored in Tauri's managed state.
@@ -73,6 +77,14 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
     // the next iteration to lose the rate-limit context and risk hitting the
     // GitHub API again before the reset.
     let mut rate_limit_reset_fallback: Option<DateTime<Utc>> = None;
+    // In-memory floor for the next notifications poll, scoped to the
+    // user that produced the hint. Tracks GitHub's `x-poll-interval`
+    // header (and rate-limit resets) so we don't poll notifications
+    // more aggressively than GitHub asks. Keyed by user.id so an
+    // account switch doesn't carry the previous user's backoff onto
+    // the new session — their `sync_metadata` row holds any persistent
+    // rate-limit state.
+    let mut notifications_next_allowed: Option<(i64, DateTime<Utc>)> = None;
 
     loop {
         let state = app.state::<AppState>();
@@ -135,6 +147,71 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
         let projected_next = next_sync_at(&inputs);
 
         write_status(&status, &settings, metadata.as_ref(), projected_next, true).await;
+
+        // Poll GitHub Notifications on its own cadence (Issue #186).
+        // Independent of the stats `SchedulerAction` so a stats Sleep /
+        // Idle / RateLimited doesn't freeze the inbox. The endpoint is
+        // conditional via ETag (304 = zero rate budget) and the call is
+        // self-throttled via `notifications_due_to_poll`, which honours
+        // both GitHub's `x-poll-interval` hint and any persisted
+        // rate-limit reset.
+        //
+        // Honour `background_sync = false` here too: the contract is
+        // "background API activity halts when the user opts out", and
+        // notifications are pure background activity (the user can still
+        // refresh manually via the bell button which calls
+        // `get_notifications` directly).
+        // Only the in-memory floor for the current user applies; an
+        // account switch invalidates the previous user's backoff window
+        // (their persisted `sync_metadata.rate_limit_reset_at` is per-user
+        // and remains the source of truth across sessions).
+        let next_allowed_for_user = notifications_next_allowed
+            .filter(|(uid, _)| *uid == user.id)
+            .map(|(_, at)| at);
+        if settings.background_sync
+            && notifications_due_to_poll(state.inner(), user.id, next_allowed_for_user, now).await
+        {
+            match run_notifications_sync(&app, state.inner(), user.id).await {
+                Ok(NotificationsSyncOutcome::Ok {
+                    poll_interval_seconds,
+                }) => {
+                    notifications_next_allowed = poll_interval_seconds
+                        .map(|secs| (user.id, Utc::now() + chrono::Duration::seconds(secs as i64)));
+                }
+                Ok(NotificationsSyncOutcome::RateLimited { reset_at }) => {
+                    eprintln!(
+                        "Scheduler: notifications API rate-limited until {}",
+                        reset_at.to_rfc3339()
+                    );
+                    notifications_next_allowed = Some((user.id, reset_at));
+                }
+                Ok(NotificationsSyncOutcome::UserChanged) => {
+                    // Mid-flight account switch — abandon this iteration's
+                    // notifications poll. Drop any in-memory floor that
+                    // belonged to the previous user; the next iteration
+                    // will re-evaluate against the new user's settings
+                    // and persisted state.
+                    eprintln!(
+                        "Scheduler: notifications poll skipped — active user changed mid-flight"
+                    );
+                    notifications_next_allowed = None;
+                }
+                Err(e) => {
+                    eprintln!("Scheduler: notifications sync failed: {}", e);
+                    // Apply a minimum backoff on transient failures so a
+                    // network outage doesn't translate into a tight retry
+                    // loop (the loop's stats-side sleep can be capped to
+                    // 0 by `cap_sleep_for_notifications` if
+                    // `notifications_next_allowed` is in the past, so we
+                    // need an active future floor here).
+                    notifications_next_allowed = Some((
+                        user.id,
+                        Utc::now()
+                            + chrono::Duration::seconds(NOTIFICATIONS_FAILURE_BACKOFF_SECONDS),
+                    ));
+                }
+            }
+        }
 
         let action = decide_action(&inputs);
         match action {
@@ -256,8 +333,17 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
 
                         // Always sleep at least MIN_FAILURE_SLEEP_SECONDS after a
                         // failure so transient errors don't trigger a tight
-                        // retry loop.
-                        wait_for_change_or_timeout(&notify, sleep_secs).await;
+                        // retry loop. Capped by `cap_sleep_for_notifications`
+                        // so a long stats backoff (rate-limit reset can be
+                        // 30 min away) doesn't hold up an otherwise-healthy
+                        // notifications stream.
+                        let capped = cap_sleep_for_notifications(
+                            sleep_secs,
+                            notifications_next_allowed.as_ref(),
+                            user.id,
+                            Utc::now(),
+                        );
+                        wait_for_change_or_timeout(&notify, capped).await;
                     }
                 }
             }
@@ -286,7 +372,13 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                     persist_startup_baseline(&state.db, user.id).await;
                 }
                 is_first_run = false;
-                wait_for_change_or_timeout(&notify, seconds).await;
+                let capped = cap_sleep_for_notifications(
+                    seconds,
+                    notifications_next_allowed.as_ref(),
+                    user.id,
+                    Utc::now(),
+                );
+                wait_for_change_or_timeout(&notify, capped).await;
             }
             SchedulerAction::Idle { reason } => {
                 is_first_run = false;
@@ -305,8 +397,17 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                 // Wake on settings changes immediately, but also re-poll on a
                 // bounded interval as a safety net for non-settings transitions
                 // (logout/login, an account switch, etc.) that don't currently
-                // emit a notify.
-                wait_for_change_or_timeout(&notify, IDLE_POLL_SECONDS).await;
+                // emit a notify. Cap by notifications cadence so manual-only
+                // stats (`sync_interval_minutes <= 0`) doesn't freeze the
+                // notifications stream — the comment above the inbox poll
+                // promises Sleep/Idle/RateLimited won't lock it out.
+                let capped = cap_sleep_for_notifications(
+                    IDLE_POLL_SECONDS,
+                    notifications_next_allowed.as_ref(),
+                    user.id,
+                    Utc::now(),
+                );
+                wait_for_change_or_timeout(&notify, capped).await;
             }
             SchedulerAction::RateLimited { reason, seconds } => {
                 is_first_run = false;
@@ -319,7 +420,15 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                         .await,
                 );
                 update_status_skipped(&status, reason, now).await;
-                wait_for_change_or_timeout(&notify, seconds).await;
+                // Cap the rate-limit backoff so the notifications stream
+                // doesn't get starved during a stats-side rate limit.
+                let capped = cap_sleep_for_notifications(
+                    seconds,
+                    notifications_next_allowed.as_ref(),
+                    user.id,
+                    Utc::now(),
+                );
+                wait_for_change_or_timeout(&notify, capped).await;
             }
         }
     }
@@ -470,6 +579,37 @@ async fn set_status_logged_out(status: &RwLock<SchedulerStatus>) {
     };
 }
 
+/// Minimum backoff applied after `run_notifications_sync` returns a
+/// transient error so a network outage can't translate into a tight
+/// retry loop. The notifications poll naturally re-tries after this
+/// window expires.
+const NOTIFICATIONS_FAILURE_BACKOFF_SECONDS: i64 = 60;
+
+/// Cap a stats-decided sleep so the notifications poll cadence isn't
+/// starved when stats has a long backoff (rate-limit failure, etc.).
+/// Without this, `MAX_FAILURE_SLEEP_SECONDS` (30 min) on the stats side
+/// would freeze the inbox for that long even when the notifications
+/// endpoint has plenty of budget. Returns the smaller of the intended
+/// stats sleep and the time until notifications are next allowed to
+/// poll.
+///
+/// A past `next_allowed` (or `None`) is treated as "no constraint" and
+/// the cap falls back to `MAX_SLEEP_SECONDS` rather than 0 — otherwise
+/// a stale-but-expired hint would let the scheduler busy-loop on a
+/// failing notifications endpoint at zero-sleep intervals.
+fn cap_sleep_for_notifications(
+    intended: u64,
+    notifications_next_allowed: Option<&(i64, DateTime<Utc>)>,
+    user_id: i64,
+    now: DateTime<Utc>,
+) -> u64 {
+    let notif_wake = match notifications_next_allowed {
+        Some(&(uid, at)) if uid == user_id && at > now => (at - now).num_seconds() as u64,
+        _ => MAX_SLEEP_SECONDS,
+    };
+    intended.min(notif_wake)
+}
+
 async fn wait_for_change_or_timeout(notify: &Notify, seconds: u64) {
     use std::time::Duration;
     tokio::select! {
@@ -510,6 +650,66 @@ async fn persist_startup_baseline(db: &crate::database::Database, user_id: i64) 
         db.record_scheduler_baseline(user_id, GITHUB_STATS_SYNC_TYPE, Utc::now())
             .await,
     );
+}
+
+/// Check whether the notifications endpoint is currently rate-limited per
+/// the persisted `sync_metadata` row.
+///
+/// `record_sync_rate_limit` writes the reset timestamp inside
+/// `run_notifications_sync` when GitHub returns a 0-remaining 403; we
+/// honour it here so the next tick doesn't immediately re-poll and burn
+/// through the limit again. A read failure errs on "not throttled" — it's
+/// safer to re-poll once than to silently freeze the inbox.
+async fn notifications_throttled(state: &AppState, user_id: i64) -> bool {
+    let metadata = match state
+        .db
+        .get_sync_metadata(user_id, GITHUB_NOTIFICATIONS_SYNC_TYPE)
+        .await
+    {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "Scheduler: failed to read notifications sync_metadata: {}",
+                e
+            );
+            return false;
+        }
+    };
+
+    metadata
+        .and_then(|m| m.rate_limit_reset_at_parsed())
+        .is_some_and(|reset| reset > Utc::now())
+}
+
+/// Decide whether to fire a notifications poll on this scheduler tick.
+///
+/// Composes two throttles:
+/// 1. Persisted rate-limit reset (`sync_metadata.rate_limit_reset_at`,
+///    written by `run_notifications_sync` when GitHub returns 403 with
+///    0 remaining) — survives across app restarts.
+/// 2. In-memory `next_allowed_at` derived from GitHub's
+///    `x-poll-interval` header — softer hint, not persisted because
+///    GitHub re-emits it on every response.
+///
+/// Either being in the future blocks the poll. The persisted-rate-limit
+/// branch logs a single line per skip; the soft poll-interval window
+/// fires every short tick and is intentionally silent to avoid spam.
+async fn notifications_due_to_poll(
+    state: &AppState,
+    user_id: i64,
+    next_allowed_at: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> bool {
+    if let Some(allowed) = next_allowed_at {
+        if allowed > now {
+            return false;
+        }
+    }
+    if notifications_throttled(state, user_id).await {
+        eprintln!("Scheduler: skipping notifications poll while rate-limited");
+        return false;
+    }
+    true
 }
 
 /// Classify a `run_github_sync` error string as rate-limited.
