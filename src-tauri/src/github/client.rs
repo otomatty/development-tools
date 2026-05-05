@@ -889,18 +889,23 @@ impl GitHubClient {
                 total_count = count;
             }
 
+            // Pull `page_info` out before moving `connection.nodes` so the
+            // cap branch below can consult `has_next_page`. Without this,
+            // a response that omits `totalCount` (Option::None → 0) would
+            // leave `truncated = false` even when more pages exist.
+            let page_info = connection.page_info;
+
             all_nodes.extend(connection.nodes);
 
             // Cap on results — bail out before issuing the next page.
             if all_nodes.len() >= Self::PR_PROGRESS_MAX_RESULTS as usize {
                 all_nodes.truncate(Self::PR_PROGRESS_MAX_RESULTS as usize);
-                if total_count > all_nodes.len() as i32 {
-                    truncated = true;
-                }
+                let has_next_page = page_info.as_ref().is_some_and(|info| info.has_next_page);
+                truncated = has_next_page || total_count > all_nodes.len() as i32;
                 break;
             }
 
-            match connection.page_info {
+            match page_info {
                 Some(info) if info.has_next_page => {
                     cursor = info.end_cursor;
                     if cursor.is_none() {
