@@ -256,23 +256,40 @@ pub async fn get_notifications(
                 notifications.iter().map(NotificationItem::from).collect();
             let unread_count = items.iter().filter(|i| i.unread).count() as i32;
 
-            // Persist the new ETag + the latest seen `updated_at` so the
-            // next poll can issue a conditional request and detect
-            // genuinely-new items. The cursor is monotonic — see
-            // `merge_cursor` for why.
-            let new_cursor = merge_cursor(prior_cursor.as_deref(), &notifications);
-            persist_sync_success_with_cursor(
-                state.inner(),
-                user.id,
-                etag.as_deref(),
-                new_cursor.as_deref(),
-            )
-            .await;
+            // Re-check the active user before persisting. If the user
+            // logged out (or switched accounts) while we were awaiting
+            // GitHub, `logout` may have already purged this user's
+            // notifications cache; without the recheck a delayed save
+            // would repopulate it with titles/repo names that should
+            // no longer be on disk. The error path silently returns the
+            // freshly-fetched list to the caller without persisting —
+            // they're the one who initiated the call so they can render
+            // the in-flight result, but it isn't written back to local
+            // state.
+            let still_same_user = matches!(
+                state.token_manager.get_current_user().await,
+                Ok(Some(u)) if u.id == user.id
+            );
 
-            // Mirror the items into `activity_cache` so the next 304 (or a
-            // cold start before the first scheduler tick) can still serve
-            // a populated list.
-            save_items_cache(state.inner(), user.id, &items).await;
+            if still_same_user {
+                // Persist the new ETag + the latest seen `updated_at` so
+                // the next poll can issue a conditional request and
+                // detect genuinely-new items. The cursor is monotonic —
+                // see `merge_cursor` for why.
+                let new_cursor = merge_cursor(prior_cursor.as_deref(), &notifications);
+                persist_sync_success_with_cursor(
+                    state.inner(),
+                    user.id,
+                    etag.as_deref(),
+                    new_cursor.as_deref(),
+                )
+                .await;
+
+                // Mirror the items into `activity_cache` so the next 304
+                // (or a cold start before the first scheduler tick) can
+                // still serve a populated list.
+                save_items_cache(state.inner(), user.id, &items).await;
+            }
 
             Ok(NotificationsPayload {
                 items,
@@ -441,6 +458,28 @@ pub async fn run_notifications_sync(
                     .count() as i32,
                 None => 0,
             };
+
+            // Re-check the active user before any side effects. Logout /
+            // account switch can land in the brief window between
+            // `list_notifications` returning and us writing back to the
+            // cache; without this re-check, a delayed save would
+            // repopulate the `activity_cache` row that `logout` just
+            // purged with user A's titles + repo names. The
+            // `notifications-updated` event has its own userId guard on
+            // the frontend, but that doesn't help the persisted DB row.
+            match state.token_manager.get_current_user().await {
+                Ok(Some(current)) if current.id == user.id => {}
+                Ok(_) => {
+                    return Ok(NotificationsSyncOutcome::UserChanged);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Scheduler: notifications post-fetch user check failed: {}",
+                        e
+                    );
+                    return Ok(NotificationsSyncOutcome::UserChanged);
+                }
+            }
 
             // Surface the actually-new unread mentions / review requests as
             // OS notifications. Suppressed on first poll (no cutoff yet) to
