@@ -113,18 +113,17 @@ pub async fn get_notifications(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<NotificationsPayload, String> {
-    let token = state
+    // Atomic snapshot — without it, an account switch between
+    // `get_access_token()` and `get_current_user()` would let us call
+    // GitHub with user A's token and persist the response under user B's
+    // local id (and the `notifications-updated` event's userId guard
+    // wouldn't catch this since the captured user.id is wrong from the
+    // start).
+    let (user, token) = state
         .token_manager
-        .get_access_token()
+        .get_current_user_with_token()
         .await
         .map_err(|e| e.to_string())?;
-
-    let user = state
-        .token_manager
-        .get_current_user()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("Not logged in")?;
 
     let metadata = state
         .db
@@ -330,18 +329,13 @@ pub async fn run_notifications_sync(
     app: &AppHandle,
     state: &AppState,
 ) -> Result<NotificationsSyncOutcome, String> {
-    let token = state
+    // Atomic snapshot — see `get_notifications` for why fetching the user
+    // and the decrypted token together matters.
+    let (user, token) = state
         .token_manager
-        .get_access_token()
+        .get_current_user_with_token()
         .await
         .map_err(|e| e.to_string())?;
-
-    let user = state
-        .token_manager
-        .get_current_user()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("Not logged in")?;
 
     let metadata = state
         .db

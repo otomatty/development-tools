@@ -84,6 +84,25 @@ impl TokenManager {
             .map_err(|e| e.into())
     }
 
+    /// Get the current user *and* the decrypted access token from the same
+    /// row read.
+    ///
+    /// Combining the two lookups closes a race where the user logs out (or
+    /// switches accounts) between separate `get_access_token()` and
+    /// `get_current_user()` calls — without it, a command can issue an API
+    /// request with account A's token and then persist the response under
+    /// account B's local `user.id`. Callers that need both must use this
+    /// method instead of the two-step pattern.
+    pub async fn get_current_user_with_token(&self) -> TokenResult<(User, String)> {
+        let user = self
+            .db
+            .get_current_user()
+            .await?
+            .ok_or(TokenError::NotLoggedIn)?;
+        let token = self.crypto.decrypt(&user.access_token_encrypted)?;
+        Ok((user, token))
+    }
+
     /// Create a new user from OAuth token
     pub async fn create_user_from_token(
         &self,
