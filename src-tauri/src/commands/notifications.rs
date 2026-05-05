@@ -324,10 +324,23 @@ pub enum NotificationsSyncOutcome {
     /// GitHub responded with 0 remaining + a reset timestamp. The scheduler
     /// should hold off on the next notifications poll until then.
     RateLimited { reset_at: DateTime<Utc> },
+    /// The active user changed between the scheduler's permission check
+    /// and this call. The fetch was skipped — the scheduler must not
+    /// record any backoff under the stale user.id.
+    UserChanged,
 }
 
 /// Refresh notifications and emit a `notifications-updated` event when new
 /// activity is observed. Used by the background scheduler.
+///
+/// `expected_user_id` is the user the caller already evaluated permission
+/// (e.g. `settings.background_sync`) against. If the active user has
+/// changed by the time we take a fresh snapshot, we abort with
+/// [`NotificationsSyncOutcome::UserChanged`] so the scheduler can re-do
+/// its gating against the new account on the next iteration. Without this
+/// check, an account switch in the brief window between the scheduler's
+/// permission read and this call could let user B's poll fire even when
+/// they have `background_sync = false`.
 ///
 /// Returns a [`NotificationsSyncOutcome`] so the scheduler can record a
 /// rate-limit reset and back off accordingly. Other errors (network /
@@ -335,6 +348,7 @@ pub enum NotificationsSyncOutcome {
 pub async fn run_notifications_sync(
     app: &AppHandle,
     state: &AppState,
+    expected_user_id: i64,
 ) -> Result<NotificationsSyncOutcome, String> {
     // Atomic snapshot — see `get_notifications` for why fetching the user
     // and the decrypted token together matters.
@@ -343,6 +357,15 @@ pub async fn run_notifications_sync(
         .get_current_user_with_token()
         .await
         .map_err(|e| e.to_string())?;
+
+    // Abort if the caller's gating decision was made against a different
+    // user. Without this guard, an account switch between the
+    // scheduler's `settings.background_sync` read and this call could
+    // poll user B with user A's permission, and the resulting backoff
+    // would land under user B's id even though the gate said "user A".
+    if user.id != expected_user_id {
+        return Ok(NotificationsSyncOutcome::UserChanged);
+    }
 
     let metadata = state
         .db

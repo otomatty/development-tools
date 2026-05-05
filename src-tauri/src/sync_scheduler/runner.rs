@@ -171,7 +171,7 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
         if settings.background_sync
             && notifications_due_to_poll(state.inner(), user.id, next_allowed_for_user, now).await
         {
-            match run_notifications_sync(&app, state.inner()).await {
+            match run_notifications_sync(&app, state.inner(), user.id).await {
                 Ok(NotificationsSyncOutcome::Ok {
                     poll_interval_seconds,
                 }) => {
@@ -184,6 +184,17 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                         reset_at.to_rfc3339()
                     );
                     notifications_next_allowed = Some((user.id, reset_at));
+                }
+                Ok(NotificationsSyncOutcome::UserChanged) => {
+                    // Mid-flight account switch — abandon this iteration's
+                    // notifications poll. Drop any in-memory floor that
+                    // belonged to the previous user; the next iteration
+                    // will re-evaluate against the new user's settings
+                    // and persisted state.
+                    eprintln!(
+                        "Scheduler: notifications poll skipped — active user changed mid-flight"
+                    );
+                    notifications_next_allowed = None;
                 }
                 Err(e) => {
                     eprintln!("Scheduler: notifications sync failed: {}", e);
