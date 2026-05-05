@@ -68,7 +68,13 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const payload = await notificationsApi.list();
-      if (get().sessionGen !== launchGen) return;
+      if (get().sessionGen !== launchGen) {
+        // Stale: newer data is already in the store. Clear `isLoading`
+        // so the spinner stops — `setFromEvent` / `markRead` only bump
+        // `sessionGen`, they don't reset `isLoading`.
+        set({ isLoading: false });
+        return;
+      }
       set({
         items: payload.items,
         unreadCount: payload.unreadCount,
@@ -76,7 +82,10 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
         lastFetchedAt: new Date().toISOString(),
       });
     } catch (e) {
-      if (get().sessionGen !== launchGen) return;
+      if (get().sessionGen !== launchGen) {
+        set({ isLoading: false });
+        return;
+      }
       set({
         isLoading: false,
         error: typeof e === 'string' ? e : (e as Error).message ?? 'Failed to fetch notifications',

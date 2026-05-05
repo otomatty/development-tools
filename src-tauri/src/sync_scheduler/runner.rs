@@ -76,11 +76,14 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
     // the next iteration to lose the rate-limit context and risk hitting the
     // GitHub API again before the reset.
     let mut rate_limit_reset_fallback: Option<DateTime<Utc>> = None;
-    // In-memory floor for the next notifications poll. Tracks GitHub's
-    // `x-poll-interval` hint (and rate-limit resets) so we don't poll
-    // notifications more aggressively than GitHub asks. Reset to `None`
-    // means "may poll on the next tick".
-    let mut notifications_next_allowed_at: Option<DateTime<Utc>> = None;
+    // In-memory floor for the next notifications poll, scoped to the
+    // user that produced the hint. Tracks GitHub's `x-poll-interval`
+    // header (and rate-limit resets) so we don't poll notifications
+    // more aggressively than GitHub asks. Keyed by user.id so an
+    // account switch doesn't carry the previous user's backoff onto
+    // the new session — their `sync_metadata` row holds any persistent
+    // rate-limit state.
+    let mut notifications_next_allowed: Option<(i64, DateTime<Utc>)> = None;
 
     loop {
         let state = app.state::<AppState>();
@@ -157,23 +160,29 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
         // notifications are pure background activity (the user can still
         // refresh manually via the bell button which calls
         // `get_notifications` directly).
+        // Only the in-memory floor for the current user applies; an
+        // account switch invalidates the previous user's backoff window
+        // (their persisted `sync_metadata.rate_limit_reset_at` is per-user
+        // and remains the source of truth across sessions).
+        let next_allowed_for_user = notifications_next_allowed
+            .filter(|(uid, _)| *uid == user.id)
+            .map(|(_, at)| at);
         if settings.background_sync
-            && notifications_due_to_poll(state.inner(), user.id, notifications_next_allowed_at, now)
-                .await
+            && notifications_due_to_poll(state.inner(), user.id, next_allowed_for_user, now).await
         {
             match run_notifications_sync(&app, state.inner()).await {
                 Ok(NotificationsSyncOutcome::Ok {
                     poll_interval_seconds,
                 }) => {
-                    notifications_next_allowed_at = poll_interval_seconds
-                        .map(|secs| Utc::now() + chrono::Duration::seconds(secs as i64));
+                    notifications_next_allowed = poll_interval_seconds
+                        .map(|secs| (user.id, Utc::now() + chrono::Duration::seconds(secs as i64)));
                 }
                 Ok(NotificationsSyncOutcome::RateLimited { reset_at }) => {
                     eprintln!(
                         "Scheduler: notifications API rate-limited until {}",
                         reset_at.to_rfc3339()
                     );
-                    notifications_next_allowed_at = Some(reset_at);
+                    notifications_next_allowed = Some((user.id, reset_at));
                 }
                 Err(e) => {
                     eprintln!("Scheduler: notifications sync failed: {}", e);
