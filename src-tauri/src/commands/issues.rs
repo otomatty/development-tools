@@ -30,6 +30,7 @@ use crate::database::models::project::{
 };
 use crate::github::client::GitHubError;
 use crate::github::issues::{generate_actions_template, GitHubSearchItem, IssuesClient};
+use crate::github::{GitHubClient, PrProgress};
 
 /// Get all projects for the current user
 #[tauri::command]
@@ -855,6 +856,143 @@ pub async fn get_my_open_work_with_cache(
 }
 
 // ============================================================================
+// PR Progress dashboard panel (Issue #185)
+// ============================================================================
+
+/// True when the GitHub error is a transient rate-limit / network condition
+/// that should degrade to cached data rather than bubble up as a hard error.
+///
+/// `HttpRequest` (transport failure) and `RateLimited` (primary REST limit
+/// — `check_rate_limit` only fires when `x-ratelimit-remaining: 0`) are
+/// obvious. `GraphQL` and `ApiError` are matched conditionally:
+/// - `GraphQL`: GitHub's GraphQL primary / secondary limits sometimes
+///   arrive as HTTP 200 + `errors` payload, which `graphql()` flattens
+///   into this variant.
+/// - `ApiError`: secondary / abuse limits frequently come back as HTTP
+///   403 *without* `x-ratelimit-remaining: 0`, so `check_rate_limit` lets
+///   them through and `graphql()` maps them to `ApiError(body)`. The
+///   body text carries GitHub's rate-limit explanation, which the same
+///   message classifier picks up.
+fn is_pr_progress_fallback_eligible(error: &GitHubError) -> bool {
+    match error {
+        GitHubError::HttpRequest(_) | GitHubError::RateLimited(_) => true,
+        GitHubError::GraphQL(message) | GitHubError::ApiError(message) => {
+            is_rate_limit_message(message)
+        }
+        _ => false,
+    }
+}
+
+/// Best-effort detection of a rate-limit error message. Substring matched
+/// (case-insensitive) against the documented signatures for primary,
+/// secondary, and abuse rate limits — exact strings are not part of
+/// GitHub's public contract, so we keep this conservative and
+/// string-based rather than asserting on a particular `errors[].type`.
+fn is_rate_limit_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("rate limit") || lower.contains("abuse")
+}
+
+/// Fetch the authenticated user's open PRs with mergeable / checks /
+/// reviewDecision aggregated, with cache fallback.
+///
+/// Behaviour mirrors `get_my_open_work_with_cache`:
+/// - Success → cache + return `from_cache: false`.
+/// - Network / rate-limit error → fall back to last cached payload (any age)
+///   if available, else surface the error. Includes GraphQL secondary /
+///   abuse limits that arrive as HTTP 200 + `errors` payload.
+/// - 401 → trigger the central auth-expired flow; do not fall back to cache.
+///
+/// Cost: GraphQL 5000-points/hour budget. Each PR node costs ~5 points and
+/// the query is capped at 200 PRs (2 pages × 100). The 5-minute SQLite TTL
+/// keeps us well under the budget even with revalidate-on-focus.
+#[tauri::command]
+pub async fn get_my_pr_progress_with_cache(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<PrProgress>, String> {
+    let user_id = get_current_user_id(&state).await?;
+    let access_token = get_access_token(&state).await?;
+    let client = GitHubClient::new(access_token);
+
+    match client.get_my_pr_progress().await {
+        Ok(payload) => {
+            let payload_json = serde_json::to_string(&payload)
+                .map_err(|e| format!("Failed to serialize pr_progress: {}", e))?;
+
+            let now = Utc::now();
+            let expires_at =
+                now + chrono::Duration::minutes(crate::database::cache_durations::MY_PR_PROGRESS);
+
+            // Best-effort cache write — a failure here shouldn't block the
+            // response. Mirrors `get_my_open_work_with_cache`.
+            let _ = state
+                .db
+                .save_cache(
+                    user_id,
+                    crate::database::cache_types::MY_PR_PROGRESS,
+                    &payload_json,
+                    expires_at,
+                )
+                .await;
+
+            Ok(CachedResponse {
+                data: payload,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Err(GitHubError::Unauthorized) => {
+            handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+            Err(GitHubError::Unauthorized.to_string())
+        }
+        Err(api_error) => {
+            // Only network / rate-limit errors warrant cache fallback —
+            // surface anything else (GraphQL schema error, JSON parse
+            // failure, etc.) so we don't mask real bugs with stale data.
+            // GitHub's secondary/abuse limits on GraphQL frequently come
+            // back as HTTP 200 + `errors` payload, which `graphql()` maps
+            // to `GraphQL`; we sniff those messages and treat them as
+            // rate-limit failures so the contract ("rate-limit failures
+            // degrade to cache") holds across both 403 and 200-errors
+            // shapes.
+            if !is_pr_progress_fallback_eligible(&api_error) {
+                return Err(format!("GitHub GraphQL error: {}", api_error));
+            }
+
+            eprintln!(
+                "PR progress fetch failed, attempting cache fallback: {}",
+                api_error
+            );
+
+            let cache_result = state
+                .db
+                .get_any_cache(user_id, crate::database::cache_types::MY_PR_PROGRESS)
+                .await
+                .map_err(|e| format!("Failed to read pr_progress cache: {}", e))?;
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let payload: PrProgress = serde_json::from_str(&data_json)
+                        .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    Ok(CachedResponse {
+                        data: payload,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!(
+                    "GitHub APIにアクセスできず、キャッシュもありません: {}",
+                    api_error
+                )),
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Helper functions
 // ============================================================================
 
@@ -1027,6 +1165,63 @@ mod tests {
         let json_err = serde_json::from_str::<i32>("not a number").unwrap_err();
         assert!(!is_network_or_rate_limit_error(&GitHubError::JsonParse(
             json_err
+        )));
+    }
+
+    // PR progress: GraphQL secondary / abuse rate limits frequently surface
+    // as HTTP 200 + `errors` payload, which `graphql()` flattens into a
+    // `GraphQL` variant. The fallback classifier must catch those by
+    // message so the cache-fallback contract holds across both 403 and
+    // 200-errors shapes.
+    #[test]
+    fn pr_progress_fallback_eligible_includes_graphql_rate_limits() {
+        // RateLimited covers the primary REST limit case; HttpRequest is
+        // awkward to construct in a unit test and is exercised by the
+        // existing `is_network_or_rate_limit_error` test above.
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::RateLimited(
+            0
+        )));
+        // GraphQL rate-limit messages — primary, secondary, and abuse —
+        // must all be classified as transient.
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::GraphQL(
+            "API rate limit exceeded".into()
+        )));
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::GraphQL(
+            "You have exceeded a secondary rate limit".into()
+        )));
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::GraphQL(
+            "abuse detection mechanism".into()
+        )));
+        // ApiError covers the 403 secondary-limit shape where
+        // `x-ratelimit-remaining` is not 0 and `graphql()` falls through
+        // to the generic non-success branch with the response body text.
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::ApiError(
+            "Status 403: You have exceeded a secondary rate limit".into()
+        )));
+        assert!(is_pr_progress_fallback_eligible(&GitHubError::ApiError(
+            "Status 403: API rate limit exceeded".into()
+        )));
+    }
+
+    // Real GraphQL bugs (schema mismatch, validation errors, etc.) must NOT
+    // be masked by cache fallback — those need to surface so we can fix
+    // them. Likewise for Unauthorized / NotFound / non-rate-limit ApiError
+    // / JsonParse.
+    #[test]
+    fn pr_progress_fallback_eligible_excludes_real_bugs() {
+        assert!(!is_pr_progress_fallback_eligible(&GitHubError::GraphQL(
+            "Field 'foo' doesn't exist on type 'PullRequest'".into()
+        )));
+        assert!(!is_pr_progress_fallback_eligible(
+            &GitHubError::Unauthorized
+        ));
+        assert!(!is_pr_progress_fallback_eligible(&GitHubError::NotFound(
+            "x".into()
+        )));
+        // Generic 5xx / non-rate-limit ApiError must still surface — we
+        // only fall back when the body carries a rate-limit signature.
+        assert!(!is_pr_progress_fallback_eligible(&GitHubError::ApiError(
+            "Status 500: internal server error".into()
         )));
     }
 }

@@ -31,6 +31,7 @@ import {
 import { CacheStatusBanner } from '../Home/CacheStatusBanner';
 import { InboxFilters, type SortKey } from './InboxFilters';
 import { InboxItemRow } from './InboxItemRow';
+import { PrProgressPanel } from './PrProgressPanel';
 
 const STALE_TIME_MS = 5 * 60 * 1000; // 5 minutes — matches backend TTL
 
@@ -218,6 +219,9 @@ const Issues = () => {
         cachedAt={query.cachedAt}
         onRetry={handleRetry}
       />
+
+      {/* PR progress dashboard panel — Issue #185 */}
+      <PrProgressPanel enabled={enabled} />
 
       <div className="flex items-center gap-2 mb-4">
         <TabButton

@@ -37,6 +37,9 @@ pub mod cache_types {
     /// Cross-repo "Today / Inbox": assigned Open Issues + Review Requested
     /// PRs combined into a single payload. See Issue #183.
     pub const MY_OPEN_WORK: &str = "my_open_work";
+    /// PR progress dashboard payload (mergeable / checks / reviewDecision)
+    /// for the viewer's open PRs. See Issue #185.
+    pub const MY_PR_PROGRESS: &str = "my_pr_progress";
 }
 
 /// Default cache durations in minutes
@@ -55,4 +58,8 @@ pub mod cache_durations {
     /// Search API budget is 30 req/min — even at one user with one foreground
     /// + revalidate-on-focus, 5 minutes keeps us well under that.
     pub const MY_OPEN_WORK: i64 = 5;
+    /// PR progress dashboard cache duration (5 minutes).
+    /// Backed by GraphQL (5000 points/hour) — short TTL keeps the panel
+    /// responsive without burning the budget on focus revalidations.
+    pub const MY_PR_PROGRESS: i64 = 5;
 }
