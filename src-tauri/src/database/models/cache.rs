@@ -65,8 +65,13 @@ pub mod cache_durations {
     /// Backed by GraphQL (5000 points/hour) — short TTL keeps the panel
     /// responsive without burning the budget on focus revalidations.
     pub const MY_PR_PROGRESS: i64 = 5;
-    /// GitHub Notifications cache duration (60 minutes). The ETag covers
-    /// freshness; this TTL just bounds how stale a cold-start render can
-    /// be when GitHub returns 304 against a long-unchanged inbox.
-    pub const GITHUB_NOTIFICATIONS: i64 = 60;
+    /// GitHub Notifications cache duration. Set very high (≈1 year)
+    /// because the ETag-backed flow needs the cache to outlive the
+    /// `clear_expired_cache` startup sweep — a deleted cache row paired
+    /// with a still-current ETag would otherwise force a transparent
+    /// re-fetch on every cold start (handled by the 304+empty-cache
+    /// recovery path in `get_notifications`, which is fine but visible).
+    /// Notifications data isn't sensitive enough to justify a short TTL,
+    /// and the row is overwritten on every successful sync.
+    pub const GITHUB_NOTIFICATIONS: i64 = 60 * 24 * 365;
 }

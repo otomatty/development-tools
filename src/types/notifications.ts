@@ -43,7 +43,15 @@ export interface NotificationsPayload {
 /// Includes the freshly-fetched items so the UI can replace its local
 /// list directly. A re-fetch in response to this event would race the
 /// just-persisted ETag and come back as 304, leaving the UI stale.
+///
+/// `userId` is the DB id of the user the scheduler captured before
+/// awaiting GitHub. The UI compares it against the currently logged-in
+/// user and drops mismatches — if an account switch happens mid-flight
+/// the event still fires for the *previous* user, and applying its
+/// items to the new account would leak unread counts and repo titles
+/// across users.
 export interface NotificationsUpdatedEvent {
+  userId: number;
   unreadCount: number;
   newCount: number;
   items: NotificationItem[];

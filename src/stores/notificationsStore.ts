@@ -59,13 +59,16 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
     // 0 without flashing an error.
     if (!useAuth.getState().state.isLoggedIn) return;
 
-    // Capture the session generation at launch. If `reset()` (logout) or
-    // a `setFromEvent` push runs while we're awaiting the API, the
-    // captured value will mismatch on resume and we drop the response —
+    // Capture the session generation at launch *and* bump it. The bump
+    // means concurrent fetches (e.g. user clicks refresh twice) don't
+    // share a `launchGen` — only the most recent one will commit; the
+    // earlier ones will see a mismatch on resume and drop. If `reset()`
+    // (logout) or a `setFromEvent` push runs while we're awaiting the
+    // API, the captured value will likewise mismatch and we drop —
     // otherwise an in-flight fetch from user A could overwrite user B's
     // empty state after an account switch.
-    const launchGen = get().sessionGen;
-    set({ isLoading: true, error: null });
+    const launchGen = get().sessionGen + 1;
+    set({ sessionGen: launchGen, isLoading: true, error: null });
     try {
       const payload = await notificationsApi.list();
       if (get().sessionGen !== launchGen) {

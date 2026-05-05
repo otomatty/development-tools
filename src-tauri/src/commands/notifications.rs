@@ -86,9 +86,18 @@ pub struct NotificationsPayload {
 /// Includes the freshly-fetched items so the UI can update directly
 /// without a second round-trip — a re-fetch would race the just-persisted
 /// ETag and come back as 304.
+///
+/// `user_id` is the local DB id of the user the scheduler captured before
+/// it awaited GitHub. The frontend cross-checks this against the
+/// currently logged-in user and discards mismatches: if an account
+/// switch happens while `run_notifications_sync` is mid-flight, the
+/// emitted event carries the *previous* user's data, and applying it
+/// blindly to user B's UI would leak unread counts / repo titles
+/// across accounts.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationsUpdatedEvent {
+    pub user_id: i64,
     pub unread_count: i32,
     pub new_count: i32,
     pub items: Vec<NotificationItem>,
@@ -139,18 +148,24 @@ pub async fn get_notifications(
     // For transient failures (network blip, GitHub 5xx, even rate limit)
     // we'd rather serve the user's last-known list than return a hard
     // error and clear the dropdown. Auth-expired still propagates so the
-    // session-expired banner can fire and the user can re-login.
+    // session-expired banner can fire and the user can re-login. When
+    // the cache is empty (first run, post-cleanup, etc.) we *also*
+    // propagate — pretending the user has 0 notifications when really
+    // we just couldn't reach GitHub would silently mask outages.
     let response = match map_github_result(&app, state.inner(), raw_result).await {
         Ok(r) => r,
         Err(err_msg) => {
             if unauthorized {
                 return Err(err_msg);
             }
+            let cached = load_cached_items(state.inner(), user.id).await;
+            if cached.is_empty() {
+                return Err(err_msg);
+            }
             eprintln!(
                 "get_notifications: transient failure, serving cache: {}",
                 err_msg
             );
-            let cached = load_cached_items(state.inner(), user.id).await;
             let unread_count = cached.iter().filter(|i| i.unread).count() as i32;
             return Ok(NotificationsPayload {
                 items: cached,
@@ -423,8 +438,11 @@ pub async fn run_notifications_sync(
 
             // Emit the items inline — the frontend would otherwise have
             // to re-fetch and immediately hit the just-saved ETag, getting
-            // 304 and stale UI back.
+            // 304 and stale UI back. `user_id` is captured before the
+            // GitHub round-trip so the frontend can discard the event if
+            // an account switch happened while we were awaiting the API.
             let event = NotificationsUpdatedEvent {
+                user_id: user.id,
                 unread_count,
                 new_count,
                 items,

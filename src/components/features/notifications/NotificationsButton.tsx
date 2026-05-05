@@ -50,6 +50,15 @@ export const NotificationsButton = () => {
     let unlistenFn: (() => void) | null = null;
     void events
       .onNotificationsUpdated((event) => {
+        // Drop events whose `userId` doesn't match the currently
+        // logged-in user — the scheduler captures user.id *before* the
+        // GitHub round-trip, so an account switch mid-flight produces
+        // an event with the previous user's data. Applying it would
+        // leak repo titles / unread counts across accounts.
+        const currentUserId = useAuth.getState().state.user?.id;
+        if (currentUserId === undefined || event.userId !== currentUserId) {
+          return;
+        }
         // Apply the items from the event payload directly. A re-fetch
         // would race the just-persisted ETag and come back as 304,
         // leaving the UI showing the pre-event list.

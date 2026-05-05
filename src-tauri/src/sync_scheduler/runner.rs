@@ -24,6 +24,7 @@ use crate::github::client::GitHubError;
 use super::actions::{decide_action, next_sync_at};
 use super::state::{
     skip_reasons, SchedulerAction, SchedulerInputs, SchedulerStatus, GITHUB_STATS_SYNC_TYPE,
+    MAX_SLEEP_SECONDS,
 };
 
 /// Handle returned by [`start_scheduler`] and stored in Tauri's managed state.
@@ -310,8 +311,17 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
 
                         // Always sleep at least MIN_FAILURE_SLEEP_SECONDS after a
                         // failure so transient errors don't trigger a tight
-                        // retry loop.
-                        wait_for_change_or_timeout(&notify, sleep_secs).await;
+                        // retry loop. Capped by `cap_sleep_for_notifications`
+                        // so a long stats backoff (rate-limit reset can be
+                        // 30 min away) doesn't hold up an otherwise-healthy
+                        // notifications stream.
+                        let capped = cap_sleep_for_notifications(
+                            sleep_secs,
+                            notifications_next_allowed.as_ref(),
+                            user.id,
+                            Utc::now(),
+                        );
+                        wait_for_change_or_timeout(&notify, capped).await;
                     }
                 }
             }
@@ -340,7 +350,13 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                     persist_startup_baseline(&state.db, user.id).await;
                 }
                 is_first_run = false;
-                wait_for_change_or_timeout(&notify, seconds).await;
+                let capped = cap_sleep_for_notifications(
+                    seconds,
+                    notifications_next_allowed.as_ref(),
+                    user.id,
+                    Utc::now(),
+                );
+                wait_for_change_or_timeout(&notify, capped).await;
             }
             SchedulerAction::Idle { reason } => {
                 is_first_run = false;
@@ -373,7 +389,15 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                         .await,
                 );
                 update_status_skipped(&status, reason, now).await;
-                wait_for_change_or_timeout(&notify, seconds).await;
+                // Cap the rate-limit backoff so the notifications stream
+                // doesn't get starved during a stats-side rate limit.
+                let capped = cap_sleep_for_notifications(
+                    seconds,
+                    notifications_next_allowed.as_ref(),
+                    user.id,
+                    Utc::now(),
+                );
+                wait_for_change_or_timeout(&notify, capped).await;
             }
         }
     }
@@ -522,6 +546,27 @@ async fn set_status_logged_out(status: &RwLock<SchedulerStatus>) {
         last_skipped_reason: Some(skip_reasons::NOT_LOGGED_IN.to_string()),
         ..SchedulerStatus::default()
     };
+}
+
+/// Cap a stats-decided sleep so the notifications poll cadence isn't
+/// starved when stats has a long backoff (rate-limit failure, etc.).
+/// Without this, `MAX_FAILURE_SLEEP_SECONDS` (30 min) on the stats side
+/// would freeze the inbox for that long even when the notifications
+/// endpoint has plenty of budget. Returns the smaller of the intended
+/// stats sleep and the time until notifications are next allowed to
+/// poll (defaulting to `MAX_SLEEP_SECONDS` when there's no in-memory
+/// hint, since that's already the loop's natural cap on responsiveness).
+fn cap_sleep_for_notifications(
+    intended: u64,
+    notifications_next_allowed: Option<&(i64, DateTime<Utc>)>,
+    user_id: i64,
+    now: DateTime<Utc>,
+) -> u64 {
+    let notif_wake = match notifications_next_allowed {
+        Some(&(uid, at)) if uid == user_id => (at - now).num_seconds().max(0) as u64,
+        _ => MAX_SLEEP_SECONDS,
+    };
+    intended.min(notif_wake)
 }
 
 async fn wait_for_change_or_timeout(notify: &Notify, seconds: u64) {
