@@ -25,6 +25,11 @@ use crate::github::GitHubClient;
 /// asking for 100 keeps round-trip count to a minimum without going over.
 const DEFAULT_PER_PAGE: i32 = 100;
 
+/// Maximum number of pages to walk. GitHub caps the events endpoint at
+/// 300 events / 90 days, so 3 pages × 100 events covers the full range.
+/// We break early when a page comes back short.
+const MAX_EVENT_PAGES: i32 = 3;
+
 /// Normalised activity feed row. Pre-extracts the fields the React UI
 /// renders so the frontend does not have to walk GitHub's polymorphic
 /// `payload` for every event type.
@@ -120,6 +125,18 @@ pub fn normalize_event(event: &ActivityEvent) -> ActivityFeedItem {
                     .and_then(Value::as_str)
                     .map(str::to_string);
                 number = pr.get("number").and_then(Value::as_i64).map(|v| v as i32);
+            }
+            // Prefer the specific review / review-comment URL so the click
+            // drops the user at the right anchor — mirrors `IssueCommentEvent`.
+            let specific_url = match event.event_type.as_str() {
+                "PullRequestReviewEvent" => payload.get("review"),
+                "PullRequestReviewCommentEvent" => payload.get("comment"),
+                _ => None,
+            }
+            .and_then(|o| o.get("html_url"))
+            .and_then(Value::as_str);
+            if let Some(url) = specific_url {
+                target_url = Some(url.to_string());
             }
             // Fall back to the top-level `number` when available
             // (PullRequestEvent has it).
@@ -251,10 +268,27 @@ pub async fn get_activity_feed_with_cache(
 
     let client = GitHubClient::new(token);
 
-    match client
-        .get_user_events(&user.username, DEFAULT_PER_PAGE, 1)
-        .await
-    {
+    // GitHub serves the events endpoint as up to 3 × 100-event pages —
+    // we walk pages until either the cap is hit or a short page tells us
+    // we've drained the user's recent activity. Errors short-circuit the
+    // whole fetch; the cache fallback below catches transient failures.
+    let events_result: Result<Vec<ActivityEvent>, GitHubError> = async {
+        let mut all_events: Vec<ActivityEvent> = Vec::new();
+        for page in 1..=MAX_EVENT_PAGES {
+            let mut page_events = client
+                .get_user_events(&user.username, DEFAULT_PER_PAGE, page)
+                .await?;
+            let page_len = page_events.len();
+            all_events.append(&mut page_events);
+            if page_len < DEFAULT_PER_PAGE as usize {
+                break;
+            }
+        }
+        Ok(all_events)
+    }
+    .await;
+
+    match events_result {
         Ok(events) => {
             let items: Vec<ActivityFeedItem> = events.iter().map(normalize_event).collect();
             let payload = ActivityFeed { items };
@@ -440,6 +474,57 @@ mod tests {
         assert_eq!(
             item.target_url.as_deref(),
             Some("https://github.com/octo/test/issues/3#issuecomment-99")
+        );
+    }
+
+    #[test]
+    fn normalize_pull_request_review_event_prefers_review_url() {
+        let event = make_event(
+            "PullRequestReviewEvent",
+            json!({
+                "action": "submitted",
+                "pull_request": {
+                    "title": "Fix bug",
+                    "html_url": "https://github.com/octo/test/pull/42",
+                    "number": 42,
+                },
+                "review": {
+                    "html_url": "https://github.com/octo/test/pull/42#pullrequestreview-7",
+                },
+            }),
+        );
+        let item = normalize_event(&event);
+
+        assert_eq!(
+            item.target_url.as_deref(),
+            Some("https://github.com/octo/test/pull/42#pullrequestreview-7")
+        );
+        assert_eq!(item.title.as_deref(), Some("Fix bug"));
+        assert_eq!(item.number, Some(42));
+    }
+
+    #[test]
+    fn normalize_pull_request_review_comment_event_prefers_comment_url() {
+        let event = make_event(
+            "PullRequestReviewCommentEvent",
+            json!({
+                "action": "created",
+                "pull_request": {
+                    "title": "Refactor",
+                    "html_url": "https://github.com/octo/test/pull/42",
+                    "number": 42,
+                },
+                "comment": {
+                    "html_url":
+                        "https://github.com/octo/test/pull/42#discussion_r1",
+                },
+            }),
+        );
+        let item = normalize_event(&event);
+
+        assert_eq!(
+            item.target_url.as_deref(),
+            Some("https://github.com/octo/test/pull/42#discussion_r1")
         );
     }
 

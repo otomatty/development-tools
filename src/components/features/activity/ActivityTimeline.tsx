@@ -153,7 +153,9 @@ function formatRelativeTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
 
-  const diffMs = Date.now() - date.getTime();
+  // Clamp negative deltas to 0 so client clock skew (event timestamp from
+  // GitHub vs. local `Date.now()`) never produces strings like "-1秒前".
+  const diffMs = Math.max(0, Date.now() - date.getTime());
   const diffSec = Math.floor(diffMs / 1000);
   if (diffSec < 60) return `${diffSec}秒前`;
   const diffMin = Math.floor(diffSec / 60);
@@ -165,8 +167,29 @@ function formatRelativeTime(iso: string): string {
   return date.toLocaleDateString('ja-JP');
 }
 
+/**
+ * Whitelist GitHub-only `https` URLs before handing them to the system
+ * browser. The activity feed payload is server-controlled, but defense in
+ * depth: if a future event type leaks a non-GitHub URL we'd rather no-op
+ * than open it.
+ */
+function isSafeGitHubUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    return host === 'github.com' || host.endsWith('.github.com');
+  } catch {
+    return false;
+  }
+}
+
 const handleOpen = async (url: string | null) => {
   if (!url) return;
+  if (!isSafeGitHubUrl(url)) {
+    console.warn('Refusing to open non-GitHub URL from activity feed:', url);
+    return;
+  }
   try {
     await settingsApi.openExternalUrl(url);
   } catch (e) {
