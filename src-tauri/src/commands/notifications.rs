@@ -157,10 +157,14 @@ pub async fn get_notifications(
             if unauthorized {
                 return Err(err_msg);
             }
+            // Only serve cache when we actually have a row — including a
+            // legitimate empty-inbox snapshot (`Some(vec![])`). A miss
+            // (`None`) means we have nothing to show, so propagate the
+            // original error rather than fake "0 notifications".
             let cached = load_cached_items(state.inner(), user.id).await;
-            if cached.is_empty() {
+            let Some(cached) = cached else {
                 return Err(err_msg);
-            }
+            };
             eprintln!(
                 "get_notifications: transient failure, serving cache: {}",
                 err_msg
@@ -181,12 +185,12 @@ pub async fn get_notifications(
         } => {
             // Return the last-known list from the cache so cold starts
             // (where the in-memory store is empty but the persisted ETag
-            // is fresh) still show notifications.
-            let cached = load_cached_items(state.inner(), user.id).await;
-            if !cached.is_empty() {
-                // Happy 304 path: preserve existing ETag and cursor (the
-                // server hasn't given us new ones) and return the cached
-                // list.
+            // is fresh) still show notifications. Distinguish a real
+            // miss (`None`) from a legitimate empty inbox (`Some(vec![])`)
+            // — only the former forces a recovery refetch; the latter
+            // is a perfectly valid cached "0 unread" state and should
+            // keep the ETag path active.
+            if let Some(cached) = load_cached_items(state.inner(), user.id).await {
                 persist_sync_success_with_cursor(
                     state.inner(),
                     user.id,
@@ -202,13 +206,14 @@ pub async fn get_notifications(
                     poll_interval_seconds,
                 });
             }
-            // Recovery path: 304 with no cached items means the persisted
-            // ETag still matches GitHub but the local cache row was wiped
-            // (TTL'd by `clear_expired_cache` on startup). Without a
-            // re-fetch the user would see an empty inbox until the next
-            // GitHub-side change. Drop the conditional request and try
-            // once more — the second call cannot 304 because we send no
-            // `If-None-Match`, so it always returns Modified.
+            // Recovery path: 304 with no cache row means the persisted
+            // ETag still matches GitHub but the local cache was wiped
+            // (TTL'd by `clear_expired_cache` on startup, or purged on
+            // logout). Without a re-fetch the user would see an empty
+            // inbox until the next GitHub-side change. Drop the
+            // conditional request and try once more — the second call
+            // cannot 304 because we send no `If-None-Match`, so it
+            // always returns Modified.
             eprintln!("get_notifications: 304 with empty cache, refetching unconditionally");
             let raw_retry = client.list_notifications(None, false).await;
             map_github_result(&app, state.inner(), raw_retry).await?
@@ -231,7 +236,9 @@ pub async fn get_notifications(
                 prior_cursor.as_deref(),
             )
             .await;
-            let cached = load_cached_items(state.inner(), user.id).await;
+            let cached = load_cached_items(state.inner(), user.id)
+                .await
+                .unwrap_or_default();
             let unread_count = cached.iter().filter(|i| i.unread).count() as i32;
             Ok(NotificationsPayload {
                 items: cached,
@@ -610,25 +617,34 @@ async fn save_items_cache(state: &AppState, user_id: i64, items: &[NotificationI
     }
 }
 
-/// Load the cached notifications list. Falls back to an empty Vec on miss
-/// or parse failure — callers treat this as "no known items".
+/// Load the cached notifications list. Distinguishes a cache miss
+/// (`None` — no row in `activity_cache` at all) from an empty inbox
+/// (`Some(vec![])` — last sync legitimately found 0 unread items). The
+/// caller needs the difference: a 304 response paired with `None` means
+/// the row was wiped (e.g. via `clear_expired_cache`) and the ETag is
+/// stale relative to the cache, so we must refetch unconditionally;
+/// `Some(vec![])` means the user genuinely has 0 unread and we can keep
+/// the ETag path active without burning an extra request.
 ///
-/// We use `get_any_cache` (rather than `get_cache`, which filters expired)
-/// because the cache TTL is just a stale-render bound: a slightly-stale
-/// list is still better than an empty UI when GitHub responds 304.
-async fn load_cached_items(state: &AppState, user_id: i64) -> Vec<NotificationItem> {
+/// We use `get_any_cache` (rather than `get_valid_cache`, which filters
+/// expired entries) because the cache TTL is just a stale-render bound:
+/// a slightly-stale list is still better than an empty UI when GitHub
+/// responds 304.
+async fn load_cached_items(state: &AppState, user_id: i64) -> Option<Vec<NotificationItem>> {
     match state
         .db
         .get_any_cache(user_id, cache_types::GITHUB_NOTIFICATIONS)
         .await
     {
         Ok(Some((json, _cached_at, _expires_at))) => {
-            serde_json::from_str(&json).unwrap_or_default()
+            // Parse failures are treated as a miss so the recovery
+            // path can refetch a known-good payload.
+            serde_json::from_str(&json).ok()
         }
-        Ok(None) => Vec::new(),
+        Ok(None) => None,
         Err(e) => {
             eprintln!("Failed to load notifications cache: {}", e);
-            Vec::new()
+            None
         }
     }
 }

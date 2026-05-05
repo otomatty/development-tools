@@ -386,8 +386,17 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                 // Wake on settings changes immediately, but also re-poll on a
                 // bounded interval as a safety net for non-settings transitions
                 // (logout/login, an account switch, etc.) that don't currently
-                // emit a notify.
-                wait_for_change_or_timeout(&notify, IDLE_POLL_SECONDS).await;
+                // emit a notify. Cap by notifications cadence so manual-only
+                // stats (`sync_interval_minutes <= 0`) doesn't freeze the
+                // notifications stream — the comment above the inbox poll
+                // promises Sleep/Idle/RateLimited won't lock it out.
+                let capped = cap_sleep_for_notifications(
+                    IDLE_POLL_SECONDS,
+                    notifications_next_allowed.as_ref(),
+                    user.id,
+                    Utc::now(),
+                );
+                wait_for_change_or_timeout(&notify, capped).await;
             }
             SchedulerAction::RateLimited { reason, seconds } => {
                 is_first_run = false;
