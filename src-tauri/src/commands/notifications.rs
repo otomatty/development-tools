@@ -161,14 +161,55 @@ pub async fn get_notifications(
         }
     };
 
-    match response {
+    let response = match response {
         NotificationsResponse::NotModified {
             poll_interval_seconds,
         } => {
-            // 304: explicitly preserve the existing ETag and cursor so a
-            // future call to `update_sync_metadata` (e.g. through a
-            // different code path) can't accidentally clear them via the
-            // COALESCE pattern. `last_sync_at` still gets refreshed.
+            // Return the last-known list from the cache so cold starts
+            // (where the in-memory store is empty but the persisted ETag
+            // is fresh) still show notifications.
+            let cached = load_cached_items(state.inner(), user.id).await;
+            if !cached.is_empty() {
+                // Happy 304 path: preserve existing ETag and cursor (the
+                // server hasn't given us new ones) and return the cached
+                // list.
+                persist_sync_success_with_cursor(
+                    state.inner(),
+                    user.id,
+                    prior_etag.as_deref(),
+                    prior_cursor.as_deref(),
+                )
+                .await;
+                let unread_count = cached.iter().filter(|i| i.unread).count() as i32;
+                return Ok(NotificationsPayload {
+                    items: cached,
+                    unread_count,
+                    from_cache: true,
+                    poll_interval_seconds,
+                });
+            }
+            // Recovery path: 304 with no cached items means the persisted
+            // ETag still matches GitHub but the local cache row was wiped
+            // (TTL'd by `clear_expired_cache` on startup). Without a
+            // re-fetch the user would see an empty inbox until the next
+            // GitHub-side change. Drop the conditional request and try
+            // once more — the second call cannot 304 because we send no
+            // `If-None-Match`, so it always returns Modified.
+            eprintln!("get_notifications: 304 with empty cache, refetching unconditionally");
+            let raw_retry = client.list_notifications(None, false).await;
+            map_github_result(&app, state.inner(), raw_retry).await?
+        }
+        modified @ NotificationsResponse::Modified { .. } => modified,
+    };
+
+    match response {
+        // The recovery path can't produce a 304 (no If-None-Match was
+        // sent), so collapsing back to NotModified here is unreachable.
+        // Treat it defensively: preserve metadata and return whatever
+        // cache holds.
+        NotificationsResponse::NotModified {
+            poll_interval_seconds,
+        } => {
             persist_sync_success_with_cursor(
                 state.inner(),
                 user.id,
@@ -176,13 +217,8 @@ pub async fn get_notifications(
                 prior_cursor.as_deref(),
             )
             .await;
-
-            // Return the last-known list from the cache so cold starts
-            // (where the in-memory store is empty but the persisted ETag
-            // is fresh) still show notifications.
             let cached = load_cached_items(state.inner(), user.id).await;
             let unread_count = cached.iter().filter(|i| i.unread).count() as i32;
-
             Ok(NotificationsPayload {
                 items: cached,
                 unread_count,
@@ -201,13 +237,9 @@ pub async fn get_notifications(
 
             // Persist the new ETag + the latest seen `updated_at` so the
             // next poll can issue a conditional request and detect
-            // genuinely-new items. A failure here is logged but doesn't
-            // fail the command — we already have the data.
-            let new_cursor = notifications
-                .iter()
-                .map(|n| n.updated_at)
-                .max()
-                .map(|t| t.to_rfc3339());
+            // genuinely-new items. The cursor is monotonic — see
+            // `merge_cursor` for why.
+            let new_cursor = merge_cursor(prior_cursor.as_deref(), &notifications);
             persist_sync_success_with_cursor(
                 state.inner(),
                 user.id,
@@ -379,11 +411,7 @@ pub async fn run_notifications_sync(
                     .await;
             }
 
-            let new_cursor = notifications
-                .iter()
-                .map(|n| n.updated_at)
-                .max()
-                .map(|t| t.to_rfc3339());
+            let new_cursor = merge_cursor(prior_cursor.as_deref(), &notifications);
             persist_sync_success_with_cursor(
                 state,
                 user.id,
@@ -407,6 +435,27 @@ pub async fn run_notifications_sync(
                 poll_interval_seconds,
             })
         }
+    }
+}
+
+/// Compute the cursor to persist after a successful fetch.
+///
+/// Returns the *later* of the prior cursor and the highest `updated_at`
+/// observed in this response. Without the monotonic guard, marking the
+/// newest unread thread as read makes the next unread-only response have
+/// a lower max `updated_at` than the prior cursor — persisting that
+/// would let already-seen threads with timestamps between the two
+/// values re-appear as "new" on the following poll, inflating
+/// `new_count` and re-firing OS toasts.
+fn merge_cursor(prior: Option<&str>, notifications: &[GitHubNotification]) -> Option<String> {
+    let observed = notifications.iter().map(|n| n.updated_at).max();
+    let prior_dt = prior
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc));
+    match (observed, prior_dt) {
+        (Some(o), Some(p)) => Some(o.max(p).to_rfc3339()),
+        (Some(o), None) => Some(o.to_rfc3339()),
+        (None, p) => p.map(|dt| dt.to_rfc3339()),
     }
 }
 
