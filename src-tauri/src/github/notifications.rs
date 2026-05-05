@@ -92,8 +92,18 @@ pub struct NotificationsClient {
 
 impl NotificationsClient {
     pub fn new(access_token: String) -> Self {
+        // A bare `Client::new()` has no connect / overall timeout, so a
+        // hung TLS handshake or stalled response would block the
+        // scheduler tick (and any user-initiated `get_notifications`
+        // call) indefinitely. The numbers mirror what other reqwest
+        // best-practice docs recommend for a public REST API.
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
-            client: reqwest::Client::new(),
+            client,
             access_token,
         }
     }
@@ -251,7 +261,14 @@ pub fn build_html_url(notification: &GitHubNotification) -> String {
         if let Some(rest) = api_url.strip_prefix("https://api.github.com/repos/") {
             // rest = "{owner}/{repo}/{issues|pulls}/{n}" or
             // "{owner}/{repo}/{commits}/{sha}".
-            let translated = rest.replacen("/pulls/", "/pull/", 1);
+            //
+            // Both `pulls` and `commits` are API-only plurals — the
+            // GitHub web UI mounts them at `/pull/{n}` and
+            // `/commit/{sha}` respectively. Notifications can surface
+            // either, so we translate both.
+            let translated =
+                rest.replacen("/pulls/", "/pull/", 1)
+                    .replacen("/commits/", "/commit/", 1);
             return format!("https://github.com/{}", translated);
         }
         return api_url.clone();
@@ -298,6 +315,20 @@ mod tests {
         // UI is at `/pull/{n}`. Forgetting to translate causes 404s.
         let n = make_notification(Some("https://api.github.com/repos/octo/repo/pulls/7"));
         assert_eq!(build_html_url(&n), "https://github.com/octo/repo/pull/7");
+    }
+
+    #[test]
+    fn build_html_url_translates_commit_api_url() {
+        // Commit notifications use `/commits/{sha}` on the API but the web
+        // UI mounts the singular `/commit/{sha}` — without the translation
+        // the user lands on the commits *list* (or a 404 in some repos).
+        let n = make_notification(Some(
+            "https://api.github.com/repos/octo/repo/commits/abc123",
+        ));
+        assert_eq!(
+            build_html_url(&n),
+            "https://github.com/octo/repo/commit/abc123"
+        );
     }
 
     #[test]

@@ -76,6 +76,11 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
     // the next iteration to lose the rate-limit context and risk hitting the
     // GitHub API again before the reset.
     let mut rate_limit_reset_fallback: Option<DateTime<Utc>> = None;
+    // In-memory floor for the next notifications poll. Tracks GitHub's
+    // `x-poll-interval` hint (and rate-limit resets) so we don't poll
+    // notifications more aggressively than GitHub asks. Reset to `None`
+    // means "may poll on the next tick".
+    let mut notifications_next_allowed_at: Option<DateTime<Utc>> = None;
 
     loop {
         let state = app.state::<AppState>();
@@ -139,35 +144,41 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
 
         write_status(&status, &settings, metadata.as_ref(), projected_next, true).await;
 
+        // Poll GitHub Notifications on its own cadence (Issue #186).
+        // Independent of the stats `SchedulerAction` so a stats Sleep /
+        // Idle / RateLimited doesn't freeze the inbox. The endpoint is
+        // conditional via ETag (304 = zero rate budget) and the call is
+        // self-throttled via `notifications_due_to_poll`, which honours
+        // both GitHub's `x-poll-interval` hint and any persisted
+        // rate-limit reset.
+        if notifications_due_to_poll(state.inner(), user.id, notifications_next_allowed_at, now)
+            .await
+        {
+            match run_notifications_sync(&app, state.inner()).await {
+                Ok(NotificationsSyncOutcome::Ok {
+                    poll_interval_seconds,
+                }) => {
+                    notifications_next_allowed_at = poll_interval_seconds
+                        .map(|secs| Utc::now() + chrono::Duration::seconds(secs as i64));
+                }
+                Ok(NotificationsSyncOutcome::RateLimited { reset_at }) => {
+                    eprintln!(
+                        "Scheduler: notifications API rate-limited until {}",
+                        reset_at.to_rfc3339()
+                    );
+                    notifications_next_allowed_at = Some(reset_at);
+                }
+                Err(e) => {
+                    eprintln!("Scheduler: notifications sync failed: {}", e);
+                }
+            }
+        }
+
         let action = decide_action(&inputs);
         match action {
             SchedulerAction::RunSync => {
                 is_first_run = false;
                 eprintln!("Scheduler: running scheduled sync for user {}", user.id);
-
-                // Poll GitHub Notifications first (Issue #186). Decoupled
-                // from the stats sync result so a stats failure (network,
-                // GraphQL hiccup, etc.) doesn't freeze the inbox until the
-                // next interval. The endpoint is conditional via ETag so
-                // a 304 costs zero rate budget; rate-limit responses are
-                // persisted to a separate `sync_metadata` row and honoured
-                // on subsequent ticks via `notifications_throttled`.
-                if notifications_throttled(state.inner(), user.id).await {
-                    eprintln!("Scheduler: skipping notifications poll while rate-limited");
-                } else {
-                    match run_notifications_sync(&app, state.inner()).await {
-                        Ok(NotificationsSyncOutcome::Ok) => {}
-                        Ok(NotificationsSyncOutcome::RateLimited { reset_at }) => {
-                            eprintln!(
-                                "Scheduler: notifications API rate-limited until {}",
-                                reset_at.to_rfc3339()
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Scheduler: notifications sync failed: {}", e);
-                        }
-                    }
-                }
 
                 match run_github_sync(&app, state.inner()).await {
                     Ok(_) => {
@@ -566,6 +577,37 @@ async fn notifications_throttled(state: &AppState, user_id: i64) -> bool {
     metadata
         .and_then(|m| m.rate_limit_reset_at_parsed())
         .is_some_and(|reset| reset > Utc::now())
+}
+
+/// Decide whether to fire a notifications poll on this scheduler tick.
+///
+/// Composes two throttles:
+/// 1. Persisted rate-limit reset (`sync_metadata.rate_limit_reset_at`,
+///    written by `run_notifications_sync` when GitHub returns 403 with
+///    0 remaining) — survives across app restarts.
+/// 2. In-memory `next_allowed_at` derived from GitHub's
+///    `x-poll-interval` header — softer hint, not persisted because
+///    GitHub re-emits it on every response.
+///
+/// Either being in the future blocks the poll. The persisted-rate-limit
+/// branch logs a single line per skip; the soft poll-interval window
+/// fires every short tick and is intentionally silent to avoid spam.
+async fn notifications_due_to_poll(
+    state: &AppState,
+    user_id: i64,
+    next_allowed_at: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> bool {
+    if let Some(allowed) = next_allowed_at {
+        if allowed > now {
+            return false;
+        }
+    }
+    if notifications_throttled(state, user_id).await {
+        eprintln!("Scheduler: skipping notifications poll while rate-limited");
+        return false;
+    }
+    true
 }
 
 /// Classify a `run_github_sync` error string as rate-limited.

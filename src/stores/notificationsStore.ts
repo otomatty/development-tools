@@ -28,6 +28,12 @@ interface NotificationsStore {
   /** Replace the list directly (used by the `notifications-updated` event). */
   setFromEvent: (items: NotificationItem[], unreadCount: number) => void;
   markRead: (threadId: string) => Promise<void>;
+  /**
+   * Wipe local state. Called when the user logs out so the next account
+   * doesn't see the previous user's unread count or repo titles in the
+   * brief window before the first authenticated fetch completes.
+   */
+  reset: () => void;
 }
 
 export const useNotifications = create<NotificationsStore>((set, get) => ({
@@ -70,6 +76,16 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
       unreadCount,
       error: null,
       lastFetchedAt: new Date().toISOString(),
+    });
+  },
+
+  reset: () => {
+    set({
+      items: [],
+      unreadCount: 0,
+      isLoading: false,
+      error: null,
+      lastFetchedAt: null,
     });
   },
 

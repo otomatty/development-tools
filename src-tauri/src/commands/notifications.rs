@@ -126,14 +126,37 @@ pub async fn get_notifications(
     let prior_cursor = metadata.as_ref().and_then(|m| m.last_sync_cursor.clone());
 
     let client = NotificationsClient::new(token);
-    let response = map_github_result(
-        &app,
-        state.inner(),
-        client
-            .list_notifications(prior_etag.as_deref(), false)
-            .await,
-    )
-    .await?;
+    let raw_result = client
+        .list_notifications(prior_etag.as_deref(), false)
+        .await;
+
+    // For transient failures (network blip, GitHub 5xx, even rate limit)
+    // we'd rather serve the user's last-known list than return a hard
+    // error and clear the dropdown. Auth-expired still propagates so the
+    // session-expired banner can fire and the user can re-login.
+    let response = match map_github_result(&app, state.inner(), raw_result).await {
+        Ok(r) => r,
+        Err(err_msg) => {
+            // The string is what `GitHubError::Display` produces. Auth-
+            // expired keeps the original error contract — UI surfaces a
+            // re-login prompt instead of stale data.
+            if err_msg.contains("Authentication failed") {
+                return Err(err_msg);
+            }
+            eprintln!(
+                "get_notifications: transient failure, serving cache: {}",
+                err_msg
+            );
+            let cached = load_cached_items(state.inner(), user.id).await;
+            let unread_count = cached.iter().filter(|i| i.unread).count() as i32;
+            return Ok(NotificationsPayload {
+                items: cached,
+                unread_count,
+                from_cache: true,
+                poll_interval_seconds: None,
+            });
+        }
+    };
 
     match response {
         NotificationsResponse::NotModified {
@@ -234,8 +257,14 @@ pub async fn mark_notification_read(
 /// of the stats sync.
 pub enum NotificationsSyncOutcome {
     /// Sync completed (304 or fresh data); the scheduler can poll again on
-    /// its normal cadence.
-    Ok,
+    /// its normal cadence (or honour the `poll_interval_seconds` hint when
+    /// GitHub asks for a longer wait).
+    Ok {
+        /// `x-poll-interval` (seconds) header from GitHub. The scheduler
+        /// uses this as a soft floor on the next notifications poll —
+        /// GitHub asks clients to honour it as their adaptive throttle.
+        poll_interval_seconds: Option<u64>,
+    },
     /// GitHub responded with 0 remaining + a reset timestamp. The scheduler
     /// should hold off on the next notifications poll until then.
     RateLimited { reset_at: DateTime<Utc> },
@@ -295,7 +324,9 @@ pub async fn run_notifications_sync(
     let response = map_github_result(app, state, raw_result).await?;
 
     match response {
-        NotificationsResponse::NotModified { .. } => {
+        NotificationsResponse::NotModified {
+            poll_interval_seconds,
+        } => {
             // 304: explicitly preserve the existing ETag and cursor (the
             // server hasn't given us new ones).
             persist_sync_success_with_cursor(
@@ -307,12 +338,14 @@ pub async fn run_notifications_sync(
             .await;
             // No-op event: the unread count didn't change. Skip emitting
             // `notifications-updated` to avoid waking the UI for nothing.
-            Ok(NotificationsSyncOutcome::Ok)
+            Ok(NotificationsSyncOutcome::Ok {
+                poll_interval_seconds,
+            })
         }
         NotificationsResponse::Modified {
             notifications,
             etag,
-            ..
+            poll_interval_seconds,
         } => {
             let items: Vec<NotificationItem> =
                 notifications.iter().map(NotificationItem::from).collect();
@@ -367,7 +400,9 @@ pub async fn run_notifications_sync(
             };
             let _ = app.emit("notifications-updated", &event);
 
-            Ok(NotificationsSyncOutcome::Ok)
+            Ok(NotificationsSyncOutcome::Ok {
+                poll_interval_seconds,
+            })
         }
     }
 }

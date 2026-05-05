@@ -23,6 +23,7 @@ export const NotificationsButton = () => {
   const unreadCount = useNotifications((s) => s.unreadCount);
   const fetchNotifications = useNotifications((s) => s.fetch);
   const setFromEvent = useNotifications((s) => s.setFromEvent);
+  const resetNotifications = useNotifications((s) => s.reset);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -30,7 +31,13 @@ export const NotificationsButton = () => {
   // the store already short-circuits when logged out, but this also avoids
   // wiring up event listeners we won't use.
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn) {
+      // Wipe local state so account switches don't briefly show the
+      // previous user's unread badge / dropdown contents before the
+      // next fetch lands.
+      resetNotifications();
+      return;
+    }
 
     void fetchNotifications();
 
@@ -60,7 +67,7 @@ export const NotificationsButton = () => {
       disposed = true;
       if (unlistenFn) unlistenFn();
     };
-  }, [isLoggedIn, fetchNotifications, setFromEvent]);
+  }, [isLoggedIn, fetchNotifications, setFromEvent, resetNotifications]);
 
   // Close the dropdown when clicking outside.
   useEffect(() => {
