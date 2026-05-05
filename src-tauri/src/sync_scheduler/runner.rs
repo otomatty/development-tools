@@ -14,7 +14,9 @@ use tokio::sync::{Notify, RwLock};
 use crate::auth::{classify_unauthorized, handle_unauthorized, reasons};
 use crate::commands::auth::AppState;
 use crate::commands::github::run_github_sync;
-use crate::commands::notifications::run_notifications_sync;
+use crate::commands::notifications::{
+    run_notifications_sync, NotificationsSyncOutcome, GITHUB_NOTIFICATIONS_SYNC_TYPE,
+};
 use crate::database::models::code_stats::SyncMetadata;
 use crate::database::models::UserSettings;
 use crate::github::client::GitHubError;
@@ -143,6 +145,30 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                 is_first_run = false;
                 eprintln!("Scheduler: running scheduled sync for user {}", user.id);
 
+                // Poll GitHub Notifications first (Issue #186). Decoupled
+                // from the stats sync result so a stats failure (network,
+                // GraphQL hiccup, etc.) doesn't freeze the inbox until the
+                // next interval. The endpoint is conditional via ETag so
+                // a 304 costs zero rate budget; rate-limit responses are
+                // persisted to a separate `sync_metadata` row and honoured
+                // on subsequent ticks via `notifications_throttled`.
+                if notifications_throttled(state.inner(), user.id).await {
+                    eprintln!("Scheduler: skipping notifications poll while rate-limited");
+                } else {
+                    match run_notifications_sync(&app, state.inner()).await {
+                        Ok(NotificationsSyncOutcome::Ok) => {}
+                        Ok(NotificationsSyncOutcome::RateLimited { reset_at }) => {
+                            eprintln!(
+                                "Scheduler: notifications API rate-limited until {}",
+                                reset_at.to_rfc3339()
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Scheduler: notifications sync failed: {}", e);
+                        }
+                    }
+                }
+
                 match run_github_sync(&app, state.inner()).await {
                     Ok(_) => {
                         // Post-sync metadata is persisted inside `run_github_sync`
@@ -152,17 +178,6 @@ async fn run_loop(app: AppHandle, notify: Arc<Notify>, status: Arc<RwLock<Schedu
                         // A successful sync invalidates any in-memory rate-limit
                         // fallback we may have been carrying.
                         rate_limit_reset_fallback = None;
-
-                        // Piggyback the GitHub Notifications poll on the stats
-                        // sync tick (Issue #186). The notifications endpoint
-                        // is conditional via ETag so a 304 costs zero rate
-                        // budget; an actual modification emits the
-                        // `notifications-updated` event for the UI. Failures
-                        // here must not unwind the stats success — log and
-                        // continue.
-                        if let Err(e) = run_notifications_sync(&app, state.inner()).await {
-                            eprintln!("Scheduler: notifications sync failed: {}", e);
-                        }
                     }
                     Err(err_msg) => {
                         eprintln!("Scheduler: scheduled sync failed: {}", err_msg);
@@ -522,6 +537,35 @@ async fn persist_startup_baseline(db: &crate::database::Database, user_id: i64) 
         db.record_scheduler_baseline(user_id, GITHUB_STATS_SYNC_TYPE, Utc::now())
             .await,
     );
+}
+
+/// Check whether the notifications endpoint is currently rate-limited per
+/// the persisted `sync_metadata` row.
+///
+/// `record_sync_rate_limit` writes the reset timestamp inside
+/// `run_notifications_sync` when GitHub returns a 0-remaining 403; we
+/// honour it here so the next tick doesn't immediately re-poll and burn
+/// through the limit again. A read failure errs on "not throttled" — it's
+/// safer to re-poll once than to silently freeze the inbox.
+async fn notifications_throttled(state: &AppState, user_id: i64) -> bool {
+    let metadata = match state
+        .db
+        .get_sync_metadata(user_id, GITHUB_NOTIFICATIONS_SYNC_TYPE)
+        .await
+    {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "Scheduler: failed to read notifications sync_metadata: {}",
+                e
+            );
+            return false;
+        }
+    };
+
+    metadata
+        .and_then(|m| m.rate_limit_reset_at_parsed())
+        .is_some_and(|reset| reset > Utc::now())
 }
 
 /// Classify a `run_github_sync` error string as rate-limited.

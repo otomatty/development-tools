@@ -40,6 +40,9 @@ pub mod cache_types {
     /// PR progress dashboard payload (mergeable / checks / reviewDecision)
     /// for the viewer's open PRs. See Issue #185.
     pub const MY_PR_PROGRESS: &str = "my_pr_progress";
+    /// GitHub Notifications list (cached so a 304 response can still serve
+    /// the UI without forcing a re-fetch). See Issue #186.
+    pub const GITHUB_NOTIFICATIONS: &str = "github_notifications";
 }
 
 /// Default cache durations in minutes
@@ -62,4 +65,8 @@ pub mod cache_durations {
     /// Backed by GraphQL (5000 points/hour) — short TTL keeps the panel
     /// responsive without burning the budget on focus revalidations.
     pub const MY_PR_PROGRESS: i64 = 5;
+    /// GitHub Notifications cache duration (60 minutes). The ETag covers
+    /// freshness; this TTL just bounds how stale a cold-start render can
+    /// be when GitHub returns 304 against a long-unchanged inbox.
+    pub const GITHUB_NOTIFICATIONS: i64 = 60;
 }

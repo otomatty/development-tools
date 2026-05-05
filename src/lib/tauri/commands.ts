@@ -490,10 +490,12 @@ export const notifications = {
   /**
    * Mark a single notification thread as read on GitHub.
    *
-   * `threadId` is the `id` field on a NotificationItem.
+   * `threadId` is the `id` field on a NotificationItem. The Tauri command
+   * takes `thread_id` (snake_case) — Tauri 2 accepts either casing, but we
+   * pass snake_case to stay consistent with the rest of this codebase.
    */
   markRead: (threadId: string): Promise<void> =>
-    invoke<void>('mark_notification_read', { threadId }),
+    invoke<void>('mark_notification_read', { thread_id: threadId }),
 };
 
 // ============================================================================

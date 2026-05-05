@@ -22,6 +22,7 @@ export const NotificationsButton = () => {
   const isLoggedIn = useAuth((s) => s.state.isLoggedIn);
   const unreadCount = useNotifications((s) => s.unreadCount);
   const fetchNotifications = useNotifications((s) => s.fetch);
+  const setFromEvent = useNotifications((s) => s.setFromEvent);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -33,19 +34,33 @@ export const NotificationsButton = () => {
 
     void fetchNotifications();
 
+    // The `disposed` flag protects against the cleanup running before
+    // the listener Promise resolves: without it, an unmount during the
+    // brief async window would leak the Tauri listener and re-mounting
+    // (e.g. on re-login) would attach a duplicate, double-firing
+    // `fetchNotifications` for every backend push.
+    let disposed = false;
     let unlistenFn: (() => void) | null = null;
     void events
-      .onNotificationsUpdated(() => {
-        void fetchNotifications();
+      .onNotificationsUpdated((event) => {
+        // Apply the items from the event payload directly. A re-fetch
+        // would race the just-persisted ETag and come back as 304,
+        // leaving the UI showing the pre-event list.
+        setFromEvent(event.items, event.unreadCount);
       })
       .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
         unlistenFn = unlisten;
       });
 
     return () => {
+      disposed = true;
       if (unlistenFn) unlistenFn();
     };
-  }, [isLoggedIn, fetchNotifications]);
+  }, [isLoggedIn, fetchNotifications, setFromEvent]);
 
   // Close the dropdown when clicking outside.
   useEffect(() => {

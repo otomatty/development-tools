@@ -30,16 +30,18 @@ export const NotificationsDropdown = ({ onClose }: NotificationsDropdownProps) =
   const markRead = useNotifications((s) => s.markRead);
 
   const handleOpen = async (item: NotificationItem) => {
-    // Mark as read locally + on GitHub, then open the URL in the user's
-    // browser. Order matters: opening the URL can race the API call but the
-    // optimistic update fires immediately so the list reflects the click.
-    if (item.unread) {
-      void markRead(item.id);
-    }
+    // Open the URL first; only mark as read if the user actually got to
+    // the issue/PR. If `openExternalUrl` rejects (deny / no browser),
+    // leaving the unread state intact lets the user retry without
+    // losing track of the item.
     try {
       await settingsApi.openExternalUrl(item.htmlUrl);
     } catch (e) {
       console.error('Failed to open notification URL', e);
+      return;
+    }
+    if (item.unread) {
+      void markRead(item.id);
     }
     onClose();
   };

@@ -56,7 +56,6 @@ use commands::{
     get_near_completion_badges,
     // GitHub Notifications commands (Issue #186)
     get_notifications,
-    mark_notification_read,
     get_project,
     get_project_issues,
     get_projects,
@@ -70,6 +69,7 @@ use commands::{
     get_xp_history,
     link_repository,
     logout,
+    mark_notification_read,
     open_external_url,
     open_url,
     poll_device_token,

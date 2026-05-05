@@ -25,6 +25,8 @@ interface NotificationsStore {
   lastFetchedAt: string | null;
 
   fetch: () => Promise<void>;
+  /** Replace the list directly (used by the `notifications-updated` event). */
+  setFromEvent: (items: NotificationItem[], unreadCount: number) => void;
   markRead: (threadId: string) => Promise<void>;
 }
 
@@ -44,17 +46,10 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const payload = await notificationsApi.list();
-      // 304: backend returns an empty list with `fromCache=true`. Don't
-      // overwrite the cached items — keep showing what the user already
-      // sees, but refresh `lastFetchedAt` so the UI knows the poll
-      // succeeded.
-      if (payload.fromCache) {
-        set({
-          isLoading: false,
-          lastFetchedAt: new Date().toISOString(),
-        });
-        return;
-      }
+      // The backend serves cached items on 304 (`fromCache=true`), so we
+      // can replace the local list either way — `items` is always the
+      // canonical view. The `fromCache` flag is preserved for diagnostics
+      // but doesn't change the update logic.
       set({
         items: payload.items,
         unreadCount: payload.unreadCount,
@@ -69,22 +64,34 @@ export const useNotifications = create<NotificationsStore>((set, get) => ({
     }
   },
 
+  setFromEvent: (items, unreadCount) => {
+    set({
+      items,
+      unreadCount,
+      error: null,
+      lastFetchedAt: new Date().toISOString(),
+    });
+  },
+
   markRead: async (threadId: string) => {
     // Optimistic update: mark the row read locally before the API call so
-    // the bell badge reacts instantly. Roll back if the API rejects.
+    // the bell badge reacts instantly.
     const prev = get().items;
     const updated = prev.map((n) => (n.id === threadId ? { ...n, unread: false } : n));
-    const newUnread = updated.filter((n) => n.unread).length;
-    set({ items: updated, unreadCount: newUnread });
+    set({ items: updated, unreadCount: updated.filter((n) => n.unread).length });
 
     try {
       await notificationsApi.markRead(threadId);
     } catch (e) {
+      // Don't blanket-restore `prev` — a concurrent successful fetch may
+      // have replaced the list with newer data, and rolling back to the
+      // pre-click snapshot would clobber it. Surface the error and let a
+      // re-fetch reconcile the truth from the backend (which is also
+      // serving from its own cache, so this is cheap).
       set({
-        items: prev,
-        unreadCount: prev.filter((n) => n.unread).length,
         error: typeof e === 'string' ? e : (e as Error).message ?? 'Failed to mark as read',
       });
+      void get().fetch();
     }
   },
 }));

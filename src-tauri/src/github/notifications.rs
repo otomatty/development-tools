@@ -137,8 +137,13 @@ impl NotificationsClient {
         etag: Option<&str>,
         all: bool,
     ) -> GitHubResult<NotificationsResponse> {
+        // `per_page=100` is GitHub's maximum and also the threshold the UI
+        // needs to reach the `99+` badge cap. Full Link-header pagination
+        // is intentionally omitted: the UI shows at most one page of
+        // recent unread items and a 100-row dropdown is already
+        // unwieldy — beyond that, users navigate to github.com.
         let url = format!(
-            "{}/notifications?all={}&per_page=50",
+            "{}/notifications?all={}&per_page=100",
             GITHUB_API_URL,
             if all { "true" } else { "false" }
         );
@@ -283,9 +288,7 @@ mod tests {
 
     #[test]
     fn build_html_url_translates_issue_api_url() {
-        let n = make_notification(Some(
-            "https://api.github.com/repos/octo/repo/issues/42",
-        ));
+        let n = make_notification(Some("https://api.github.com/repos/octo/repo/issues/42"));
         assert_eq!(build_html_url(&n), "https://github.com/octo/repo/issues/42");
     }
 
@@ -293,9 +296,7 @@ mod tests {
     fn build_html_url_translates_pull_request_api_url() {
         // The notifications API uses the plural `pulls` segment, but the web
         // UI is at `/pull/{n}`. Forgetting to translate causes 404s.
-        let n = make_notification(Some(
-            "https://api.github.com/repos/octo/repo/pulls/7",
-        ));
+        let n = make_notification(Some("https://api.github.com/repos/octo/repo/pulls/7"));
         assert_eq!(build_html_url(&n), "https://github.com/octo/repo/pull/7");
     }
 

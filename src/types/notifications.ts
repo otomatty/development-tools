@@ -30,8 +30,8 @@ export interface NotificationItem {
 export interface NotificationsPayload {
   items: NotificationItem[];
   unreadCount: number;
-  /// True when GitHub returned 304 — the items list is empty and the caller
-  /// should keep showing whatever it already had.
+  /// True when the backend served the list from its local cache rather
+  /// than a fresh GitHub fetch (e.g. GitHub responded 304).
   fromCache: boolean;
   /// `x-poll-interval` (seconds) hint from GitHub. The scheduler honours
   /// this; the UI surfaces it for diagnostics.
@@ -39,9 +39,14 @@ export interface NotificationsPayload {
 }
 
 /// Event payload emitted when the backend observes new notification activity.
+///
+/// Includes the freshly-fetched items so the UI can replace its local
+/// list directly. A re-fetch in response to this event would race the
+/// just-persisted ETag and come back as 304, leaving the UI stale.
 export interface NotificationsUpdatedEvent {
   unreadCount: number;
   newCount: number;
+  items: NotificationItem[];
 }
 
 /// Display label for the notification's `reason` field.

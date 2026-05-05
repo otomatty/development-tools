@@ -2,17 +2,23 @@
 //!
 //! Surface mentions, review requests, and issue / PR comments to the frontend.
 //! Uses ETag-based conditional fetching (persisted on `sync_metadata`) so
-//! polling costs zero rate-limit budget when nothing has changed.
+//! polling costs zero rate-limit budget when nothing has changed. The
+//! returned items are also persisted to `activity_cache` so that 304
+//! responses (and cold starts) can still render the last-known list
+//! without forcing a fresh fetch.
 //!
 //! Related Issue: GitHub Issue #186 - GitHub Notifications 連携
 //! Related Audit: 監査レポート §1 ギャップ表 / §8 G-05.
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter, State};
 
 use super::auth::AppState;
 use crate::auth::map_github_result;
+use crate::database::cache_durations;
+use crate::database::cache_types;
+use crate::github::client::GitHubError;
 use crate::github::{
     build_notification_html_url, GitHubNotification, NotificationsClient, NotificationsResponse,
 };
@@ -25,7 +31,7 @@ pub const GITHUB_NOTIFICATIONS_SYNC_TYPE: &str = "github_notifications";
 ///
 /// Flat shape — each row pre-computes the browser URL so the UI doesn't need
 /// to mirror `build_html_url`'s API → web translation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationItem {
     pub id: String,
@@ -67,27 +73,32 @@ impl From<&GitHubNotification> for NotificationItem {
 pub struct NotificationsPayload {
     pub items: Vec<NotificationItem>,
     pub unread_count: i32,
-    /// True when GitHub returned 304 — the items list is empty and the
-    /// caller should keep showing whatever it already had.
+    /// True when the list came from the local cache rather than a fresh
+    /// GitHub fetch (e.g. GitHub responded 304).
     pub from_cache: bool,
     /// `x-poll-interval` (seconds) hint from GitHub. The scheduler honours
     /// this; the UI just surfaces it for diagnostics.
     pub poll_interval_seconds: Option<u64>,
 }
 
-/// Event emitted when new unread notifications are observed during a sync.
+/// Event emitted when the scheduler observes new notification activity.
+///
+/// Includes the freshly-fetched items so the UI can update directly
+/// without a second round-trip — a re-fetch would race the just-persisted
+/// ETag and come back as 304.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationsUpdatedEvent {
     pub unread_count: i32,
     pub new_count: i32,
+    pub items: Vec<NotificationItem>,
 }
 
 /// Fetch the authenticated user's notifications.
 ///
 /// Pulls the previous ETag from `sync_metadata` to issue a conditional
-/// request. On 304 returns `from_cache = true` with an empty list — the
-/// frontend should ignore the empty payload and keep its current state.
+/// request. On 304 (or transient network failure) returns the last-known
+/// list from `activity_cache` with `from_cache = true`.
 #[command]
 pub async fn get_notifications(
     app: AppHandle,
@@ -112,12 +123,15 @@ pub async fn get_notifications(
         .await
         .map_err(|e| e.to_string())?;
     let prior_etag = metadata.as_ref().and_then(|m| m.etag.clone());
+    let prior_cursor = metadata.as_ref().and_then(|m| m.last_sync_cursor.clone());
 
     let client = NotificationsClient::new(token);
     let response = map_github_result(
         &app,
         state.inner(),
-        client.list_notifications(prior_etag.as_deref(), false).await,
+        client
+            .list_notifications(prior_etag.as_deref(), false)
+            .await,
     )
     .await?;
 
@@ -125,13 +139,27 @@ pub async fn get_notifications(
         NotificationsResponse::NotModified {
             poll_interval_seconds,
         } => {
-            // Refresh `last_sync_at` so the scheduler knows we polled
-            // successfully even when nothing changed. The ETag we already
-            // hold remains valid.
-            persist_sync_success(state.inner(), user.id, None).await;
+            // 304: explicitly preserve the existing ETag and cursor so a
+            // future call to `update_sync_metadata` (e.g. through a
+            // different code path) can't accidentally clear them via the
+            // COALESCE pattern. `last_sync_at` still gets refreshed.
+            persist_sync_success_with_cursor(
+                state.inner(),
+                user.id,
+                prior_etag.as_deref(),
+                prior_cursor.as_deref(),
+            )
+            .await;
+
+            // Return the last-known list from the cache so cold starts
+            // (where the in-memory store is empty but the persisted ETag
+            // is fresh) still show notifications.
+            let cached = load_cached_items(state.inner(), user.id).await;
+            let unread_count = cached.iter().filter(|i| i.unread).count() as i32;
+
             Ok(NotificationsPayload {
-                items: Vec::new(),
-                unread_count: 0,
+                items: cached,
+                unread_count,
                 from_cache: true,
                 poll_interval_seconds,
             })
@@ -145,7 +173,7 @@ pub async fn get_notifications(
                 notifications.iter().map(NotificationItem::from).collect();
             let unread_count = items.iter().filter(|i| i.unread).count() as i32;
 
-            // Persist the new ETag and the latest seen `updated_at` so the
+            // Persist the new ETag + the latest seen `updated_at` so the
             // next poll can issue a conditional request and detect
             // genuinely-new items. A failure here is logged but doesn't
             // fail the command — we already have the data.
@@ -161,6 +189,11 @@ pub async fn get_notifications(
                 new_cursor.as_deref(),
             )
             .await;
+
+            // Mirror the items into `activity_cache` so the next 304 (or a
+            // cold start before the first scheduler tick) can still serve
+            // a populated list.
+            save_items_cache(state.inner(), user.id, &items).await;
 
             Ok(NotificationsPayload {
                 items,
@@ -188,18 +221,36 @@ pub async fn mark_notification_read(
         .map_err(|e| e.to_string())?;
 
     let client = NotificationsClient::new(token);
-    map_github_result(&app, state.inner(), client.mark_thread_as_read(&thread_id).await).await
+    map_github_result(
+        &app,
+        state.inner(),
+        client.mark_thread_as_read(&thread_id).await,
+    )
+    .await
 }
 
-/// Refresh notifications and emit a `notifications-updated` event when the
-/// unread count changes. Used by the background scheduler.
+/// Outcome of [`run_notifications_sync`] — surfaced to the scheduler so it
+/// can apply rate-limit backoff to the notifications stream independently
+/// of the stats sync.
+pub enum NotificationsSyncOutcome {
+    /// Sync completed (304 or fresh data); the scheduler can poll again on
+    /// its normal cadence.
+    Ok,
+    /// GitHub responded with 0 remaining + a reset timestamp. The scheduler
+    /// should hold off on the next notifications poll until then.
+    RateLimited { reset_at: DateTime<Utc> },
+}
+
+/// Refresh notifications and emit a `notifications-updated` event when new
+/// activity is observed. Used by the background scheduler.
 ///
-/// Returns the unread count so the scheduler can record it; errors are
-/// returned as strings to match the rest of the command surface.
+/// Returns a [`NotificationsSyncOutcome`] so the scheduler can record a
+/// rate-limit reset and back off accordingly. Other errors (network /
+/// auth) are returned as strings to match the rest of the command surface.
 pub async fn run_notifications_sync(
     app: &AppHandle,
     state: &AppState,
-) -> Result<i32, String> {
+) -> Result<NotificationsSyncOutcome, String> {
     let token = state
         .token_manager
         .get_access_token()
@@ -219,37 +270,60 @@ pub async fn run_notifications_sync(
         .await
         .map_err(|e| e.to_string())?;
     let prior_etag = metadata.as_ref().and_then(|m| m.etag.clone());
+    let prior_cursor = metadata.as_ref().and_then(|m| m.last_sync_cursor.clone());
 
     let client = NotificationsClient::new(token);
-    let response = map_github_result(
-        app,
-        state,
-        client.list_notifications(prior_etag.as_deref(), false).await,
-    )
-    .await?;
+    let raw_result = client
+        .list_notifications(prior_etag.as_deref(), false)
+        .await;
+
+    // Intercept rate-limit errors so we can persist the reset and back off
+    // on subsequent ticks. Other errors fall through to the standard
+    // `map_github_result` treatment (which handles auth-expired etc.).
+    if let Err(GitHubError::RateLimited(reset_ts)) = &raw_result {
+        let reset_at = DateTime::from_timestamp(*reset_ts, 0).unwrap_or_else(Utc::now);
+        if let Err(e) = state
+            .db
+            .record_sync_rate_limit(user.id, GITHUB_NOTIFICATIONS_SYNC_TYPE, reset_at)
+            .await
+        {
+            eprintln!("Failed to record notifications rate-limit: {}", e);
+        }
+        return Ok(NotificationsSyncOutcome::RateLimited { reset_at });
+    }
+
+    let response = map_github_result(app, state, raw_result).await?;
 
     match response {
         NotificationsResponse::NotModified { .. } => {
-            persist_sync_success(state, user.id, None).await;
-            // No-op event: the unread count didn't change. We deliberately
-            // skip emitting `notifications-updated` to avoid waking the UI
-            // for nothing.
-            Ok(0)
+            // 304: explicitly preserve the existing ETag and cursor (the
+            // server hasn't given us new ones).
+            persist_sync_success_with_cursor(
+                state,
+                user.id,
+                prior_etag.as_deref(),
+                prior_cursor.as_deref(),
+            )
+            .await;
+            // No-op event: the unread count didn't change. Skip emitting
+            // `notifications-updated` to avoid waking the UI for nothing.
+            Ok(NotificationsSyncOutcome::Ok)
         }
         NotificationsResponse::Modified {
             notifications,
             etag,
             ..
         } => {
-            let unread_count = notifications.iter().filter(|n| n.unread).count() as i32;
+            let items: Vec<NotificationItem> =
+                notifications.iter().map(NotificationItem::from).collect();
+            let unread_count = items.iter().filter(|i| i.unread).count() as i32;
 
-            // Find the cutoff used for "new since last poll": stored in
-            // `sync_metadata.last_sync_cursor` as an RFC3339 timestamp. The
-            // first run has no cutoff and we suppress toasts to avoid a
-            // backlog dump.
-            let last_seen_at = metadata
+            // Cutoff used for "new since last poll": stored in
+            // `sync_metadata.last_sync_cursor` as an RFC3339 timestamp.
+            // The first run has no cutoff and we suppress toasts to avoid
+            // a backlog dump.
+            let last_seen_at = prior_cursor
                 .as_ref()
-                .and_then(|m| m.last_sync_cursor.as_ref())
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc));
 
@@ -274,18 +348,26 @@ pub async fn run_notifications_sync(
                 .map(|n| n.updated_at)
                 .max()
                 .map(|t| t.to_rfc3339());
-            persist_sync_success_with_cursor(state, user.id, etag.as_deref(), new_cursor.as_deref())
-                .await;
+            persist_sync_success_with_cursor(
+                state,
+                user.id,
+                etag.as_deref(),
+                new_cursor.as_deref(),
+            )
+            .await;
+            save_items_cache(state, user.id, &items).await;
 
-            // Emit the event regardless of whether the count is zero — the UI
-            // consumes this as a "go re-fetch the list" signal.
+            // Emit the items inline — the frontend would otherwise have
+            // to re-fetch and immediately hit the just-saved ETag, getting
+            // 304 and stale UI back.
             let event = NotificationsUpdatedEvent {
                 unread_count,
                 new_count,
+                items,
             };
             let _ = app.emit("notifications-updated", &event);
 
-            Ok(unread_count)
+            Ok(NotificationsSyncOutcome::Ok)
         }
     }
 }
@@ -307,7 +389,10 @@ async fn maybe_send_os_notifications(
     let settings = match state.db.get_or_create_user_settings(user_id).await {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Failed to load user settings for notifications toast: {}", e);
+            eprintln!(
+                "Failed to load user settings for notifications toast: {}",
+                e
+            );
             return;
         }
     };
@@ -342,16 +427,14 @@ async fn maybe_send_os_notifications(
 
 /// Persist a successful notifications sync to `sync_metadata`.
 ///
+/// Always writes `last_sync_at`. ETag and cursor are passed through to
+/// `update_sync_metadata`, which uses `COALESCE(?, col)` so `None` keeps
+/// the existing column value — call sites should pass the prior values
+/// explicitly on 304 to make the intent obvious in code review.
+///
 /// Best-effort writes — failures are logged but never fail the user-facing
 /// command. Mirrors `commands::github::persist_sync_success` for the stats
 /// sync.
-async fn persist_sync_success(state: &AppState, user_id: i64, etag: Option<&str>) {
-    persist_sync_success_with_cursor(state, user_id, etag, None).await;
-}
-
-/// Variant of [`persist_sync_success`] that also writes the
-/// `last_sync_cursor` (used to track the most recent notification
-/// `updated_at` so the next poll knows what's "new").
 async fn persist_sync_success_with_cursor(
     state: &AppState,
     user_id: i64,
@@ -400,5 +483,53 @@ async fn persist_sync_success_with_cursor(
         .await
     {
         eprintln!("Failed to clear notifications sync_rate_limit: {}", e);
+    }
+}
+
+/// Save the notifications list to `activity_cache` so 304 responses (and
+/// cold starts before the scheduler ticks) can still serve a populated UI.
+async fn save_items_cache(state: &AppState, user_id: i64, items: &[NotificationItem]) {
+    let json = match serde_json::to_string(items) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("Failed to serialize notifications cache: {}", e);
+            return;
+        }
+    };
+    let expires_at = Utc::now() + chrono::Duration::minutes(cache_durations::GITHUB_NOTIFICATIONS);
+    if let Err(e) = state
+        .db
+        .save_cache(
+            user_id,
+            cache_types::GITHUB_NOTIFICATIONS,
+            &json,
+            expires_at,
+        )
+        .await
+    {
+        eprintln!("Failed to persist notifications cache: {}", e);
+    }
+}
+
+/// Load the cached notifications list. Falls back to an empty Vec on miss
+/// or parse failure — callers treat this as "no known items".
+///
+/// We use `get_any_cache` (rather than `get_cache`, which filters expired)
+/// because the cache TTL is just a stale-render bound: a slightly-stale
+/// list is still better than an empty UI when GitHub responds 304.
+async fn load_cached_items(state: &AppState, user_id: i64) -> Vec<NotificationItem> {
+    match state
+        .db
+        .get_any_cache(user_id, cache_types::GITHUB_NOTIFICATIONS)
+        .await
+    {
+        Ok(Some((json, _cached_at, _expires_at))) => {
+            serde_json::from_str(&json).unwrap_or_default()
+        }
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            eprintln!("Failed to load notifications cache: {}", e);
+            Vec::new()
+        }
     }
 }
