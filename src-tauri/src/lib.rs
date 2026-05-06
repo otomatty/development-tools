@@ -28,6 +28,8 @@ use commands::{
     delete_project,
     export_data,
     get_active_challenges,
+    // Activity timeline command (Issue #187)
+    get_activity_feed_with_cache,
     get_all_challenges,
     get_app_info,
     get_auth_state,
@@ -249,6 +251,8 @@ pub fn run() {
             // GitHub Notifications commands (Issue #186)
             get_notifications,
             mark_notification_read,
+            // Activity timeline command (Issue #187)
+            get_activity_feed_with_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

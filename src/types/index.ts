@@ -4,6 +4,7 @@
 // Split into submodules for better maintainability.
 
 // Re-export all types from submodules
+export * from './activity';
 export * from './auth';
 export * from './challenge';
 export * from './gamification';

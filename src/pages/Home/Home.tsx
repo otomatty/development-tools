@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { LoginCard } from '../../components/features/auth';
+import { ActivityTimeline } from '../../components/features/activity';
 import { DashboardContent, XpNotification } from '../../components/features/gamification';
 import { useAuth } from '../../stores/authStore';
 import { useCachedFetch } from '../../hooks/useCachedFetch';
@@ -24,6 +25,9 @@ import { CacheStatusBanner } from './CacheStatusBanner';
 
 const STATS_STALE_TIME_MS = 30 * 60 * 1000; // 30 minutes
 const USER_STATS_STALE_TIME_MS = 60 * 60 * 1000; // 60 minutes
+// Backend caches the events payload for 5 minutes — match it on the client
+// so a focus-revalidation triggers a fresh fetch instead of replaying cache.
+const ACTIVITY_STALE_TIME_MS = 5 * 60 * 1000;
 
 // Home skeleton loader
 const HomeSkeleton = () => (
@@ -53,6 +57,11 @@ export const Home = () => {
   const userStatsQuery = useCachedFetch(github.getUserStatsWithCache, {
     enabled,
     staleTime: USER_STATS_STALE_TIME_MS,
+  });
+
+  const activityQuery = useCachedFetch(github.getActivityFeedWithCache, {
+    enabled,
+    staleTime: ACTIVITY_STALE_TIME_MS,
   });
 
   // `level_info` does not yet have a `_with_cache` variant — it is computed
@@ -86,10 +95,12 @@ export const Home = () => {
 
   const githubRevalidate = githubStatsQuery.revalidate;
   const userRevalidate = userStatsQuery.revalidate;
+  const activityRevalidate = activityQuery.revalidate;
   const handleRetry = useCallback(() => {
     void githubRevalidate();
     void userRevalidate();
-  }, [githubRevalidate, userRevalidate]);
+    void activityRevalidate();
+  }, [githubRevalidate, userRevalidate, activityRevalidate]);
 
   // Initial loading: wait for auth restore and the first data fetch when
   // logged in. Cached data short-circuits this — once any cached value is
@@ -110,16 +121,30 @@ export const Home = () => {
 
   const isLoading = authLoading || initialDataLoading;
 
-  const fromCache = githubStatsQuery.fromCache || userStatsQuery.fromCache;
-  const hasError = githubStatsQuery.error !== null || userStatsQuery.error !== null;
+  const fromCache =
+    githubStatsQuery.fromCache ||
+    userStatsQuery.fromCache ||
+    activityQuery.fromCache;
+  const hasError =
+    githubStatsQuery.error !== null ||
+    userStatsQuery.error !== null ||
+    activityQuery.error !== null;
   const hasData =
-    githubStatsQuery.data !== null || userStatsQuery.data !== null;
+    githubStatsQuery.data !== null ||
+    userStatsQuery.data !== null ||
+    activityQuery.data !== null;
   const isRevalidating =
-    githubStatsQuery.isRevalidating || userStatsQuery.isRevalidating;
-  // Surface the older of the two cache timestamps so the user sees the
-  // worst-case staleness rather than the freshest sub-component's.
+    githubStatsQuery.isRevalidating ||
+    userStatsQuery.isRevalidating ||
+    activityQuery.isRevalidating;
+  // Surface the older of the cache timestamps across all sources so the
+  // user sees the worst-case staleness rather than the freshest one.
   const bannerCachedAt =
-    [githubStatsQuery.cachedAt, userStatsQuery.cachedAt]
+    [
+      githubStatsQuery.cachedAt,
+      userStatsQuery.cachedAt,
+      activityQuery.cachedAt,
+    ]
       .filter((value): value is string => value !== null)
       .sort()[0] ?? null;
 
@@ -143,6 +168,15 @@ export const Home = () => {
             githubStats={githubStatsQuery.data}
             statsDiff={null}
           />
+          <div className="mt-6">
+            <ActivityTimeline
+              items={activityQuery.data?.items ?? null}
+              isLoading={activityQuery.isLoading}
+              isRevalidating={activityQuery.isRevalidating}
+              error={activityQuery.error}
+              onRetry={() => void activityQuery.revalidate()}
+            />
+          </div>
         </>
       ) : (
         <LoginCard />

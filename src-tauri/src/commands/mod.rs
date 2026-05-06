@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod auth;
 pub mod challenge;
 pub mod gamification;
@@ -7,6 +8,7 @@ pub mod notifications;
 pub mod scheduler;
 pub mod settings;
 
+pub use activity::*;
 pub use auth::*;
 pub use challenge::*;
 pub use gamification::*;
