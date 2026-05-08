@@ -1615,19 +1615,23 @@ pub async fn get_today_commits_with_cache(
     // `active` until `fail_expired_challenges` sweeps it. Without this
     // filter we'd pick yesterday's `start_date` as `since` and count
     // commits from the wrong window.
+    //
+    // Surface DB errors instead of silently treating them as "no active
+    // challenge". A swallowed error would reset `since` to UTC midnight
+    // even when a daily challenge is genuinely in progress, producing
+    // the exact LIVE-vs-backend mismatch this anchoring is meant to
+    // prevent. The frontend falls back to the persisted `currentValue`
+    // when the realtime query errors, so the user just loses the LIVE
+    // badge — never sees an inflated bar.
     let now = chrono::Utc::now();
     let challenge_start = state
         .db
         .get_active_challenges(user.id)
         .await
-        .ok()
-        .and_then(|chs| {
-            chs.into_iter()
-                .find(|c| {
-                    c.challenge_type == "daily" && c.target_metric == "commits" && c.end_date > now
-                })
-                .map(|c| c.start_date)
-        });
+        .map_err(|e| format!("Failed to load active challenges: {}", e))?
+        .into_iter()
+        .find(|c| c.challenge_type == "daily" && c.target_metric == "commits" && c.end_date > now)
+        .map(|c| c.start_date);
 
     let since_dt = challenge_start.unwrap_or_else(|| {
         now.date_naive()
