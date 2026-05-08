@@ -364,6 +364,22 @@ export function graphqlUsagePercent(rateLimit: RateLimitInfo): number {
   return ((rateLimit.graphqlLimit - rateLimit.graphqlRemaining) / rateLimit.graphqlLimit) * 100.0;
 }
 
+/// 今日のコミット数（リアルタイム）— Issue #188
+///
+/// `contributionCalendar` のラグを回避するために、
+/// `repositories(history(since:) { totalCount })` の薄い GraphQL クエリで
+/// 当日のコミット数だけを取得する。
+export interface TodayCommitsSummary {
+  /// 走査した全リポジトリの当日コミット数合計
+  count: number;
+  /// 集計開始の UTC ISO8601 タイムスタンプ（その日の 00:00 UTC）
+  since: string;
+  /// 実際に走査したリポジトリ数（要求した上限以下）
+  repositoriesScanned: number;
+  /// 当日 1 件以上コミットがあったリポジトリ（`owner/repo`）
+  repositoriesWithCommits: string[];
+}
+
 /// コード統計同期結果
 export interface CodeStatsSyncResult {
   /// 同期した日数

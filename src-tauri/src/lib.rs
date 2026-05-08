@@ -65,6 +65,8 @@ use commands::{
     get_scheduler_status,
     get_settings,
     get_sync_intervals,
+    // Realtime "today's commits" command (Issue #188)
+    get_today_commits_with_cache,
     get_user_repositories,
     get_user_stats,
     get_user_stats_with_cache,
@@ -204,6 +206,8 @@ pub fn run() {
             sync_code_stats,
             get_code_stats_summary,
             get_rate_limit_info,
+            // Realtime "today's commits" command (Issue #188)
+            get_today_commits_with_cache,
             // Gamification commands
             get_level_info,
             add_xp,

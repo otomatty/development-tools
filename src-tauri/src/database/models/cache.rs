@@ -46,6 +46,9 @@ pub mod cache_types {
     /// Recent activity feed payload backing the home timeline
     /// (`/users/{u}/events`). See Issue #187.
     pub const ACTIVITY_FEED: &str = "activity_feed";
+    /// Realtime "今日のコミット数" — thin commit-count query used by the
+    /// gamification today-quest UI. See Issue #188.
+    pub const TODAY_COMMITS: &str = "today_commits";
 }
 
 /// Default cache durations in minutes
@@ -81,4 +84,9 @@ pub mod cache_durations {
     /// REST budget is 5000 req/hr — even with revalidate-on-focus the
     /// 5-minute TTL keeps refresh load negligible.
     pub const ACTIVITY_FEED: i64 = 5;
+    /// Realtime today-commit-count cache duration (3 minutes).
+    /// The query is a thin GraphQL `history(since:) { totalCount }` — the
+    /// 3-minute TTL gives the gamification today-quest UI near-realtime
+    /// updates while keeping GraphQL spend trivial. See Issue #188.
+    pub const TODAY_COMMITS: i64 = 3;
 }

@@ -1563,3 +1563,128 @@ pub async fn cleanup_expired_cache(state: State<'_, AppState>) -> Result<u64, St
 
     Ok(deleted)
 }
+
+// ============================================================================
+// Today's Commits realtime command (Issue #188 — G-01)
+// ============================================================================
+
+/// Cap on repositories scanned per `get_today_commits_with_cache` call.
+///
+/// 30 covers the realistic "active in the last week or two" window for
+/// most users while keeping the GraphQL cost low (the query is `O(repos)`
+/// in the new lightweight form, not `O(repos × commits)`). Users with
+/// more than 30 active repos in a single day are vanishingly rare.
+const TODAY_COMMITS_MAX_REPOS: i32 = 30;
+
+/// Realtime "今日のコミット数" with a 3-minute SQLite cache.
+///
+/// `contributionCalendar` lags by minutes-to-tens-of-minutes which makes
+/// the gamification today-quest UI feel stale right after a push. This
+/// thin GraphQL `history(since:) { totalCount }` query is the latency
+/// escape hatch — see Issue #188.
+///
+/// Behaviour mirrors the other `*_with_cache` commands:
+/// - Success → refresh cache, return `from_cache: false`.
+/// - Network / rate-limit error → fall back to last cached payload (any
+///   age), else surface the error.
+/// - 401 → trigger the central auth-expired flow.
+#[command]
+pub async fn get_today_commits_with_cache(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<crate::github::types::TodayCommitsSummary>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // UTC midnight matches how daily challenges are scoped
+    // (`compute_challenge_period`), so the count and the challenge target
+    // share the same day boundary. The `Z`-suffixed format mirrors the
+    // existing `get_code_stats` caller and is what GitHub's GraphQL
+    // `GitTimestamp` scalar parses most reliably.
+    let today_utc = chrono::Utc::now().date_naive();
+    let since = format!("{}T00:00:00Z", today_utc);
+
+    let api_result = async {
+        let token = state
+            .token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| GitHubError::ApiError(e.to_string()))?;
+        let client = GitHubClient::new(token);
+        client
+            .get_today_commits(&user.username, &since, TODAY_COMMITS_MAX_REPOS)
+            .await
+    }
+    .await;
+
+    match api_result {
+        Ok(summary) => {
+            let payload_json = serde_json::to_string(&summary)
+                .map_err(|e| format!("Failed to serialize today commits: {}", e))?;
+
+            let now = chrono::Utc::now();
+            let expires_at =
+                now + chrono::Duration::minutes(crate::database::cache_durations::TODAY_COMMITS);
+
+            let _ = state
+                .db
+                .save_cache(
+                    user.id,
+                    cache_types::TODAY_COMMITS,
+                    &payload_json,
+                    expires_at,
+                )
+                .await;
+
+            Ok(CachedResponse {
+                data: summary,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Err(GitHubError::Unauthorized) => {
+            handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+            Err(GitHubError::Unauthorized.to_string())
+        }
+        Err(api_error) => {
+            if !is_network_error(&api_error) {
+                return Err(format!("GitHub API error: {}", api_error));
+            }
+
+            eprintln!(
+                "Today commits fetch failed, attempting cache fallback: {}",
+                api_error
+            );
+
+            let cache_result = state
+                .db
+                .get_any_cache(user.id, cache_types::TODAY_COMMITS)
+                .await
+                .ok()
+                .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let summary: crate::github::types::TodayCommitsSummary =
+                        serde_json::from_str(&data_json)
+                            .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+                    Ok(CachedResponse {
+                        data: summary,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!(
+                    "GitHub APIにアクセスできず、キャッシュもありません: {}",
+                    api_error
+                )),
+            }
+        }
+    }
+}

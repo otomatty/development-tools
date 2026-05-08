@@ -743,6 +743,126 @@ impl GitHubClient {
         Ok(result)
     }
 
+    /// Get total commits authored by the user since `since` across their
+    /// `max_repos` most recently pushed repositories.
+    ///
+    /// Lightweight counterpart to [`get_code_stats`]: only requests
+    /// `history(since:) { totalCount }` per repo so the GraphQL cost stays
+    /// roughly proportional to `max_repos` instead of `max_repos × commits`.
+    /// Designed to back the gamification "今日のクエスト" UI where
+    /// `contributionCalendar`'s minutes-to-tens-of-minutes lag is too coarse.
+    ///
+    /// # Arguments
+    /// * `username` - GitHub username
+    /// * `since` - ISO8601 lower bound (e.g. `"2026-05-08T00:00:00Z"`)
+    /// * `max_repos` - Cap on repositories to scan (1..=100). The query orders
+    ///   by `PUSHED_AT DESC` so the cap drops cold repos first.
+    ///
+    /// # Returns
+    /// A [`TodayCommitsSummary`] with the aggregated total and the list of
+    /// repos that contributed at least one commit.
+    pub async fn get_today_commits(
+        &self,
+        username: &str,
+        since: &str,
+        max_repos: i32,
+    ) -> GitHubResult<TodayCommitsSummary> {
+        // Clamp to GitHub's documented `first: 1..=100` window. Callers pass
+        // a small value (default 30) so this is just defence-in-depth.
+        let capped = max_repos.clamp(1, 100);
+
+        // Resolve the user's node id with a one-off lightweight query so
+        // `history(author: {id: $author})` filters to commits actually
+        // authored by them rather than every commit on `defaultBranchRef`
+        // (which would over-count when collaborators push). The id query
+        // costs 1 GraphQL point and lets the main query stay author-scoped.
+        let id_query = r#"
+            query($login: String!) {
+                user(login: $login) { id }
+            }
+        "#;
+
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct UserIdResponse {
+            user: Option<UserId>,
+        }
+        #[derive(serde::Deserialize)]
+        struct UserId {
+            id: String,
+        }
+
+        let id_resp: UserIdResponse = self
+            .graphql(id_query, Some(serde_json::json!({ "login": username })))
+            .await?;
+        let author_id = id_resp
+            .user
+            .map(|u| u.id)
+            .ok_or_else(|| GitHubError::NotFound(format!("User {} not found", username)))?;
+
+        let query = r#"
+            query($login: String!, $since: GitTimestamp!, $maxRepos: Int!, $author: ID!) {
+                user(login: $login) {
+                    repositories(first: $maxRepos, orderBy: {field: PUSHED_AT, direction: DESC}, ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
+                        nodes {
+                            nameWithOwner
+                            defaultBranchRef {
+                                target {
+                                    ... on Commit {
+                                        history(since: $since, author: {id: $author}) {
+                                            totalCount
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                rateLimit {
+                    cost
+                    remaining
+                }
+            }
+        "#;
+
+        let variables = serde_json::json!({
+            "login": username,
+            "since": since,
+            "maxRepos": capped,
+            "author": author_id,
+        });
+
+        let response: TodayCommitsQueryResponse = self.graphql(query, Some(variables)).await?;
+
+        let mut total: i32 = 0;
+        let mut scanned: i32 = 0;
+        let mut contributing: Vec<String> = Vec::new();
+
+        if let Some(user) = response.user {
+            for repo in user.repositories.nodes {
+                scanned += 1;
+                let count = repo
+                    .default_branch_ref
+                    .as_ref()
+                    .and_then(|r| r.target.as_ref())
+                    .and_then(|t| t.history.as_ref())
+                    .map(|h| h.total_count)
+                    .unwrap_or(0);
+                if count > 0 {
+                    total += count;
+                    contributing.push(repo.name_with_owner);
+                }
+            }
+        }
+
+        Ok(TodayCommitsSummary {
+            count: total,
+            since: since.to_string(),
+            repositories_scanned: scanned,
+            repositories_with_commits: contributing,
+        })
+    }
+
     /// Get detailed rate limit information for all API types
     pub async fn get_detailed_rate_limit(&self) -> GitHubResult<RateLimitDetailed> {
         // Get REST API rate limits

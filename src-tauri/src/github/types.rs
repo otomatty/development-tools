@@ -299,6 +299,75 @@ pub struct DailyCodeStatsAggregated {
     pub repositories: Vec<String>,
 }
 
+// ============================================================================
+// Today's Commits Types (Issue #188 — G-01 realtime today commit count)
+// ============================================================================
+
+/// GraphQL response for the lightweight "today's commits" query.
+///
+/// Only requests `history(since:) { totalCount }` per repository, which is
+/// roughly an order of magnitude cheaper than the full code-stats query
+/// because no commit-level fields (additions / deletions / oid) are pulled.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsQueryResponse {
+    pub user: Option<TodayCommitsUser>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsUser {
+    pub repositories: TodayCommitsRepositoriesConnection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsRepositoriesConnection {
+    pub nodes: Vec<TodayCommitsRepository>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsRepository {
+    pub name_with_owner: String,
+    pub default_branch_ref: Option<TodayCommitsDefaultBranchRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsDefaultBranchRef {
+    pub target: Option<TodayCommitsTarget>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsTarget {
+    pub history: Option<TodayCommitsHistory>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsHistory {
+    pub total_count: i32,
+}
+
+/// Aggregated "today's commits" response surfaced to the frontend.
+///
+/// `since` is the UTC midnight timestamp the count applies to so the UI
+/// can detect day rollovers without consulting the system clock.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayCommitsSummary {
+    /// Total commit count across all scanned repositories since `since`.
+    pub count: i32,
+    /// ISO8601 UTC midnight that bounds the count window.
+    pub since: String,
+    /// How many repositories the query actually scanned (≤ requested cap).
+    pub repositories_scanned: i32,
+    /// Repositories that contributed at least one commit, for tooltip / debug.
+    pub repositories_with_commits: Vec<String>,
+}
+
 /// Rate limit information with detailed breakdown
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

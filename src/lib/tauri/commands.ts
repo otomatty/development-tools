@@ -43,6 +43,7 @@ import type {
   CodeStatsResponse,
   RateLimitInfo,
   RateLimitDetailed,
+  TodayCommitsSummary,
   ContributionCalendar,
   BadgeWithProgress,
   CachedResponse,
@@ -482,6 +483,17 @@ export const github = {
    */
   getActivityFeedWithCache: (): Promise<CachedResponse<ActivityFeed>> =>
     invoke<CachedResponse<ActivityFeed>>('get_activity_feed_with_cache'),
+
+  /**
+   * Realtime "今日のコミット数" with a 3-minute SQLite cache.
+   *
+   * `contributionCalendar` lags by minutes-to-tens-of-minutes, which makes
+   * the gamification today-quest UI feel stale right after a push. This
+   * thin GraphQL `history(since:) { totalCount }` query is the latency
+   * escape hatch — see Issue #188.
+   */
+  getTodayCommitsWithCache: (): Promise<CachedResponse<TodayCommitsSummary>> =>
+    invoke<CachedResponse<TodayCommitsSummary>>('get_today_commits_with_cache'),
 };
 
 // ============================================================================
