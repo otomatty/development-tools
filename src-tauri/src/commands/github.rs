@@ -1706,19 +1706,21 @@ pub async fn get_today_commits_with_cache(
                             .map_err(|e| format!("Failed to parse cached data: {}", e))?;
 
                     // Reject the cache when its window doesn't align with
-                    // the one we'd request now. Without this guard, a UTC
-                    // day rollover (or a regenerated daily challenge with
-                    // a newer `start_date`) would surface yesterday's
-                    // count as today's data and inflate progress until a
-                    // fresh API hit succeeds. Compare by parsed date so
-                    // `Z` ↔ `+00:00` formatting differences don't
-                    // invalidate the cache.
-                    let cached_date = chrono::DateTime::parse_from_rfc3339(&summary.since)
-                        .map(|dt| dt.with_timezone(&chrono::Utc).date_naive())
+                    // the one we'd request now. Compare against the full
+                    // timestamp rather than the calendar date because
+                    // daily challenges start at `now` (not midnight), so
+                    // a same-day challenge regeneration shifts `since`
+                    // forward without changing the date — a date-only
+                    // check would let the older, wider cache window
+                    // through and inflate progress. Parsed-DateTime
+                    // equality is also resilient to `Z` ↔ `+00:00`
+                    // formatting differences.
+                    let cached_since = chrono::DateTime::parse_from_rfc3339(&summary.since)
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
                         .ok();
-                    if cached_date != Some(since_dt.date_naive()) {
+                    if cached_since != Some(since_dt) {
                         return Err(format!(
-                            "GitHub APIにアクセスできず、キャッシュも当日のものではありません: {}",
+                            "GitHub APIにアクセスできず、キャッシュも現在の集計窓と一致しません: {}",
                             api_error
                         ));
                     }

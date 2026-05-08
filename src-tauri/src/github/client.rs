@@ -762,6 +762,13 @@ impl GitHubClient {
     /// daily snapshot (sourced from `contributionCalendar`) does cover
     /// non-default branches, so the gap closes on the next sync.
     ///
+    /// **Forks are excluded** (`isFork: false`). GitHub's contribution
+    /// criteria explicitly omit commits made in fork repositories, and
+    /// the persisted challenge progress in `run_github_sync` is derived
+    /// from `contributionCalendar` totals — counting fork commits here
+    /// would inflate the LIVE bar above what the backend will ever
+    /// award.
+    ///
     /// # Arguments
     /// * `username` - GitHub username
     /// * `since` - ISO8601 lower bound (e.g. `"2026-05-08T00:00:00Z"`)
@@ -813,7 +820,7 @@ impl GitHubClient {
         let query = r#"
             query($login: String!, $since: GitTimestamp!, $maxRepos: Int!, $author: ID!) {
                 user(login: $login) {
-                    repositories(first: $maxRepos, orderBy: {field: PUSHED_AT, direction: DESC}, ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
+                    repositories(first: $maxRepos, isFork: false, orderBy: {field: PUSHED_AT, direction: DESC}, ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
                         nodes {
                             nameWithOwner
                             defaultBranchRef {
