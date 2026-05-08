@@ -133,7 +133,7 @@ const ChallengeItem: React.FC<{
             {useRealtime && (
               <span
                 className="ml-2 text-[10px] font-medium uppercase tracking-wider text-gm-accent-cyan"
-                title="GitHubから直接取得した今日のコミット数"
+                title="GitHubから直接取得した今日のコミット数（各リポジトリのデフォルトブランチのみ）"
               >
                 LIVE
               </span>

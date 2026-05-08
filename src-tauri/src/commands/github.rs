@@ -1600,13 +1600,36 @@ pub async fn get_today_commits_with_cache(
         .map_err(|e| e.to_string())?
         .ok_or("Not logged in")?;
 
-    // UTC midnight matches how daily challenges are scoped
-    // (`compute_challenge_period`), so the count and the challenge target
-    // share the same day boundary. The `Z`-suffixed format mirrors the
-    // existing `get_code_stats` caller and is what GitHub's GraphQL
-    // `GitTimestamp` scalar parses most reliably.
-    let today_utc = chrono::Utc::now().date_naive();
-    let since = format!("{}T00:00:00Z", today_utc);
+    // Anchor the realtime window to the active daily commits challenge's
+    // `start_date` when one exists. The backend computes progress as
+    // `total_metric - start_stats.metric` (`run_github_sync` in this
+    // file), so counting commits made before the challenge was created
+    // would inflate the LIVE bar above what the backend will ever award.
+    // Falls back to UTC midnight when no daily/commits challenge is
+    // active, which keeps the command useful outside the gamification
+    // path.
+    let challenge_start = state
+        .db
+        .get_active_challenges(user.id)
+        .await
+        .ok()
+        .and_then(|chs| {
+            chs.into_iter()
+                .find(|c| c.challenge_type == "daily" && c.target_metric == "commits")
+                .map(|c| c.start_date)
+        });
+
+    let now = chrono::Utc::now();
+    let since_dt = challenge_start.unwrap_or_else(|| {
+        now.date_naive()
+            .and_hms_opt(0, 0, 0)
+            .expect("00:00:00 is always a valid time")
+            .and_utc()
+    });
+    // GitHub's `GitTimestamp` scalar accepts either `Z` or `+00:00`;
+    // RFC3339 is the safer round-trip format because `challenge.start_date`
+    // is also stored as RFC3339 in `challenges.start_date`.
+    let since = since_dt.to_rfc3339();
 
     let api_result = async {
         let token = state
@@ -1626,7 +1649,6 @@ pub async fn get_today_commits_with_cache(
             let payload_json = serde_json::to_string(&summary)
                 .map_err(|e| format!("Failed to serialize today commits: {}", e))?;
 
-            let now = chrono::Utc::now();
             let expires_at =
                 now + chrono::Duration::minutes(crate::database::cache_durations::TODAY_COMMITS);
 
@@ -1673,6 +1695,25 @@ pub async fn get_today_commits_with_cache(
                     let summary: crate::github::types::TodayCommitsSummary =
                         serde_json::from_str(&data_json)
                             .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+
+                    // Reject the cache when its window doesn't align with
+                    // the one we'd request now. Without this guard, a UTC
+                    // day rollover (or a regenerated daily challenge with
+                    // a newer `start_date`) would surface yesterday's
+                    // count as today's data and inflate progress until a
+                    // fresh API hit succeeds. Compare by parsed date so
+                    // `Z` ↔ `+00:00` formatting differences don't
+                    // invalidate the cache.
+                    let cached_date = chrono::DateTime::parse_from_rfc3339(&summary.since)
+                        .map(|dt| dt.with_timezone(&chrono::Utc).date_naive())
+                        .ok();
+                    if cached_date != Some(since_dt.date_naive()) {
+                        return Err(format!(
+                            "GitHub APIにアクセスできず、キャッシュも当日のものではありません: {}",
+                            api_error
+                        ));
+                    }
+
                     Ok(CachedResponse {
                         data: summary,
                         from_cache: true,

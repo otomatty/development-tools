@@ -752,6 +752,16 @@ impl GitHubClient {
     /// Designed to back the gamification "今日のクエスト" UI where
     /// `contributionCalendar`'s minutes-to-tens-of-minutes lag is too coarse.
     ///
+    /// # Coverage trade-offs
+    /// Only the **default branch** of each scanned repository is counted —
+    /// commits authored on a feature branch that hasn't been merged are
+    /// invisible to this query. This matches `get_code_stats`'s behaviour
+    /// and keeps the GraphQL cost flat, but does mean a developer pushing
+    /// to a long-lived feature branch will not see the LIVE bar move
+    /// until those commits land on the default branch. The persisted
+    /// daily snapshot (sourced from `contributionCalendar`) does cover
+    /// non-default branches, so the gap closes on the next sync.
+    ///
     /// # Arguments
     /// * `username` - GitHub username
     /// * `since` - ISO8601 lower bound (e.g. `"2026-05-08T00:00:00Z"`)
