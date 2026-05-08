@@ -9,10 +9,12 @@
  *   - Original (Leptos): ./challenge_card.rs
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNetworkStatus } from '../../../stores/networkStore';
+import { useCachedFetch } from '../../../hooks/useCachedFetch';
+import { useAuth } from '../../../stores/authStore';
 import { Icon } from '../../icons';
-import { challenges as challengeApi } from '../../../lib/tauri/commands';
+import { challenges as challengeApi, github } from '../../../lib/tauri/commands';
 import type { ChallengeInfo } from '../../../types';
 import {
   challengeTypeLabel,
@@ -21,10 +23,57 @@ import {
   remainingTimeLabel,
 } from '../../../types/challenge';
 
+// Today-commits cache TTL on the backend is 3 minutes (Issue #188); align
+// the staleTime so a focus revalidation kicks off right when the cache
+// expires rather than re-using stale data for another window.
+const TODAY_COMMITS_STALE_TIME_MS = 3 * 60 * 1000;
+
 // Single challenge item component
-const ChallengeItem: React.FC<{ challenge: ChallengeInfo }> = ({ challenge }) => {
-  const progress = Math.min(challenge.progressPercent, 100);
-  const isCompleted = challenge.isCompleted;
+const ChallengeItem: React.FC<{
+  challenge: ChallengeInfo;
+  /** Realtime today-commits count (Issue #188). When provided, overrides
+   *  the persisted `currentValue` for daily/commits challenges so a fresh
+   *  push reflects in the bar without waiting for the next sync.
+   */
+  liveTodayCommits?: number | null;
+  /** True when `liveTodayCommits` came from the backend's cache fallback
+   *  (network / rate-limit failure) rather than a fresh GitHub fetch.
+   *  We deliberately suppress the LIVE badge and the realtime override
+   *  in that case — cached data isn't actually realtime, and the
+   *  persisted `currentValue` is already at least as good as a stale
+   *  realtime snapshot.
+   */
+  liveFromCache?: boolean;
+  /** True when the most recent realtime fetch threw. `useCachedFetch` is
+   *  SWR-style: it keeps the previous successful `data` / `fromCache`
+   *  values when a revalidation fails, so without this flag a stale
+   *  count would continue to override `currentValue` and wear the LIVE
+   *  badge after the backend started rejecting our window. Treat any
+   *  error as "no realtime data" so the bar falls back to `currentValue`.
+   */
+  liveHasError?: boolean;
+}> = ({ challenge, liveTodayCommits, liveFromCache, liveHasError }) => {
+  // For daily commits challenges, prefer the realtime count when it's
+  // *higher* than the persisted current value. We never lower the bar:
+  // the realtime query scans the most recent N repos so it can under-count
+  // when a user pushed to an older repo, and the persisted sync should
+  // catch that on its next run. Picking the max keeps the UI monotonic.
+  const useRealtime =
+    challenge.challengeType === 'daily' &&
+    challenge.targetMetric === 'commits' &&
+    typeof liveTodayCommits === 'number' &&
+    !liveFromCache &&
+    !liveHasError;
+  const effectiveCurrent =
+    useRealtime
+      ? Math.max(liveTodayCommits as number, challenge.currentValue)
+      : challenge.currentValue;
+  const effectiveProgress =
+    challenge.targetValue > 0
+      ? Math.min((effectiveCurrent / challenge.targetValue) * 100, 100)
+      : challenge.progressPercent;
+  const progress = Math.min(effectiveProgress, 100);
+  const isCompleted = challenge.isCompleted || effectiveCurrent >= challenge.targetValue;
   const isExpired = challenge.isExpired;
 
   // Determine colors based on status
@@ -95,10 +144,18 @@ const ChallengeItem: React.FC<{ challenge: ChallengeInfo }> = ({ challenge }) =>
         {/* Progress text */}
         <div className="flex items-baseline justify-between">
           <span className="text-2xl font-bold text-gm-text-primary">
-            {challenge.currentValue}
+            {effectiveCurrent}
             <span className="text-sm text-gm-text-secondary font-normal">
               {' '}/ {challenge.targetValue}
             </span>
+            {useRealtime && (
+              <span
+                className="ml-2 text-[10px] font-medium uppercase tracking-wider text-gm-accent-cyan"
+                title="GitHubから直接取得した今日のコミット数（各リポジトリのデフォルトブランチのみ）"
+              >
+                LIVE
+              </span>
+            )}
           </span>
           <span className="text-sm font-medium text-gm-accent-gold">+{challenge.rewardXp} XP</span>
         </div>
@@ -149,6 +206,7 @@ const ChallengeSkeleton: React.FC = () => {
 
 export const ChallengeCard: React.FC = () => {
   const isOnline = useNetworkStatus((s) => s.isOnline);
+  const isLoggedIn = useAuth((s) => s.state.isLoggedIn);
   const [challenges, setChallenges] = useState<ChallengeInfo[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -170,10 +228,42 @@ export const ChallengeCard: React.FC = () => {
     fetchChallenges();
   }, [fetchChallenges]);
 
+  // Realtime today's commit count — only fetched when there is at least one
+  // active daily/commits challenge to render. Avoids spending a GraphQL
+  // request on users without that challenge type.
+  const hasDailyCommitsChallenge = useMemo(
+    () =>
+      (challenges ?? []).some(
+        (c) =>
+          c.challengeType === 'daily' &&
+          c.targetMetric === 'commits' &&
+          !c.isExpired,
+      ),
+    [challenges],
+  );
+  const todayCommitsQuery = useCachedFetch(github.getTodayCommitsWithCache, {
+    enabled: isLoggedIn && hasDailyCommitsChallenge,
+    staleTime: TODAY_COMMITS_STALE_TIME_MS,
+  });
+  const liveTodayCommits = todayCommitsQuery.data?.count ?? null;
+  // `fromCache` is true when the backend served the cache-fallback
+  // payload (network / rate-limit failure). That data isn't fresh, so
+  // we don't want to claim LIVE or use it to override `currentValue`.
+  const liveFromCache = todayCommitsQuery.fromCache;
+  // `useCachedFetch` keeps the previous successful `data` on revalidation
+  // failure (SWR semantics). Surface the error flag so the UI suppresses
+  // the realtime path until a successful fetch lands — otherwise a
+  // backend-rejected stale-cache window or a transient error would
+  // continue presenting the old count as LIVE.
+  const liveHasError = todayCommitsQuery.error !== null;
+
   // Reload challenges function - only works when online
   const reloadChallenges = async () => {
     if (!isOnline) return;
     fetchChallenges();
+    // Also kick the realtime today-commits query so the LIVE badge isn't
+    // strictly tied to its own focus / staleTime cycle.
+    void todayCommitsQuery.revalidate();
   };
 
   return (
@@ -224,7 +314,13 @@ export const ChallengeCard: React.FC = () => {
           {challenges && challenges.length > 0 ? (
             <div className="space-y-3">
               {challenges.map((challenge) => (
-                <ChallengeItem key={`${challenge.challengeType}-${challenge.targetMetric}`} challenge={challenge} />
+                <ChallengeItem
+                  key={`${challenge.challengeType}-${challenge.targetMetric}`}
+                  challenge={challenge}
+                  liveTodayCommits={liveTodayCommits}
+                  liveFromCache={liveFromCache}
+                  liveHasError={liveHasError}
+                />
               ))}
             </div>
           ) : (

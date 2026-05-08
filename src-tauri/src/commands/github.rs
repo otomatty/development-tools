@@ -1563,3 +1563,184 @@ pub async fn cleanup_expired_cache(state: State<'_, AppState>) -> Result<u64, St
 
     Ok(deleted)
 }
+
+// ============================================================================
+// Today's Commits realtime command (Issue #188 — G-01)
+// ============================================================================
+
+/// Cap on repositories scanned per `get_today_commits_with_cache` call.
+///
+/// 30 covers the realistic "active in the last week or two" window for
+/// most users while keeping the GraphQL cost low (the query is `O(repos)`
+/// in the new lightweight form, not `O(repos × commits)`). Users with
+/// more than 30 active repos in a single day are vanishingly rare.
+const TODAY_COMMITS_MAX_REPOS: i32 = 30;
+
+/// Realtime "今日のコミット数" with a 3-minute SQLite cache.
+///
+/// `contributionCalendar` lags by minutes-to-tens-of-minutes which makes
+/// the gamification today-quest UI feel stale right after a push. This
+/// thin GraphQL `history(since:) { totalCount }` query is the latency
+/// escape hatch — see Issue #188.
+///
+/// Behaviour mirrors the other `*_with_cache` commands:
+/// - Success → refresh cache, return `from_cache: false`.
+/// - Network / rate-limit error → fall back to last cached payload (any
+///   age), else surface the error.
+/// - 401 → trigger the central auth-expired flow.
+#[command]
+pub async fn get_today_commits_with_cache(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<crate::github::types::TodayCommitsSummary>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    // Anchor the realtime window to the active daily commits challenge's
+    // `start_date` when one exists. The backend computes progress as
+    // `total_metric - start_stats.metric` (`run_github_sync` in this
+    // file), so counting commits made before the challenge was created
+    // would inflate the LIVE bar above what the backend will ever award.
+    // Falls back to UTC midnight when no daily/commits challenge is
+    // active, which keeps the command useful outside the gamification
+    // path.
+    //
+    // Filter on `end_date > now` because `get_active_challenges` only
+    // checks `status = 'active'` — when the app is open across a UTC
+    // midnight rollover, yesterday's daily/commits row can still be
+    // `active` until `fail_expired_challenges` sweeps it. Without this
+    // filter we'd pick yesterday's `start_date` as `since` and count
+    // commits from the wrong window.
+    //
+    // Surface DB errors instead of silently treating them as "no active
+    // challenge". A swallowed error would reset `since` to UTC midnight
+    // even when a daily challenge is genuinely in progress, producing
+    // the exact LIVE-vs-backend mismatch this anchoring is meant to
+    // prevent. The frontend falls back to the persisted `currentValue`
+    // when the realtime query errors, so the user just loses the LIVE
+    // badge — never sees an inflated bar.
+    let now = chrono::Utc::now();
+    let challenge_start = state
+        .db
+        .get_active_challenges(user.id)
+        .await
+        .map_err(|e| format!("Failed to load active challenges: {}", e))?
+        .into_iter()
+        .find(|c| c.challenge_type == "daily" && c.target_metric == "commits" && c.end_date > now)
+        .map(|c| c.start_date);
+
+    let since_dt = challenge_start.unwrap_or_else(|| {
+        now.date_naive()
+            .and_hms_opt(0, 0, 0)
+            .expect("00:00:00 is always a valid time")
+            .and_utc()
+    });
+    // GitHub's `GitTimestamp` scalar accepts either `Z` or `+00:00`;
+    // RFC3339 is the safer round-trip format because `challenge.start_date`
+    // is also stored as RFC3339 in `challenges.start_date`.
+    let since = since_dt.to_rfc3339();
+
+    let api_result = async {
+        let token = state
+            .token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| GitHubError::ApiError(e.to_string()))?;
+        let client = GitHubClient::new(token);
+        client
+            .get_today_commits(&user.username, &since, TODAY_COMMITS_MAX_REPOS)
+            .await
+    }
+    .await;
+
+    match api_result {
+        Ok(summary) => {
+            let payload_json = serde_json::to_string(&summary)
+                .map_err(|e| format!("Failed to serialize today commits: {}", e))?;
+
+            let expires_at =
+                now + chrono::Duration::minutes(crate::database::cache_durations::TODAY_COMMITS);
+
+            let _ = state
+                .db
+                .save_cache(
+                    user.id,
+                    cache_types::TODAY_COMMITS,
+                    &payload_json,
+                    expires_at,
+                )
+                .await;
+
+            Ok(CachedResponse {
+                data: summary,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Err(GitHubError::Unauthorized) => {
+            handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+            Err(GitHubError::Unauthorized.to_string())
+        }
+        Err(api_error) => {
+            if !is_network_error(&api_error) {
+                return Err(format!("GitHub API error: {}", api_error));
+            }
+
+            eprintln!(
+                "Today commits fetch failed, attempting cache fallback: {}",
+                api_error
+            );
+
+            let cache_result = state
+                .db
+                .get_any_cache(user.id, cache_types::TODAY_COMMITS)
+                .await
+                .ok()
+                .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let summary: crate::github::types::TodayCommitsSummary =
+                        serde_json::from_str(&data_json)
+                            .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+
+                    // Reject the cache when its window doesn't align with
+                    // the one we'd request now. Compare against the full
+                    // timestamp rather than the calendar date because
+                    // daily challenges start at `now` (not midnight), so
+                    // a same-day challenge regeneration shifts `since`
+                    // forward without changing the date — a date-only
+                    // check would let the older, wider cache window
+                    // through and inflate progress. Parsed-DateTime
+                    // equality is also resilient to `Z` ↔ `+00:00`
+                    // formatting differences.
+                    let cached_since = chrono::DateTime::parse_from_rfc3339(&summary.since)
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .ok();
+                    if cached_since != Some(since_dt) {
+                        return Err(format!(
+                            "GitHub APIにアクセスできず、キャッシュも現在の集計窓と一致しません: {}",
+                            api_error
+                        ));
+                    }
+
+                    Ok(CachedResponse {
+                        data: summary,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!(
+                    "GitHub APIにアクセスできず、キャッシュもありません: {}",
+                    api_error
+                )),
+            }
+        }
+    }
+}
