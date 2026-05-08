@@ -44,7 +44,15 @@ const ChallengeItem: React.FC<{
    *  realtime snapshot.
    */
   liveFromCache?: boolean;
-}> = ({ challenge, liveTodayCommits, liveFromCache }) => {
+  /** True when the most recent realtime fetch threw. `useCachedFetch` is
+   *  SWR-style: it keeps the previous successful `data` / `fromCache`
+   *  values when a revalidation fails, so without this flag a stale
+   *  count would continue to override `currentValue` and wear the LIVE
+   *  badge after the backend started rejecting our window. Treat any
+   *  error as "no realtime data" so the bar falls back to `currentValue`.
+   */
+  liveHasError?: boolean;
+}> = ({ challenge, liveTodayCommits, liveFromCache, liveHasError }) => {
   // For daily commits challenges, prefer the realtime count when it's
   // *higher* than the persisted current value. We never lower the bar:
   // the realtime query scans the most recent N repos so it can under-count
@@ -54,7 +62,8 @@ const ChallengeItem: React.FC<{
     challenge.challengeType === 'daily' &&
     challenge.targetMetric === 'commits' &&
     typeof liveTodayCommits === 'number' &&
-    !liveFromCache;
+    !liveFromCache &&
+    !liveHasError;
   const effectiveCurrent =
     useRealtime
       ? Math.max(liveTodayCommits as number, challenge.currentValue)
@@ -241,6 +250,12 @@ export const ChallengeCard: React.FC = () => {
   // payload (network / rate-limit failure). That data isn't fresh, so
   // we don't want to claim LIVE or use it to override `currentValue`.
   const liveFromCache = todayCommitsQuery.fromCache;
+  // `useCachedFetch` keeps the previous successful `data` on revalidation
+  // failure (SWR semantics). Surface the error flag so the UI suppresses
+  // the realtime path until a successful fetch lands — otherwise a
+  // backend-rejected stale-cache window or a transient error would
+  // continue presenting the old count as LIVE.
+  const liveHasError = todayCommitsQuery.error !== null;
 
   // Reload challenges function - only works when online
   const reloadChallenges = async () => {
@@ -304,6 +319,7 @@ export const ChallengeCard: React.FC = () => {
                   challenge={challenge}
                   liveTodayCommits={liveTodayCommits}
                   liveFromCache={liveFromCache}
+                  liveHasError={liveHasError}
                 />
               ))}
             </div>
