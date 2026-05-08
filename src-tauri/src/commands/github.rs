@@ -1608,6 +1608,14 @@ pub async fn get_today_commits_with_cache(
     // Falls back to UTC midnight when no daily/commits challenge is
     // active, which keeps the command useful outside the gamification
     // path.
+    //
+    // Filter on `end_date > now` because `get_active_challenges` only
+    // checks `status = 'active'` — when the app is open across a UTC
+    // midnight rollover, yesterday's daily/commits row can still be
+    // `active` until `fail_expired_challenges` sweeps it. Without this
+    // filter we'd pick yesterday's `start_date` as `since` and count
+    // commits from the wrong window.
+    let now = chrono::Utc::now();
     let challenge_start = state
         .db
         .get_active_challenges(user.id)
@@ -1615,11 +1623,12 @@ pub async fn get_today_commits_with_cache(
         .ok()
         .and_then(|chs| {
             chs.into_iter()
-                .find(|c| c.challenge_type == "daily" && c.target_metric == "commits")
+                .find(|c| {
+                    c.challenge_type == "daily" && c.target_metric == "commits" && c.end_date > now
+                })
                 .map(|c| c.start_date)
         });
 
-    let now = chrono::Utc::now();
     let since_dt = challenge_start.unwrap_or_else(|| {
         now.date_naive()
             .and_hms_opt(0, 0, 0)
