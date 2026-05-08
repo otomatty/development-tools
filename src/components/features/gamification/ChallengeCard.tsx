@@ -36,7 +36,15 @@ const ChallengeItem: React.FC<{
    *  push reflects in the bar without waiting for the next sync.
    */
   liveTodayCommits?: number | null;
-}> = ({ challenge, liveTodayCommits }) => {
+  /** True when `liveTodayCommits` came from the backend's cache fallback
+   *  (network / rate-limit failure) rather than a fresh GitHub fetch.
+   *  We deliberately suppress the LIVE badge and the realtime override
+   *  in that case — cached data isn't actually realtime, and the
+   *  persisted `currentValue` is already at least as good as a stale
+   *  realtime snapshot.
+   */
+  liveFromCache?: boolean;
+}> = ({ challenge, liveTodayCommits, liveFromCache }) => {
   // For daily commits challenges, prefer the realtime count when it's
   // *higher* than the persisted current value. We never lower the bar:
   // the realtime query scans the most recent N repos so it can under-count
@@ -45,7 +53,8 @@ const ChallengeItem: React.FC<{
   const useRealtime =
     challenge.challengeType === 'daily' &&
     challenge.targetMetric === 'commits' &&
-    typeof liveTodayCommits === 'number';
+    typeof liveTodayCommits === 'number' &&
+    !liveFromCache;
   const effectiveCurrent =
     useRealtime
       ? Math.max(liveTodayCommits as number, challenge.currentValue)
@@ -228,6 +237,10 @@ export const ChallengeCard: React.FC = () => {
     staleTime: TODAY_COMMITS_STALE_TIME_MS,
   });
   const liveTodayCommits = todayCommitsQuery.data?.count ?? null;
+  // `fromCache` is true when the backend served the cache-fallback
+  // payload (network / rate-limit failure). That data isn't fresh, so
+  // we don't want to claim LIVE or use it to override `currentValue`.
+  const liveFromCache = todayCommitsQuery.fromCache;
 
   // Reload challenges function - only works when online
   const reloadChallenges = async () => {
@@ -290,6 +303,7 @@ export const ChallengeCard: React.FC = () => {
                   key={`${challenge.challengeType}-${challenge.targetMetric}`}
                   challenge={challenge}
                   liveTodayCommits={liveTodayCommits}
+                  liveFromCache={liveFromCache}
                 />
               ))}
             </div>
