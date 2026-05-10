@@ -28,6 +28,7 @@ import type {
   KanbanBoard,
   MyOpenWork,
   PrProgress,
+  SyncAllProjectsResult,
   LevelInfo,
   Badge,
   BadgeDefinition,
@@ -236,6 +237,16 @@ export const repositories = {
    */
   link: (project_id: number, owner: string, repo: string): Promise<Project> =>
     invoke<Project>('link_repository', { project_id, owner, repo }),
+
+  /**
+   * Re-link an archived project to a (possibly different) repository.
+   *
+   * Functionally equivalent to `link` — the dedicated verb makes the user
+   * intent explicit in logs / analytics and lets the backend evolve the
+   * archive cleanup later without changing the UI surface. Issue #190.
+   */
+  relink: (project_id: number, owner: string, repo: string): Promise<Project> =>
+    invoke<Project>('relink_repository', { project_id, owner, repo }),
 };
 
 export const issues = {
@@ -246,10 +257,25 @@ export const issues = {
     invoke<string>('setup_github_actions', { project_id }),
 
   /**
-   * Sync issues from GitHub to local cache
+   * Sync issues from GitHub to local cache.
+   *
+   * If the linked repository returns 404 (deleted / renamed) the project
+   * is silently archived and the (now stale) cached issues are returned
+   * instead of throwing — see Issue #190. Inspect `Project.isArchived` to
+   * detect the transition.
    */
   syncProjectIssues: (project_id: number): Promise<CachedIssue[]> =>
     invoke<CachedIssue[]>('sync_project_issues', { project_id }),
+
+  /**
+   * Sync every linked, non-archived project for the current user.
+   *
+   * Per-project failures are reported in the response payload rather than
+   * aborting the whole run, so a single deleted repository does not block
+   * the rest of the sync. Issue #190.
+   */
+  syncAllProjects: (): Promise<SyncAllProjectsResult> =>
+    invoke<SyncAllProjectsResult>('sync_all_projects'),
 
   /**
    * Get cached issues for a project

@@ -205,8 +205,26 @@ pub struct Project {
     #[sqlx(rename = "is_actions_setup")]
     pub is_actions_setup: bool,
     pub last_synced_at: Option<String>,
+    /// True when the linked GitHub repository can no longer be reached
+    /// (deleted / renamed). Set by `sync_project_issues` on 404 so the
+    /// rest of the sync run can continue and the UI can offer re-link
+    /// or delete actions. See Issue #190.
+    #[serde(default)]
+    pub is_archived: bool,
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    /// Short tag describing why the project was archived
+    /// (currently only `"repository_gone"`).
+    #[serde(default)]
+    pub archived_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Archive reason tags persisted to `projects.archived_reason`.
+pub mod archive_reasons {
+    /// Linked GitHub repository returned 404 — deleted or renamed away.
+    pub const REPOSITORY_GONE: &str = "repository_gone";
 }
 
 /// Project with additional info for display
@@ -259,6 +277,14 @@ pub struct CachedIssue {
     pub github_created_at: Option<String>,
     pub github_updated_at: Option<String>,
     pub cached_at: String,
+    /// True when the parent project's repository disappeared from GitHub.
+    /// Issues stay in cache (not deleted) so the UI can keep history
+    /// readable; the flag lets the kanban board dim or hide them.
+    /// See Issue #190.
+    #[serde(default)]
+    pub is_archived: bool,
+    #[serde(default)]
+    pub archived_at: Option<String>,
 }
 
 impl CachedIssue {
@@ -481,6 +507,8 @@ mod tests {
                 github_created_at: None,
                 github_updated_at: None,
                 cached_at: "2025-01-01".to_string(),
+                is_archived: false,
+                archived_at: None,
             },
             CachedIssue {
                 id: 2,
@@ -499,6 +527,8 @@ mod tests {
                 github_created_at: None,
                 github_updated_at: None,
                 cached_at: "2025-01-01".to_string(),
+                is_archived: false,
+                archived_at: None,
             },
         ];
 

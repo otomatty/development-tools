@@ -40,7 +40,9 @@ pub async fn get_projects(state: State<'_, AppState>) -> Result<Vec<ProjectWithS
     let projects: Vec<Project> = sqlx::query_as(
         r#"
         SELECT id, user_id, name, description, github_repo_id, repo_owner, repo_name,
-               repo_full_name, is_actions_setup, last_synced_at, created_at, updated_at
+               repo_full_name, is_actions_setup, last_synced_at,
+               COALESCE(is_archived, 0) AS is_archived, archived_at, archived_reason,
+               created_at, updated_at
         FROM projects
         WHERE user_id = ?
         ORDER BY updated_at DESC
@@ -86,7 +88,9 @@ pub async fn get_project(state: State<'_, AppState>, project_id: i64) -> Result<
     sqlx::query_as(
         r#"
         SELECT id, user_id, name, description, github_repo_id, repo_owner, repo_name,
-               repo_full_name, is_actions_setup, last_synced_at, created_at, updated_at
+               repo_full_name, is_actions_setup, last_synced_at,
+               COALESCE(is_archived, 0) AS is_archived, archived_at, archived_reason,
+               created_at, updated_at
         FROM projects
         WHERE id = ? AND user_id = ?
         "#,
@@ -235,11 +239,19 @@ pub async fn link_repository(
     let now = Utc::now().to_rfc3339();
     let full_name = format!("{}/{}", owner, repo);
 
-    // Update project with repository info
+    // Update project with repository info. Clearing the archive flags here
+    // doubles as the re-link flow for previously orphaned projects (Issue
+    // #190): the user picks a new owner / repo and the project rejoins
+    // the active sync set without going through a separate "unarchive"
+    // dance. Cached issues remain marked archived until the next
+    // successful sync rebinds them — keeping them dimmed in the UI is
+    // safer than silently switching them to a new repository's identity.
     sqlx::query(
         r#"
         UPDATE projects
-        SET github_repo_id = ?, repo_owner = ?, repo_name = ?, repo_full_name = ?, updated_at = ?
+        SET github_repo_id = ?, repo_owner = ?, repo_name = ?, repo_full_name = ?,
+            is_archived = 0, archived_at = NULL, archived_reason = NULL,
+            updated_at = ?
         WHERE id = ? AND user_id = ?
         "#,
     )
@@ -295,7 +307,65 @@ Repository: {}/{}
     ))
 }
 
+/// Mark a project as archived because GitHub returned 404 for its linked
+/// repository. Idempotent — running twice on the same project is a no-op
+/// (the `COALESCE(archived_at, ?)` preserves the original timestamp).
+///
+/// The cached_issues are flagged but kept (not deleted) so the user can
+/// still browse the historical kanban board after a repo deletion.
+/// `delete_project` remains the explicit physical-delete path.
+///
+/// Takes the pool directly (rather than `State<AppState>`) so unit tests
+/// can exercise it against `Database::in_memory()` without spinning up a
+/// full Tauri runtime.
+pub(crate) async fn mark_project_repository_gone(
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+    project_id: i64,
+    user_id: i64,
+    now: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        r#"
+        UPDATE projects
+        SET is_archived = 1,
+            archived_at = COALESCE(archived_at, ?),
+            archived_reason = ?,
+            updated_at = ?
+        WHERE id = ? AND user_id = ?
+        "#,
+    )
+    .bind(now)
+    .bind(crate::database::models::project::archive_reasons::REPOSITORY_GONE)
+    .bind(now)
+    .bind(project_id)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to archive project: {}", e))?;
+
+    sqlx::query(
+        r#"
+        UPDATE cached_issues
+        SET is_archived = 1,
+            archived_at = COALESCE(archived_at, ?)
+        WHERE project_id = ?
+        "#,
+    )
+    .bind(now)
+    .bind(project_id)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to archive cached issues: {}", e))?;
+
+    Ok(())
+}
+
 /// Sync issues from GitHub to local cache
+///
+/// Behaviour for a 404 from the linked repository (Issue #190): the project
+/// is marked archived and the command returns the (now-stale) cache instead
+/// of bubbling a hard error. This keeps `sync_all_projects` and the
+/// scheduler running across every other project the user has linked.
 #[tauri::command]
 pub async fn sync_project_issues(
     app: AppHandle,
@@ -303,6 +373,7 @@ pub async fn sync_project_issues(
     project_id: i64,
 ) -> Result<Vec<CachedIssue>, String> {
     let project = get_project(state.clone(), project_id).await?;
+    let user_id = project.user_id;
 
     let owner = project.repo_owner.ok_or("Repository not linked")?;
     let repo = project.repo_name.ok_or("Repository not linked")?;
@@ -315,12 +386,23 @@ pub async fn sync_project_issues(
     let mut page = 1;
 
     loop {
-        let issues = map_github_result(
-            &app,
-            state.inner(),
-            client.get_issues(&owner, &repo, "all", 100, page).await,
-        )
-        .await?;
+        let result = client.get_issues(&owner, &repo, "all", 100, page).await;
+
+        // GitHub returns 404 either when the repo was hard-deleted or when
+        // it was renamed without a redirect we can follow. Both cases are
+        // permanent for this owner/repo pair: archive the project and
+        // surface the stale cache instead of stopping the scheduler.
+        if let Err(GitHubError::NotFound(_)) = &result {
+            let now = Utc::now().to_rfc3339();
+            mark_project_repository_gone(state.db.pool(), project_id, user_id, &now).await?;
+            eprintln!(
+                "Project {} ({}/{}) archived: repository returned 404",
+                project_id, owner, repo
+            );
+            return get_project_issues(state, project_id, None).await;
+        }
+
+        let issues = map_github_result(&app, state.inner(), result).await?;
 
         if issues.is_empty() {
             break;
@@ -350,14 +432,19 @@ pub async fn sync_project_issues(
             serde_json::to_string(&issue.labels.iter().map(|l| &l.name).collect::<Vec<_>>())
                 .unwrap_or_else(|_| "[]".to_string());
 
+        // `is_archived = 0` on conflict so a re-link followed by a successful
+        // sync rebinds historical rows back to the active set; otherwise
+        // they would stay dimmed in the kanban forever even though
+        // GitHub clearly returned them just now.
         sqlx::query(
             r#"
             INSERT INTO cached_issues (
                 project_id, github_issue_id, number, title, body, state, status, priority,
                 assignee_login, assignee_avatar_url, labels_json, html_url,
-                github_created_at, github_updated_at, cached_at
+                github_created_at, github_updated_at, cached_at,
+                is_archived, archived_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
             ON CONFLICT(project_id, github_issue_id) DO UPDATE SET
                 number = excluded.number,
                 title = excluded.title,
@@ -371,7 +458,9 @@ pub async fn sync_project_issues(
                 html_url = excluded.html_url,
                 github_created_at = excluded.github_created_at,
                 github_updated_at = excluded.github_updated_at,
-                cached_at = excluded.cached_at
+                cached_at = excluded.cached_at,
+                is_archived = 0,
+                archived_at = NULL
             "#,
         )
         .bind(project_id)
@@ -394,16 +483,133 @@ pub async fn sync_project_issues(
         .map_err(|e| format!("Failed to cache issue: {}", e))?;
     }
 
-    // Update last synced timestamp
-    sqlx::query("UPDATE projects SET last_synced_at = ?, updated_at = ? WHERE id = ?")
-        .bind(&now)
-        .bind(&now)
-        .bind(project_id)
-        .execute(state.db.pool())
-        .await
-        .map_err(|e| format!("Failed to update project: {}", e))?;
+    // Update last synced timestamp; reset archive flags so a project that
+    // was archived (e.g. transient 404 due to a private-repo permission
+    // glitch) automatically rejoins the active set as soon as the sync
+    // succeeds again.
+    sqlx::query(
+        r#"
+        UPDATE projects
+        SET last_synced_at = ?, updated_at = ?,
+            is_archived = 0, archived_at = NULL, archived_reason = NULL
+        WHERE id = ?
+        "#,
+    )
+    .bind(&now)
+    .bind(&now)
+    .bind(project_id)
+    .execute(state.db.pool())
+    .await
+    .map_err(|e| format!("Failed to update project: {}", e))?;
 
     get_project_issues(state, project_id, None).await
+}
+
+/// Sync all linked projects for the current user. Per-project failures are
+/// captured in the response so the caller can surface "3/5 synced; 2
+/// archived because the repository is gone" without losing the rows that
+/// did sync successfully. See Issue #190.
+#[tauri::command]
+pub async fn sync_all_projects(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SyncAllProjectsResult, String> {
+    let user_id = get_current_user_id(&state).await?;
+
+    // Only sync projects that are (a) linked to a repo and (b) not already
+    // archived. Skipping archived rows here is what makes the partial-sync
+    // promise hold: a previously-gone repo never wedges the loop again
+    // until the user explicitly re-links it.
+    let projects: Vec<Project> = sqlx::query_as(
+        r#"
+        SELECT id, user_id, name, description, github_repo_id, repo_owner, repo_name,
+               repo_full_name, is_actions_setup, last_synced_at,
+               COALESCE(is_archived, 0) AS is_archived, archived_at, archived_reason,
+               created_at, updated_at
+        FROM projects
+        WHERE user_id = ? AND repo_owner IS NOT NULL AND repo_name IS NOT NULL
+          AND COALESCE(is_archived, 0) = 0
+        ORDER BY last_synced_at ASC NULLS FIRST
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(state.db.pool())
+    .await
+    .map_err(|e| format!("Failed to enumerate projects: {}", e))?;
+
+    let mut synced: Vec<i64> = Vec::new();
+    let mut archived: Vec<i64> = Vec::new();
+    let mut failed: Vec<SyncFailure> = Vec::new();
+
+    for project in projects {
+        let project_id = project.id;
+        match sync_project_issues(app.clone(), state.clone(), project_id).await {
+            Ok(_) => {
+                // The project was archived inside `sync_project_issues` if
+                // the repository 404'd. Re-read so we report it under the
+                // right bucket — `sync_project_issues` returns Ok in that
+                // case to keep the Tauri ABI simple.
+                let archive_check: Option<(bool,)> = sqlx::query_as(
+                    "SELECT COALESCE(is_archived, 0) = 1 FROM projects WHERE id = ?",
+                )
+                .bind(project_id)
+                .fetch_optional(state.db.pool())
+                .await
+                .map_err(|e| format!("Failed to read archive flag: {}", e))?;
+                if archive_check.map(|(b,)| b).unwrap_or(false) {
+                    archived.push(project_id);
+                } else {
+                    synced.push(project_id);
+                }
+            }
+            Err(message) => {
+                failed.push(SyncFailure {
+                    project_id,
+                    message,
+                });
+            }
+        }
+    }
+
+    Ok(SyncAllProjectsResult {
+        synced,
+        archived,
+        failed,
+    })
+}
+
+/// Re-link an archived project to the same or a different repository.
+///
+/// This is a thin wrapper around `link_repository` that exists so the
+/// frontend can call a verb that matches the user-facing action ("Re-link")
+/// without shipping its own knowledge of the archive flag reset rules.
+#[tauri::command]
+pub async fn relink_repository(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: i64,
+    owner: String,
+    repo: String,
+) -> Result<Project, String> {
+    link_repository(app, state, project_id, owner, repo).await
+}
+
+/// Result payload for [`sync_all_projects`]: which projects synced, which
+/// were archived because the repository disappeared, and which surfaced an
+/// unrelated error.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncAllProjectsResult {
+    pub synced: Vec<i64>,
+    pub archived: Vec<i64>,
+    pub failed: Vec<SyncFailure>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncFailure {
+    pub project_id: i64,
+    pub message: String,
 }
 
 /// Get cached issues for a project
@@ -424,7 +630,8 @@ pub async fn get_project_issues(
             r#"
             SELECT id, project_id, github_issue_id, number, title, body, state, status, priority,
                    assignee_login, assignee_avatar_url, labels_json, html_url,
-                   github_created_at, github_updated_at, cached_at
+                   github_created_at, github_updated_at, cached_at,
+                   COALESCE(is_archived, 0) AS is_archived, archived_at
             FROM cached_issues
             WHERE project_id = ? AND status = ?
             ORDER BY number DESC
@@ -439,7 +646,8 @@ pub async fn get_project_issues(
             r#"
             SELECT id, project_id, github_issue_id, number, title, body, state, status, priority,
                    assignee_login, assignee_avatar_url, labels_json, html_url,
-                   github_created_at, github_updated_at, cached_at
+                   github_created_at, github_updated_at, cached_at,
+                   COALESCE(is_archived, 0) AS is_archived, archived_at
             FROM cached_issues
             WHERE project_id = ?
             ORDER BY number DESC
@@ -1223,5 +1431,212 @@ mod tests {
         assert!(!is_pr_progress_fallback_eligible(&GitHubError::ApiError(
             "Status 500: internal server error".into()
         )));
+    }
+
+    // ========================================================================
+    // Repository archive cleanup tests (Issue #190)
+    // ========================================================================
+
+    use crate::database::connection::Database;
+    use sqlx::Row;
+
+    /// Build a project + 2 cached_issues row for archive tests. Returns
+    /// `(user_id, project_id)`.
+    async fn seed_project_with_issues(
+        pool: &sqlx::Pool<sqlx::Sqlite>,
+        github_id: i64,
+        owner: &str,
+        repo: &str,
+    ) -> (i64, i64) {
+        let user_id: i64 = sqlx::query(
+            r#"
+            INSERT INTO users (github_id, username, access_token_encrypted)
+            VALUES (?, ?, 'enc')
+            RETURNING id
+            "#,
+        )
+        .bind(github_id)
+        .bind(format!("user{}", github_id))
+        .fetch_one(pool)
+        .await
+        .expect("seed user")
+        .get::<i64, _>("id");
+
+        let project_id: i64 = sqlx::query(
+            r#"
+            INSERT INTO projects (user_id, name, github_repo_id, repo_owner, repo_name, repo_full_name)
+            VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id
+            "#,
+        )
+        .bind(user_id)
+        .bind(format!("Project {}/{}", owner, repo))
+        .bind(github_id * 1000) // arbitrary github_repo_id
+        .bind(owner)
+        .bind(repo)
+        .bind(format!("{}/{}", owner, repo))
+        .fetch_one(pool)
+        .await
+        .expect("seed project")
+        .get::<i64, _>("id");
+
+        for n in 1..=2 {
+            sqlx::query(
+                r#"
+                INSERT INTO cached_issues (
+                    project_id, github_issue_id, number, title, state, status, cached_at
+                )
+                VALUES (?, ?, ?, ?, 'open', 'backlog', '2026-04-01T00:00:00Z')
+                "#,
+            )
+            .bind(project_id)
+            .bind(github_id * 10_000 + n)
+            .bind(n as i32)
+            .bind(format!("Test issue {}", n))
+            .execute(pool)
+            .await
+            .expect("seed issue");
+        }
+
+        (user_id, project_id)
+    }
+
+    async fn project_archive_state(
+        pool: &sqlx::Pool<sqlx::Sqlite>,
+        project_id: i64,
+    ) -> (bool, Option<String>, Option<String>) {
+        let row = sqlx::query(
+            r#"
+            SELECT COALESCE(is_archived, 0) AS is_archived,
+                   archived_at,
+                   archived_reason
+            FROM projects WHERE id = ?
+            "#,
+        )
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .expect("project archive state");
+        (
+            row.get::<i64, _>("is_archived") == 1,
+            row.get::<Option<String>, _>("archived_at"),
+            row.get::<Option<String>, _>("archived_reason"),
+        )
+    }
+
+    async fn issues_archive_count(pool: &sqlx::Pool<sqlx::Sqlite>, project_id: i64) -> (i64, i64) {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                CAST(SUM(CASE WHEN COALESCE(is_archived, 0) = 1 THEN 1 ELSE 0 END) AS INTEGER) AS archived,
+                CAST(COUNT(*) AS INTEGER) AS total
+            FROM cached_issues WHERE project_id = ?
+            "#,
+        )
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .expect("count archived issues");
+        (row.get("archived"), row.get("total"))
+    }
+
+    // The migration ran on a fresh in-memory DB must populate `is_archived`
+    // / `archived_at` / `archived_reason` on `projects`. Without this the
+    // archive flow never works for new installs.
+    #[tokio::test]
+    async fn migration_v13_adds_archive_columns_to_projects() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+        let (_user_id, project_id) = seed_project_with_issues(pool, 100, "octo", "alive").await;
+
+        // Defaults: not archived.
+        let (is_archived, archived_at, archived_reason) =
+            project_archive_state(pool, project_id).await;
+        assert!(!is_archived);
+        assert!(archived_at.is_none());
+        assert!(archived_reason.is_none());
+
+        // The cached_issues mirror columns must also exist with default 0.
+        let (archived, total) = issues_archive_count(pool, project_id).await;
+        assert_eq!(total, 2);
+        assert_eq!(archived, 0);
+    }
+
+    // The core path: a 404 observation flips both the project and its
+    // cached_issues into archived state without touching other projects'
+    // rows. This is the partial-sync invariant from Issue #190.
+    #[tokio::test]
+    async fn mark_project_repository_gone_archives_target_only() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+
+        let (user_a, project_a) = seed_project_with_issues(pool, 200, "octo", "deleted").await;
+        let (_user_b, project_b) = seed_project_with_issues(pool, 201, "octo", "alive").await;
+
+        let now = "2026-05-10T12:00:00Z";
+        mark_project_repository_gone(pool, project_a, user_a, now)
+            .await
+            .expect("archive");
+
+        // Target archived with the right reason and timestamp.
+        let (is_archived, archived_at, reason) = project_archive_state(pool, project_a).await;
+        assert!(is_archived);
+        assert_eq!(archived_at.as_deref(), Some(now));
+        assert_eq!(reason.as_deref(), Some("repository_gone"));
+
+        // Cached issues mirrored.
+        let (archived, total) = issues_archive_count(pool, project_a).await;
+        assert_eq!(archived, 2, "all issues for archived project flagged");
+        assert_eq!(total, 2);
+
+        // Other project untouched — this is the core partial-sync invariant.
+        let (is_archived_b, _, _) = project_archive_state(pool, project_b).await;
+        assert!(!is_archived_b);
+        let (archived_b, _) = issues_archive_count(pool, project_b).await;
+        assert_eq!(archived_b, 0);
+    }
+
+    // Idempotency: hitting the same 404 on the next sync must not bump the
+    // archived_at timestamp. Otherwise the UI would keep showing "archived
+    // just now" forever and analytics on "time-to-cleanup" would be
+    // meaningless.
+    #[tokio::test]
+    async fn mark_project_repository_gone_is_idempotent_on_archived_at() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+        let (user_id, project_id) = seed_project_with_issues(pool, 300, "octo", "deleted").await;
+
+        let first = "2026-05-10T12:00:00Z";
+        let second = "2026-05-11T15:30:00Z";
+        mark_project_repository_gone(pool, project_id, user_id, first)
+            .await
+            .expect("first archive");
+        mark_project_repository_gone(pool, project_id, user_id, second)
+            .await
+            .expect("second archive");
+
+        let (is_archived, archived_at, _) = project_archive_state(pool, project_id).await;
+        assert!(is_archived);
+        assert_eq!(
+            archived_at.as_deref(),
+            Some(first),
+            "archived_at must preserve first observation"
+        );
+    }
+
+    // The error type guards a structural distinction the rest of the
+    // codebase relies on: `RepositoryGone` is a permanent classification,
+    // not a transient one, so it must NOT be masked under the
+    // `is_network_or_rate_limit_error` cache-fallback umbrella. (Today the
+    // sync path uses `NotFound` directly, but the typed variant exists for
+    // future webhook-driven cleanups.)
+    #[test]
+    fn repository_gone_is_not_a_transient_error() {
+        assert!(!is_network_or_rate_limit_error(
+            &GitHubError::RepositoryGone("octo/deleted".into())
+        ));
+        assert!(!is_pr_progress_fallback_eligible(
+            &GitHubError::RepositoryGone("octo/deleted".into())
+        ));
     }
 }
