@@ -1896,11 +1896,13 @@ const LANGUAGE_BREAKDOWN_MAX_REPOS: i32 = 50;
 
 /// Lower-bound window for the per-repository commit history scan, in days.
 ///
-/// Mirrors `StatsPeriod::Quarter` so the bar chart can show a reasonable
-/// activity trail (90 days catches month-over-month drift) without
-/// inflating GraphQL cost — the heavy lifting is the language edges, not
-/// the commit history.
-const LANGUAGE_BREAKDOWN_DAYS: i64 = 90;
+/// 30 days fits inside `history(first: 100, ...)` for almost every realistic
+/// per-author commit cadence (≈3.3 commits/day before truncation kicks in),
+/// so the per-repo additions/deletions bars stay accurate without a
+/// pagination loop. A 90-day window would silently undercount high-activity
+/// repos — exactly the ones the chart is meant to surface — see Codex P2 on
+/// PR #216.
+const LANGUAGE_BREAKDOWN_DAYS: i64 = 30;
 
 /// Language / repository code-stat breakdown with a 24-hour SQLite cache.
 ///

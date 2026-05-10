@@ -255,13 +255,13 @@ const LanguagePie: React.FC<{ data: LanguageBreakdownResponse }> = ({ data }) =>
           >
             <span className="flex items-center gap-2 min-w-0">
               <span
-                className="inline-block w-3 h-3 rounded-sm flex-shrink-0"
+                className="inline-block w-3 h-3 rounded-sm shrink-0"
                 style={{ backgroundColor: languageColor(language, fallbackIndex) }}
                 aria-hidden="true"
               />
               <span className="truncate text-dt-text-main">{language.name}</span>
             </span>
-            <span className="text-dt-text-sub font-gaming-mono text-xs flex-shrink-0">
+            <span className="text-dt-text-sub font-gaming-mono text-xs shrink-0">
               {formatPercent(language.percentage)}
             </span>
           </li>
@@ -280,7 +280,7 @@ const RepositoryBars: React.FC<{ repositories: RepositoryCodeStats[] }> = ({ rep
   if (visible.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-sm text-dt-text-sub">
-        過去 90 日のコミット履歴に該当するリポジトリがありません
+        過去 30 日のコミット履歴に該当するリポジトリがありません
       </div>
     );
   }
@@ -288,7 +288,7 @@ const RepositoryBars: React.FC<{ repositories: RepositoryCodeStats[] }> = ({ rep
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between text-xs text-dt-text-sub">
-        <span>過去 90 日 — 上位 {visible.length} リポジトリ</span>
+        <span>過去 30 日 — 上位 {visible.length} リポジトリ</span>
         <span className="font-gaming-mono">+追加 / −削除</span>
       </div>
 
@@ -304,7 +304,7 @@ const RepositoryBars: React.FC<{ repositories: RepositoryCodeStats[] }> = ({ rep
                 <span className="flex items-center gap-2 min-w-0">
                   {repo.primaryLanguage && (
                     <span
-                      className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
                       style={{
                         backgroundColor:
                           repo.primaryLanguageColor ?? FALLBACK_COLORS[0],
