@@ -922,7 +922,8 @@ pub async fn update_issue_status(
         r#"
         SELECT id, project_id, github_issue_id, number, title, body, state, status, priority,
                assignee_login, assignee_avatar_url, labels_json, html_url,
-               github_created_at, github_updated_at, cached_at
+               github_created_at, github_updated_at, cached_at,
+               is_archived, archived_at
         FROM cached_issues
         WHERE project_id = ? AND number = ?
         "#,
@@ -1023,7 +1024,8 @@ pub async fn create_github_issue(
         r#"
         SELECT id, project_id, github_issue_id, number, title, body, state, status, priority,
                assignee_login, assignee_avatar_url, labels_json, html_url,
-               github_created_at, github_updated_at, cached_at
+               github_created_at, github_updated_at, cached_at,
+               is_archived, archived_at
         FROM cached_issues
         WHERE project_id = ? AND number = ?
         "#,

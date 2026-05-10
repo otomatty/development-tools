@@ -101,12 +101,13 @@ pub fn ProjectDashboardPage(
                     set_kanban.set(board);
 
                     // Refresh the project so `is_archived` etc. reflect
-                    // the new state for the banner / re-link button.
+                    // the new state for the banner / re-link button. The
+                    // refreshed `Project` carries the same archive
+                    // signal that `response.archived` does, so the UI
+                    // doesn't need a separate transient flag.
                     if let Ok(updated_project) = tauri_api::get_project(project_id).await {
                         set_project.set(Some(updated_project));
                     }
-
-                    let _ = response.archived;
                 }
                 Err(e) => {
                     set_error.set(Some(format!("Sync failed: {}", e)));
