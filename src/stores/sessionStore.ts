@@ -29,6 +29,52 @@ import { gamification } from '@/lib/tauri/commands';
 const STORAGE_KEY = 'development-tools.pomodoro.v2';
 const HISTORY_LIMIT = 200;
 
+/// `value` を `[min, max]` に丸めつつ整数化。`NaN` / 非数値は `fallback` に倒す。
+const clampInt = (value: unknown, min: number, max: number, fallback: number): number => {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+};
+
+/// 設定値を境界内に正規化する。`setConfig` だけでなく `localStorage` から
+/// 読み戻した値にも同じ処理を通すことで、不正値（0 / 負数 / NaN / v1 移行データ）
+/// が混じったまま起動して `remainingSeconds === NaN` や `longBreakInterval === 0`
+/// で long break 判定が壊れる事故を防ぐ。
+const clampConfig = (input: Partial<PomodoroConfig> | null | undefined): PomodoroConfig => {
+  const merged: PomodoroConfig = { ...DEFAULT_POMODORO_CONFIG, ...(input ?? {}) };
+  return {
+    focusMinutes: clampInt(merged.focusMinutes, 1, 180, DEFAULT_POMODORO_CONFIG.focusMinutes),
+    shortBreakMinutes: clampInt(
+      merged.shortBreakMinutes,
+      1,
+      60,
+      DEFAULT_POMODORO_CONFIG.shortBreakMinutes,
+    ),
+    longBreakMinutes: clampInt(
+      merged.longBreakMinutes,
+      1,
+      120,
+      DEFAULT_POMODORO_CONFIG.longBreakMinutes,
+    ),
+    longBreakInterval: clampInt(
+      merged.longBreakInterval,
+      1,
+      12,
+      DEFAULT_POMODORO_CONFIG.longBreakInterval,
+    ),
+    autoStartNext:
+      typeof merged.autoStartNext === 'boolean'
+        ? merged.autoStartNext
+        : DEFAULT_POMODORO_CONFIG.autoStartNext,
+    focusCompletionXp: clampInt(
+      merged.focusCompletionXp,
+      0,
+      1000,
+      DEFAULT_POMODORO_CONFIG.focusCompletionXp,
+    ),
+  };
+};
+
 interface PersistedState {
   config: PomodoroConfig;
   history: SessionRecord[];
@@ -69,7 +115,7 @@ const loadPersisted = (): PersistedState => {
       ? parsed.history.slice(0, HISTORY_LIMIT)
       : [];
     return {
-      config: { ...DEFAULT_POMODORO_CONFIG, ...(parsed.config ?? {}) },
+      config: clampConfig(parsed.config),
       history,
       cycleCount: typeof parsed.cycleCount === 'number' ? parsed.cycleCount : 0,
       // `history` is truncated at HISTORY_LIMIT, so once a user crosses
@@ -312,6 +358,7 @@ const applyFinalizeSideEffects = (
 ): void => {
   if (result.record.xpAwarded > 0) {
     const minutes = Math.max(1, Math.round(result.record.plannedDurationSeconds / 60));
+    const recordId = result.record.id;
     void gamification
       .addXp(
         result.record.xpAwarded,
@@ -323,7 +370,19 @@ const applyFinalizeSideEffects = (
         // next focus completion try again. Most likely cause is "Not logged
         // in" when the user hasn't authenticated with GitHub yet, which is a
         // legitimate state for someone using the timer in isolation.
+        //
+        // Roll back the `xpAwarded` figure on the persisted history record
+        // so the SessionHistory list doesn't claim XP that the SQLite side
+        // never received. The toast that already flashed is best-effort
+        // optimistic UI; the durable record now matches reality.
         console.warn('[sessionStore] addXp failed:', err);
+        const live = useSession.getState();
+        const idx = live.history.findIndex((r) => r.id === recordId);
+        if (idx === -1 || live.history[idx].xpAwarded === 0) return;
+        const corrected = [...live.history];
+        corrected[idx] = { ...corrected[idx], xpAwarded: 0 };
+        useSession.setState({ history: corrected });
+        persistAll();
       });
   }
 
@@ -403,7 +462,19 @@ export const useSession = create<SessionStoreState>((set, get) => ({
   resume: () => {
     const state = get();
     if (state.status !== 'paused') return;
-    const seconds = Math.max(1, state.remainingSeconds);
+    // A paused session whose remaining time already hit zero (e.g. user
+    // paused literally on the last tick, or `pause()` ran after the
+    // planned time was reached) shouldn't be artificially extended by
+    // a second when resumed. Route it through the same finalize path
+    // `tick()` uses by flipping to running with `endsAt = now` and
+    // dispatching one tick — that grants the XP and advances the phase
+    // immediately instead of giving the user one more second of credit.
+    if (state.remainingSeconds <= 0) {
+      set({ status: 'running', endsAt: Date.now(), remainingSeconds: 0 });
+      get().tick();
+      return;
+    }
+    const seconds = state.remainingSeconds;
     set({
       status: 'running',
       endsAt: Date.now() + seconds * 1000,
@@ -488,13 +559,10 @@ export const useSession = create<SessionStoreState>((set, get) => ({
   },
 
   setConfig: (patch) => {
-    const next: PomodoroConfig = { ...get().config, ...patch };
-    // Clamp to sane ranges so a fat-fingered 0 doesn't lock the timer.
-    next.focusMinutes = Math.max(1, Math.min(180, Math.floor(next.focusMinutes)));
-    next.shortBreakMinutes = Math.max(1, Math.min(60, Math.floor(next.shortBreakMinutes)));
-    next.longBreakMinutes = Math.max(1, Math.min(120, Math.floor(next.longBreakMinutes)));
-    next.longBreakInterval = Math.max(1, Math.min(12, Math.floor(next.longBreakInterval)));
-    next.focusCompletionXp = Math.max(0, Math.min(1000, Math.floor(next.focusCompletionXp)));
+    // Same clamp pipeline used on the persistence-load path so a fat-fingered
+    // 0 / NaN can't lock the timer regardless of how the value got into the
+    // store.
+    const next = clampConfig({ ...get().config, ...patch });
     set({ config: next });
 
     // If we're idle and the phase duration changed, refresh the displayed
