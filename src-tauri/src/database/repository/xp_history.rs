@@ -202,6 +202,13 @@ impl Database {
     }
 
     /// Get recent XP history
+    ///
+    /// `ORDER BY datetime(created_at) DESC` (rather than the raw column)
+    /// keeps the timeline chronologically correct for users who have a
+    /// mix of legacy `YYYY-MM-DD HH:MM:SS` rows (pre-Issue #194) and new
+    /// RFC3339 rows. A lexicographic sort on the raw text would place
+    /// every legacy row before every RFC3339 row of the same instant
+    /// because `' ' < 'T'` ASCII-wise.
     pub async fn get_recent_xp_history(
         &self,
         user_id: i64,
@@ -212,7 +219,7 @@ impl Database {
             SELECT id, user_id, action_type, xp_amount, description, github_event_id, breakdown_json, created_at, source
             FROM xp_history
             WHERE user_id = ?
-            ORDER BY created_at DESC
+            ORDER BY datetime(created_at) DESC
             LIMIT ?
             "#,
         )

@@ -738,6 +738,54 @@ async fn test_get_xp_total_in_range_filters_by_source_and_window() {
     assert_eq!(past_window_total, 0);
 }
 
+/// Regression for PR #217 P2 review: `get_recent_xp_history` must order
+/// rows by the canonical instant, not by the raw text. A lexicographic
+/// compare across the two on-disk formats puts every legacy row
+/// (`YYYY-MM-DD HH:MM:SS`) before every RFC3339 row of the same instant
+/// because `' ' < 'T'` — which would scramble the timeline around the
+/// migration day for users carrying pre-Issue #194 rows.
+#[tokio::test]
+async fn test_get_recent_xp_history_orders_mixed_timestamp_formats() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Older legacy-format row (one hour earlier).
+    sqlx::query(
+        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
+         VALUES (?, 'github_sync', 10, 'live', '2025-12-01 09:00:00')",
+    )
+    .bind(user.id)
+    .execute(db.pool())
+    .await
+    .expect("Insert legacy row");
+    // Newer RFC3339 row (one hour later). Lexicographically the legacy
+    // string sorts *before* the RFC3339 string for the same wall time,
+    // so without `datetime()` normalisation this row would be returned
+    // *second* even though it is the most recent.
+    sqlx::query(
+        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
+         VALUES (?, 'github_sync', 20, 'live', '2025-12-01T10:00:00+00:00')",
+    )
+    .bind(user.id)
+    .execute(db.pool())
+    .await
+    .expect("Insert RFC3339 row");
+
+    let history = db
+        .get_recent_xp_history(user.id, 10)
+        .await
+        .expect("Should fetch history");
+    assert_eq!(history.len(), 2);
+    assert_eq!(
+        history[0].xp_amount, 20,
+        "newest row (RFC3339, 10:00) must come first"
+    );
+    assert_eq!(history[1].xp_amount, 10);
+}
+
 /// Regression for PR #217 P1 review: comparing RFC3339 `since` against
 /// legacy `YYYY-MM-DD HH:MM:SS` `created_at` values must not drop rows.
 ///
