@@ -12,6 +12,27 @@ use crate::database::{
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
 use crate::utils::notifications::send_notification;
 
+/// Saturating, sign-safe difference between two cumulative i32 counters.
+///
+/// `XpBreakdown::calculate` requires `u64`. Cumulative counters in
+/// `GitHubStats` are stored as `i32` and should never go negative in
+/// practice — but if the GitHub API ever returns one (or a count
+/// regresses, e.g. a star is lost) we want the XP delta to clamp to 0,
+/// not panic or wrap. This is the single helper both the diff and the
+/// "first sync" branches funnel through.
+fn diff_count(current: i32, previous: i32) -> u64 {
+    clamp_to_u64(current).saturating_sub(clamp_to_u64(previous))
+}
+
+/// Clamp a possibly-negative `i32` count to a `u64` (negative → 0).
+fn clamp_to_u64(value: i32) -> u64 {
+    if value < 0 {
+        0
+    } else {
+        value as u64
+    }
+}
+
 /// Get GitHub user profile
 #[command]
 pub async fn get_github_user(
@@ -219,7 +240,7 @@ pub async fn sync_github_stats(
 /// Concurrency: this function takes `state.sync_lock` for the duration of the
 /// run so a manual "sync now" cannot race a scheduler-driven sync. Without
 /// the lock, both invocations would read the same pre-sync snapshot via
-/// `get_previous_github_stats` and each apply the diff independently,
+/// `get_latest_github_stats_snapshot` and each apply the diff independently,
 /// double-counting XP and badges.
 pub async fn run_github_sync(
     app: &tauri::AppHandle,
@@ -244,10 +265,13 @@ pub async fn run_github_sync(
     let github_stats =
         map_github_result(app, state, client.get_user_stats(&user.username).await).await?;
 
-    // Get previous stats for diff calculation
-    let previous_stats_json = state
+    // Single source of truth for "previous GitHub stats" — the most recent
+    // `github_stats_snapshots` row for this user (Issue #189). When the
+    // user has already synced earlier today, this returns *today's* row,
+    // so successive syncs in the same day don't double-count activity.
+    let previous_snapshot_for_xp = state
         .db
-        .get_previous_github_stats(user.id)
+        .get_latest_github_stats_snapshot(user.id)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -260,50 +284,46 @@ pub async fn run_github_sync(
         .map(|s| s.current_streak)
         .unwrap_or(0);
 
-    // Calculate diff and XP
-    let (xp_breakdown, xp_gained) = if let Some(prev_json) = previous_stats_json {
-        if let Ok(prev_stats) = serde_json::from_str::<GitHubStats>(&prev_json) {
+    // Calculate diff and XP. `XpBreakdown::calculate` takes `u64` so each
+    // diff is computed via `saturating_sub` — a regression in any
+    // cumulative metric (e.g. losing a star) clamps to 0 instead of
+    // turning into negative XP. (DoD: `XpBreakdown` の各フィールドが非負)
+    let (xp_breakdown, xp_gained) = match &previous_snapshot_for_xp {
+        Some(prev) => {
             let breakdown = xp::XpBreakdown::calculate(
-                github_stats.total_commits - prev_stats.total_commits,
-                github_stats.total_prs - prev_stats.total_prs,
-                github_stats.total_prs_merged - prev_stats.total_prs_merged,
-                github_stats.total_issues - prev_stats.total_issues,
-                github_stats.total_issues_closed - prev_stats.total_issues_closed,
-                github_stats.total_reviews - prev_stats.total_reviews,
-                github_stats.total_stars_received - prev_stats.total_stars_received,
-                current_streak,
-            );
-            let total = breakdown.total_xp;
-            (breakdown, total)
-        } else {
-            // First sync - calculate full XP
-            let breakdown = xp::XpBreakdown::calculate(
-                github_stats.total_commits,
-                github_stats.total_prs,
-                github_stats.total_prs_merged,
-                github_stats.total_issues,
-                github_stats.total_issues_closed,
-                github_stats.total_reviews,
-                github_stats.total_stars_received,
+                diff_count(github_stats.total_commits, prev.total_commits),
+                diff_count(github_stats.total_prs, prev.total_prs),
+                diff_count(github_stats.total_prs_merged, prev.total_prs_merged),
+                diff_count(github_stats.total_issues, prev.total_issues),
+                diff_count(github_stats.total_issues_closed, prev.total_issues_closed),
+                diff_count(github_stats.total_reviews, prev.total_reviews),
+                diff_count(
+                    github_stats.total_stars_received,
+                    prev.total_stars_received,
+                ),
                 current_streak,
             );
             let total = breakdown.total_xp;
             (breakdown, total)
         }
-    } else {
-        // First sync - calculate full XP (streak is 0 for initial sync)
-        let breakdown = xp::XpBreakdown::calculate(
-            github_stats.total_commits,
-            github_stats.total_prs,
-            github_stats.total_prs_merged,
-            github_stats.total_issues,
-            github_stats.total_issues_closed,
-            github_stats.total_reviews,
-            github_stats.total_stars_received,
-            0, // Initial sync has no streak bonus
-        );
-        let total = breakdown.total_xp;
-        (breakdown, total)
+        None => {
+            // No baseline — fresh user. Award XP for the full lifetime
+            // totals exactly like the old `previous_github_stats == None`
+            // branch did, with `streak = 0` (no bonus on the very first
+            // sync).
+            let breakdown = xp::XpBreakdown::calculate(
+                clamp_to_u64(github_stats.total_commits),
+                clamp_to_u64(github_stats.total_prs),
+                clamp_to_u64(github_stats.total_prs_merged),
+                clamp_to_u64(github_stats.total_issues),
+                clamp_to_u64(github_stats.total_issues_closed),
+                clamp_to_u64(github_stats.total_reviews),
+                clamp_to_u64(github_stats.total_stars_received),
+                0,
+            );
+            let total = breakdown.total_xp;
+            (breakdown, total)
+        }
     };
 
     // Get current stats for level comparison and streak update
@@ -437,19 +457,16 @@ pub async fn run_github_sync(
     let new_level = level::level_from_xp(updated_stats.total_xp);
     let level_up = new_level > old_level;
 
-    // Save current GitHub stats as previous for next diff
-    let stats_json = serde_json::to_string(&github_stats).map_err(|e| e.to_string())?;
-    state
-        .db
-        .save_previous_github_stats(user.id, &stats_json)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Also prime the activity cache so subsequent `get_github_stats_with_cache`
+    // Prime the activity cache so subsequent `get_github_stats_with_cache`
     // calls can serve the freshly-synced data without re-hitting the API. The
     // cache is best-effort: a write failure is logged but does not fail the
     // sync. (Audit §9.2: ensure non-fallback paths populate the cache too.)
+    //
+    // Note: the legacy `previous_github_stats` KV that used to live here
+    // was retired by Issue #189 — `github_stats_snapshots` is now the
+    // single source of truth for the XP-diff baseline.
     {
+        let stats_json = serde_json::to_string(&github_stats).map_err(|e| e.to_string())?;
         let now = chrono::Utc::now();
         let expires_at =
             now + chrono::Duration::minutes(crate::database::cache_durations::GITHUB_STATS);
@@ -802,10 +819,16 @@ pub async fn run_github_sync(
         eprintln!("Failed to check expired challenges: {}", e);
     }
 
-    // Save today's snapshot and calculate diff from previous day
+    // Save today's snapshot and calculate diff for the daily-comparison UI.
+    //
+    // After Issue #189, the snapshot also serves as the XP-diff baseline,
+    // but here we only need the *previous-day* row (for the "+5 commits
+    // vs yesterday" bubble). The XP baseline was already loaded above
+    // via `get_latest_github_stats_snapshot` (which may legitimately be
+    // today's row when the user already synced earlier today).
     let today = chrono::Utc::now().date_naive().to_string();
     let stats_diff = {
-        // Get previous snapshot for diff calculation
+        // Get previous-day snapshot for the daily-comparison display.
         let previous_snapshot = state
             .db
             .get_previous_github_stats_snapshot(user.id, &today)
@@ -817,14 +840,19 @@ pub async fn run_github_sync(
             user.id,
             github_stats.total_commits,
             github_stats.total_prs,
+            github_stats.total_prs_merged,
             github_stats.total_reviews,
             github_stats.total_issues,
+            github_stats.total_issues_closed,
             github_stats.total_stars_received,
             github_stats.total_contributions,
             &today,
         );
 
-        // Save current snapshot (UPSERT)
+        // Save current snapshot (UPSERT). Failure here is logged but does
+        // not fail the sync — the user-visible XP gain has already been
+        // persisted. The next sync will rebuild the baseline from
+        // whatever snapshot row remains.
         if let Err(e) = state.db.save_github_stats_snapshot(&current_snapshot).await {
             eprintln!("Failed to save github stats snapshot: {}", e);
         }

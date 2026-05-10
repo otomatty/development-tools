@@ -328,6 +328,53 @@ ALTER TABLE sync_metadata ADD COLUMN last_skipped_reason TEXT;
 ALTER TABLE sync_metadata ADD COLUMN scheduler_baseline_at DATETIME;
 "#,
     },
+    Migration {
+        version: 12,
+        name: "consolidate_previous_github_stats_into_snapshots",
+        sql: r#"
+-- Consolidate the two stores of "previous GitHub stats" into
+-- `github_stats_snapshots` so XP diffs and the daily-comparison UI share
+-- a single source of truth.
+-- Related Issue: GitHub Issue #189 / Audit §9.2
+--
+-- 1. Extend `github_stats_snapshots` so it can serve as the XP base — we
+--    need `total_prs_merged` and `total_issues_closed` to compute the
+--    same XP breakdown the legacy KV path produced.
+ALTER TABLE github_stats_snapshots ADD COLUMN total_prs_merged INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE github_stats_snapshots ADD COLUMN total_issues_closed INTEGER NOT NULL DEFAULT 0;
+
+-- 2. Backfill the new columns on each user's most-recent snapshot from the
+--    legacy `previous_github_stats` KV (JSON, camelCase keys). Without
+--    this step, the first post-migration sync would diff against
+--    `prs_merged = 0` / `issues_closed = 0` and award XP for every
+--    historical merged PR / closed issue — a level-spamming regression
+--    for active users. Older snapshots stay at the default 0 because they
+--    are only used when even more recent rows are absent, and the diff
+--    UI doesn't surface these two metrics anyway.
+UPDATE github_stats_snapshots
+SET total_prs_merged = COALESCE(
+        (SELECT CAST(json_extract(ac.data_json, '$.totalPrsMerged') AS INTEGER)
+         FROM activity_cache ac
+         WHERE ac.user_id = github_stats_snapshots.user_id
+           AND ac.data_type = 'previous_github_stats'),
+        total_prs_merged
+    ),
+    total_issues_closed = COALESCE(
+        (SELECT CAST(json_extract(ac.data_json, '$.totalIssuesClosed') AS INTEGER)
+         FROM activity_cache ac
+         WHERE ac.user_id = github_stats_snapshots.user_id
+           AND ac.data_type = 'previous_github_stats'),
+        total_issues_closed
+    )
+WHERE id IN (
+    SELECT MAX(id) FROM github_stats_snapshots GROUP BY user_id
+);
+
+-- 3. Drop the legacy `previous_github_stats` KV now that snapshots carry
+--    the same information.
+DELETE FROM activity_cache WHERE data_type = 'previous_github_stats';
+"#,
+    },
 ];
 
 /// Create the migrations tracking table
@@ -450,6 +497,119 @@ mod tests {
         assert!(tables.contains(&"activity_cache".to_string()));
         assert!(tables.contains(&"app_settings".to_string()));
         assert!(tables.contains(&"_migrations".to_string()));
+    }
+
+    /// Issue #189 / migration v12: when an existing user has both a
+    /// `previous_github_stats` KV and a `github_stats_snapshots` row at
+    /// the time the migration runs, the new `total_prs_merged` and
+    /// `total_issues_closed` columns must be backfilled from the KV's
+    /// JSON onto the user's most-recent snapshot — otherwise the next
+    /// sync would compute the diff against `0` and award a one-time XP
+    /// burst for every historical merged PR / closed issue.
+    ///
+    /// The test re-runs the v12 backfill+delete block (which is
+    /// idempotent) on a freshly migrated DB seeded with a v11-shape
+    /// snapshot (prs_merged=0, issues_closed=0) plus a legacy KV.
+    #[tokio::test]
+    async fn test_migration_v12_backfills_prs_merged_and_issues_closed() {
+        let pool = create_test_pool().await;
+        run_migrations(&pool)
+            .await
+            .expect("Migrations should run cleanly");
+
+        sqlx::query(
+            "INSERT INTO users (github_id, username, access_token_encrypted) VALUES (?, ?, ?)",
+        )
+        .bind(12345_i64)
+        .bind("testuser")
+        .bind("encrypted")
+        .execute(&pool)
+        .await
+        .expect("Should insert user");
+
+        sqlx::query(
+            r#"INSERT INTO github_stats_snapshots
+               (user_id, total_commits, total_prs, total_prs_merged, total_reviews,
+                total_issues, total_issues_closed, total_stars_received,
+                total_contributions, snapshot_date)
+               VALUES (1, 100, 20, 0, 30, 15, 0, 50, 200, '2025-11-30')"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Should insert pre-v12-shape snapshot");
+
+        sqlx::query(
+            r#"INSERT INTO activity_cache
+               (user_id, data_type, data_json, fetched_at, expires_at)
+               VALUES (1, 'previous_github_stats',
+                       '{"totalPrsMerged":12,"totalIssuesClosed":8}',
+                       '2025-11-30T00:00:00Z', '2125-11-30T00:00:00Z')"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Should insert legacy KV");
+
+        // Re-apply the v12 backfill+delete tail. Both statements are
+        // idempotent (UPDATE COALESCEs to current value when the
+        // subquery returns NULL; DELETE on an empty result set is a
+        // no-op), so this also proves the v12 SQL itself is safe to
+        // re-run accidentally.
+        sqlx::query(
+            r#"
+            UPDATE github_stats_snapshots
+            SET total_prs_merged = COALESCE(
+                    (SELECT CAST(json_extract(ac.data_json, '$.totalPrsMerged') AS INTEGER)
+                     FROM activity_cache ac
+                     WHERE ac.user_id = github_stats_snapshots.user_id
+                       AND ac.data_type = 'previous_github_stats'),
+                    total_prs_merged
+                ),
+                total_issues_closed = COALESCE(
+                    (SELECT CAST(json_extract(ac.data_json, '$.totalIssuesClosed') AS INTEGER)
+                     FROM activity_cache ac
+                     WHERE ac.user_id = github_stats_snapshots.user_id
+                       AND ac.data_type = 'previous_github_stats'),
+                    total_issues_closed
+                )
+            WHERE id IN (
+                SELECT MAX(id) FROM github_stats_snapshots GROUP BY user_id
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Backfill UPDATE should succeed");
+
+        sqlx::query("DELETE FROM activity_cache WHERE data_type = 'previous_github_stats'")
+            .execute(&pool)
+            .await
+            .expect("KV cleanup should succeed");
+
+        let (prs_merged, issues_closed): (i32, i32) = sqlx::query_as(
+            r#"SELECT total_prs_merged, total_issues_closed
+               FROM github_stats_snapshots
+               WHERE user_id = 1 AND snapshot_date = '2025-11-30'"#,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Snapshot should be queryable");
+
+        assert_eq!(
+            prs_merged, 12,
+            "total_prs_merged must be backfilled from the legacy KV"
+        );
+        assert_eq!(
+            issues_closed, 8,
+            "total_issues_closed must be backfilled from the legacy KV"
+        );
+
+        let kv_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM activity_cache WHERE data_type = 'previous_github_stats'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Should count remaining KV rows");
+        assert_eq!(kv_count, 0, "Legacy KV must be deleted");
     }
 
     #[tokio::test]

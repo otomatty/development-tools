@@ -11,8 +11,8 @@
 ## Related Documentation
 
 - 公式 XP 仕様: `docs/prd/home-gamification.md` §3.3.2 経験値（XP）テーブル
-- 監査レポート: `docs/02_research/2026_04/20260425_github_integration_audit.md` §6.1 / §8 G-14
-- GitHub Issue: #184
+- 監査レポート: `docs/02_research/2026_04/20260425_github_integration_audit.md` §6.1 / §8 G-14 / §9.2
+- GitHub Issue: #184（XP ルール固定化）, #189（`XpBreakdown::calculate` を `u64` 化し負値を排除）
 
 ## 責務
 
@@ -75,7 +75,10 @@ streak_bonus_xp = base_total * min(streak, STREAK_BONUS_CAP_DAYS) / 100
 - `XpActionType` — DB の `xp_history.action_type` 文字列にマッピングされる enum
 - `XpHistoryEntry` — 履歴 1 行のドメインモデル
 - `XpBreakdown` — sync 結果に含まれる XP 内訳
-  - `XpBreakdown::calculate(commits, prs_created, prs_merged, issues_created, issues_closed, reviews, stars, streak)` で生成
+  - `XpBreakdown::calculate(commits: u64, prs_created: u64, prs_merged: u64, issues_created: u64, issues_closed: u64, reviews: u64, stars: u64, streak: i32)` で生成
+  - 各カウント引数は **意味的に「非負の差分」**。Issue #189 で旧 `i32` から `u64` に変更し、`XpBreakdown` 内部に負値が残らないことを型レベルで保証する。
+  - 呼び出し側 (`run_github_sync`) は `u64::saturating_sub` で前回値からの差分を取り、累計値が同期間に減少したケース（例: スターを失う、repository 削除）でも 0 にクランプする。
+  - `streak` だけは `i32` のまま — 負値が混入しても内部で `0` にクランプされ `streak_bonus_xp = 0` になる。
 
 ## マイグレーション方針
 
@@ -91,6 +94,13 @@ streak_bonus_xp = base_total * min(streak, STREAK_BONUS_CAP_DAYS) / 100
   などの累計カウント** を参照しており、XP 値そのものには依存していない。
 - したがって、本変更によるバッジ獲得条件の動作変更はない。
 
+## 「前回値」の単一情報源 (SSoT)
+
+XP 算出は `github_stats_snapshots` の最新行（`get_latest_github_stats_snapshot`）から
+`u64::saturating_sub` で差分を取る。Issue #189 で旧 `previous_github_stats` KV を
+廃止し、本テーブルへ統合した。詳細は
+`src-tauri/src/database/models/github_stats_snapshot.spec.md` を参照。
+
 ## テスト観点
 
 - `tests::test_xp_constants_match_spec` — 定数値が仕様表と一致することを保証
@@ -98,4 +108,6 @@ streak_bonus_xp = base_total * min(streak, STREAK_BONUS_CAP_DAYS) / 100
 - `tests::test_breakdown_with_streak` — ストリーク 5 日のときのボーナス計算
 - `tests::test_breakdown_streak_capped_at_10_days` — ストリーク 10 日超でも 10 日でキャップ
 - `tests::test_breakdown_uses_constants_not_hardcoded` — `XpBreakdown::calculate` がハードコードでなく定数を参照することを保証
-- `tests::test_breakdown_saturates_on_overflow` — `i32::MAX` 入力でラップアラウンドせず `i32::MAX` に飽和することを保証
+- `tests::test_breakdown_saturates_on_overflow` — `u64::MAX` 相当の入力でラップアラウンドせず `i32::MAX` に飽和することを保証
+- `tests::test_breakdown_fields_are_non_negative` — `XpBreakdown` の全フィールドが非負であることを保証（Issue #189 / DoD）
+- `tests::test_breakdown_negative_streak_clamped_to_zero_bonus` — 負のストリークでも `streak_bonus_xp = 0` にクランプされ、負値にならないことを保証
