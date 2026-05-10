@@ -752,6 +752,190 @@ impl GitHubClient {
         Ok(result)
     }
 
+    /// Get the language / repository breakdown used by the dashboard
+    /// visualizations introduced in Issue #193 (G-11).
+    ///
+    /// A single GraphQL query fetches both the per-repository language
+    /// distribution (`languages(first: 10) { edges { size, node { name color } } }`)
+    /// and per-repository commit history with additions/deletions, so a
+    /// single API call drives both the language pie chart and the
+    /// repo-wise additions/deletions bars. Forks are excluded to match
+    /// `get_code_stats`'s coverage policy.
+    ///
+    /// # Arguments
+    /// * `username` - GitHub username
+    /// * `since` - ISO8601 timestamp lower bound for commit history (e.g.
+    ///   `"2026-04-10T00:00:00Z"`).
+    /// * `max_repos` - Cap on repositories to scan (1..=100). Orders by
+    ///   `PUSHED_AT DESC` so the cap drops cold repos first.
+    pub async fn get_language_breakdown(
+        &self,
+        username: &str,
+        since: &str,
+        max_repos: i32,
+    ) -> GitHubResult<LanguageBreakdownResponse> {
+        let capped = max_repos.clamp(1, 100);
+
+        let query = r#"
+            query($login: String!, $since: GitTimestamp!, $maxRepos: Int!) {
+                user(login: $login) {
+                    repositories(
+                        first: $maxRepos,
+                        isFork: false,
+                        ownerAffiliations: [OWNER, COLLABORATOR],
+                        orderBy: {field: PUSHED_AT, direction: DESC}
+                    ) {
+                        nodes {
+                            nameWithOwner
+                            url
+                            languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
+                                edges {
+                                    size
+                                    node {
+                                        name
+                                        color
+                                    }
+                                }
+                            }
+                            defaultBranchRef {
+                                target {
+                                    ... on Commit {
+                                        history(first: 100, since: $since) {
+                                            nodes {
+                                                additions
+                                                deletions
+                                                committedDate
+                                                oid
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                rateLimit {
+                    limit
+                    cost
+                    remaining
+                    resetAt
+                }
+            }
+        "#;
+
+        let variables = serde_json::json!({
+            "login": username,
+            "since": since,
+            "maxRepos": capped,
+        });
+
+        let response: LanguageBreakdownQueryResponse =
+            self.graphql(query, Some(variables)).await?;
+
+        let mut language_totals: std::collections::HashMap<String, (i64, Option<String>)> =
+            std::collections::HashMap::new();
+        let mut repositories: Vec<RepositoryCodeStats> = Vec::new();
+        let mut repositories_scanned: i32 = 0;
+
+        if let Some(user) = response.user {
+            for repo in user.repositories.nodes {
+                repositories_scanned += 1;
+
+                // Aggregate language sizes across all repositories.
+                let mut primary_language: Option<String> = None;
+                let mut primary_language_color: Option<String> = None;
+                let mut primary_language_size: i64 = 0;
+
+                if let Some(langs) = &repo.languages {
+                    for edge in &langs.edges {
+                        let entry = language_totals
+                            .entry(edge.node.name.clone())
+                            .or_insert_with(|| (0, edge.node.color.clone()));
+                        entry.0 += edge.size;
+                        if entry.1.is_none() && edge.node.color.is_some() {
+                            entry.1 = edge.node.color.clone();
+                        }
+
+                        if edge.size > primary_language_size {
+                            primary_language_size = edge.size;
+                            primary_language = Some(edge.node.name.clone());
+                            primary_language_color = edge.node.color.clone();
+                        }
+                    }
+                }
+
+                // Aggregate per-repository commit totals over the window.
+                let mut additions: i32 = 0;
+                let mut deletions: i32 = 0;
+                let mut commits_count: i32 = 0;
+
+                if let Some(branch_ref) = repo.default_branch_ref {
+                    if let Some(target) = branch_ref.target {
+                        if let Some(history) = target.history {
+                            for commit in history.nodes {
+                                additions += commit.additions;
+                                deletions += commit.deletions;
+                                commits_count += 1;
+                            }
+                        }
+                    }
+                }
+
+                if commits_count > 0 || primary_language.is_some() {
+                    repositories.push(RepositoryCodeStats {
+                        name_with_owner: repo.name_with_owner,
+                        url: repo.url,
+                        additions,
+                        deletions,
+                        commits_count,
+                        primary_language,
+                        primary_language_color,
+                    });
+                }
+            }
+        }
+
+        // Sort repositories by total churn (additions + deletions) descending
+        // so the bar chart leads with the most active repos. Repos with no
+        // commits in the window but a known primary language fall to the
+        // bottom — they're useful context, not the headline.
+        repositories.sort_by(|a, b| {
+            (b.additions + b.deletions)
+                .cmp(&(a.additions + a.deletions))
+                .then_with(|| b.commits_count.cmp(&a.commits_count))
+        });
+
+        let total_bytes: i64 = language_totals.values().map(|(size, _)| *size).sum();
+
+        let mut languages: Vec<LanguageStats> = language_totals
+            .into_iter()
+            .map(|(name, (bytes, color))| {
+                let percentage = if total_bytes > 0 {
+                    bytes as f32 / total_bytes as f32
+                } else {
+                    0.0
+                };
+                LanguageStats {
+                    name,
+                    color,
+                    bytes,
+                    percentage,
+                }
+            })
+            .collect();
+
+        // Largest language first for the pie / legend ordering.
+        languages.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+
+        Ok(LanguageBreakdownResponse {
+            languages,
+            repositories,
+            total_bytes,
+            since: since.to_string(),
+            repositories_scanned,
+        })
+    }
+
     /// Get total commits authored by the user since `since` across their
     /// `max_repos` most recently pushed repositories.
     ///

@@ -12,5 +12,6 @@ export { StatsDisplay } from './StatsDisplay';
 export { ChallengeCard } from './ChallengeCard';
 export { BadgeGrid } from './BadgeGrid';
 export { ContributionGraph } from './ContributionGraph';
+export { LanguageBreakdownCard } from './LanguageBreakdownCard';
 export { XpNotification } from './XpNotification';
 export { DashboardContent } from './DashboardContent';

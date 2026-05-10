@@ -1882,3 +1882,128 @@ pub async fn get_today_commits_with_cache(
         }
     }
 }
+
+// ============================================================================
+// Language / Repository Breakdown command (Issue #193 — G-11)
+// ============================================================================
+
+/// Cap on repositories scanned per `get_language_breakdown_with_cache` call.
+///
+/// 50 keeps the GraphQL cost bounded (history + languages edges per repo)
+/// while covering substantially all of a developer's actively-pushed work
+/// — `PUSHED_AT DESC` ordering means the cap drops cold repos first.
+const LANGUAGE_BREAKDOWN_MAX_REPOS: i32 = 50;
+
+/// Lower-bound window for the per-repository commit history scan, in days.
+///
+/// Mirrors `StatsPeriod::Quarter` so the bar chart can show a reasonable
+/// activity trail (90 days catches month-over-month drift) without
+/// inflating GraphQL cost — the heavy lifting is the language edges, not
+/// the commit history.
+const LANGUAGE_BREAKDOWN_DAYS: i64 = 90;
+
+/// Language / repository code-stat breakdown with a 24-hour SQLite cache.
+///
+/// Backs the dashboard panel introduced in Issue #193 — language pie + per-
+/// repository additions/deletions bars. A single GraphQL query drives both
+/// visualizations to keep rate-limit pressure low; behaviour mirrors the
+/// other `*_with_cache` commands so the SWR-style frontend hook can render
+/// the previously-cached payload while a refresh is in flight.
+#[command]
+pub async fn get_language_breakdown_with_cache(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<CachedResponse<crate::github::types::LanguageBreakdownResponse>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    let now = chrono::Utc::now();
+    let since_dt = now - chrono::Duration::days(LANGUAGE_BREAKDOWN_DAYS);
+    let since = since_dt.to_rfc3339();
+
+    let api_result = async {
+        let token = state
+            .token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| GitHubError::ApiError(e.to_string()))?;
+        let client = GitHubClient::new(token);
+        client
+            .get_language_breakdown(&user.username, &since, LANGUAGE_BREAKDOWN_MAX_REPOS)
+            .await
+    }
+    .await;
+
+    match api_result {
+        Ok(payload) => {
+            let payload_json = serde_json::to_string(&payload)
+                .map_err(|e| format!("Failed to serialize language breakdown: {}", e))?;
+
+            let expires_at = now
+                + chrono::Duration::minutes(
+                    crate::database::cache_durations::LANGUAGE_BREAKDOWN,
+                );
+
+            let _ = state
+                .db
+                .save_cache(
+                    user.id,
+                    cache_types::LANGUAGE_BREAKDOWN,
+                    &payload_json,
+                    expires_at,
+                )
+                .await;
+
+            Ok(CachedResponse {
+                data: payload,
+                from_cache: false,
+                cached_at: Some(now.to_rfc3339()),
+                expires_at: Some(expires_at.to_rfc3339()),
+            })
+        }
+        Err(GitHubError::Unauthorized) => {
+            handle_unauthorized(&app, state.inner(), reasons::GITHUB_UNAUTHORIZED).await;
+            Err(GitHubError::Unauthorized.to_string())
+        }
+        Err(api_error) => {
+            if !is_network_error(&api_error) {
+                return Err(format!("GitHub API error: {}", api_error));
+            }
+
+            eprintln!(
+                "Language breakdown fetch failed, attempting cache fallback: {}",
+                api_error
+            );
+
+            let cache_result = state
+                .db
+                .get_any_cache(user.id, cache_types::LANGUAGE_BREAKDOWN)
+                .await
+                .ok()
+                .flatten();
+
+            match cache_result {
+                Some((data_json, cached_at, expires_at)) => {
+                    let payload: crate::github::types::LanguageBreakdownResponse =
+                        serde_json::from_str(&data_json)
+                            .map_err(|e| format!("Failed to parse cached data: {}", e))?;
+
+                    Ok(CachedResponse {
+                        data: payload,
+                        from_cache: true,
+                        cached_at: Some(cached_at),
+                        expires_at: Some(expires_at),
+                    })
+                }
+                None => Err(format!(
+                    "GitHub APIにアクセスできず、キャッシュもありません: {}",
+                    api_error
+                )),
+            }
+        }
+    }
+}

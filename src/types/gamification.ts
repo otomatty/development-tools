@@ -394,6 +394,49 @@ export interface CodeStatsSyncResult {
   rateLimit: RateLimitInfo | null;
 }
 
+/// 言語別コード統計（Issue #193）
+export interface LanguageStats {
+  /// 言語名（例: "TypeScript"）
+  name: string;
+  /// GitHub linguist が提供するカラーコード（例: "#3178c6"）
+  color: string | null;
+  /// 走査したリポジトリ全体での累積バイト数
+  bytes: number;
+  /// 全体に占める割合（0.0〜1.0）
+  percentage: number;
+}
+
+/// リポジトリ別コード統計（Issue #193）
+export interface RepositoryCodeStats {
+  /// `owner/repo` 形式の完全名
+  nameWithOwner: string;
+  /// リポジトリの URL
+  url: string | null;
+  /// 集計期間中の追加行数
+  additions: number;
+  /// 集計期間中の削除行数
+  deletions: number;
+  /// 集計期間中のコミット数
+  commitsCount: number;
+  /// プライマリ言語（バイト数最大の言語）
+  primaryLanguage: string | null;
+  primaryLanguageColor: string | null;
+}
+
+/// 言語別／リポジトリ別の集計レスポンス（Issue #193 — G-11）
+export interface LanguageBreakdownResponse {
+  /// バイト数降順で並んだ言語別統計
+  languages: LanguageStats[];
+  /// 追加・削除の合計が大きい順に並んだリポジトリ別統計
+  repositories: RepositoryCodeStats[];
+  /// 全言語のバイト数合計
+  totalBytes: number;
+  /// 集計期間の開始 ISO8601 タイムスタンプ
+  since: string;
+  /// 走査したリポジトリ数
+  repositoriesScanned: number;
+}
+
 /// 純増減行数を取得
 export function netChange(stats: DailyCodeStats): number {
   return stats.additions - stats.deletions;

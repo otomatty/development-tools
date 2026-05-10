@@ -67,6 +67,8 @@ use commands::{
     get_sync_intervals,
     // Realtime "today's commits" command (Issue #188)
     get_today_commits_with_cache,
+    // Language / repository breakdown command (Issue #193)
+    get_language_breakdown_with_cache,
     get_user_repositories,
     get_user_stats,
     get_user_stats_with_cache,
@@ -213,6 +215,8 @@ pub fn run() {
             get_rate_limit_info,
             // Realtime "today's commits" command (Issue #188)
             get_today_commits_with_cache,
+            // Language / repository breakdown command (Issue #193)
+            get_language_breakdown_with_cache,
             // Gamification commands
             get_level_info,
             add_xp,
