@@ -90,28 +90,23 @@ pub fn ProjectDashboardPage(
             match tauri_api::sync_project_issues(project_id).await {
                 Ok(response) => {
                     // Rebuild kanban from synced issues. When the project
-                    // was just archived (404 from GitHub), `issues` is the
-                    // last-known cache so the user still sees what was
-                    // there — but we surface the archive transition as
-                    // an actionable error so the banner / re-link UI is
-                    // visible. Without this signal, a deleted repository
-                    // would look like a successful sync with stale data
-                    // (Issue #190 / PR #213 review feedback).
+                    // was just archived (404 from GitHub), `issues` is
+                    // the last-known cache so the user still sees what
+                    // was there — the archive banner / re-link button
+                    // are surfaced via the project's `is_archived`
+                    // flag below, so we don't need a transient error
+                    // message for the same condition. Issue #190 /
+                    // PR #213 review feedback.
                     let board = KanbanBoardType::from_issues(response.issues);
                     set_kanban.set(board);
 
                     // Refresh the project so `is_archived` etc. reflect
-                    // the new state for the badge / banner UI.
+                    // the new state for the banner / re-link button.
                     if let Ok(updated_project) = tauri_api::get_project(project_id).await {
                         set_project.set(Some(updated_project));
                     }
 
-                    if response.archived {
-                        set_error.set(Some(
-                            "リンクされた GitHub リポジトリが見つかりません（削除またはリネーム済み）。再リンクするか、プロジェクトを削除してください。"
-                                .to_string(),
-                        ));
-                    }
+                    let _ = response.archived;
                 }
                 Err(e) => {
                     set_error.set(Some(format!("Sync failed: {}", e)));
@@ -238,8 +233,25 @@ pub fn ProjectDashboardPage(
                             </button>
                         </Show>
 
-                        // Setup Actions button (if linked but not setup)
-                        <Show when=move || project.get().map(|p| p.is_linked() && !p.is_actions_setup).unwrap_or(false)>
+                        // Re-link button (when archived because the repo is
+                        // gone). The plain "Link Repository" branch above is
+                        // gated by `!is_linked()` and stays hidden for archived
+                        // projects (their `github_repo_id` is still set), so
+                        // without this dedicated button users would have no
+                        // path to recover other than retrying sync forever or
+                        // deleting the project. PR #213 review feedback.
+                        <Show when=move || project.get().map(|p| p.is_archived).unwrap_or(false)>
+                            <button
+                                class="flex items-center gap-2 px-3 py-1.5 text-sm text-amber-400 border border-amber-400/50 hover:bg-amber-400/10 rounded-lg transition-colors"
+                                on:click=move |_| set_show_link_modal.set(true)
+                            >
+                                <Icon name="link".to_string() class="w-4 h-4".to_string() />
+                                <span>"Re-link Repository"</span>
+                            </button>
+                        </Show>
+
+                        // Setup Actions button (if linked but not setup, and not archived)
+                        <Show when=move || project.get().map(|p| p.is_linked() && !p.is_actions_setup && !p.is_archived).unwrap_or(false)>
                             <button
                                 class="flex items-center gap-2 px-3 py-1.5 text-sm text-yellow-400 border border-yellow-400/50 hover:bg-yellow-400/10 rounded-lg transition-colors"
                                 on:click=setup_actions
@@ -249,8 +261,10 @@ pub fn ProjectDashboardPage(
                             </button>
                         </Show>
 
-                        // Sync button (if linked)
-                        <Show when=move || project.get().map(|p| p.is_linked()).unwrap_or(false)>
+                        // Sync button (if linked and not archived). Disabling
+                        // on archive avoids the user grinding the sync button
+                        // against a repo that is gone — re-link first.
+                        <Show when=move || project.get().map(|p| p.is_linked() && !p.is_archived).unwrap_or(false)>
                             <button
                                 class="flex items-center gap-2 px-3 py-1.5 text-sm text-dt-text-sub hover:text-dt-text border border-slate-700 hover:border-gm-accent-cyan rounded-lg transition-colors disabled:opacity-50"
                                 disabled=move || syncing.get()
@@ -269,8 +283,9 @@ pub fn ProjectDashboardPage(
                             </button>
                         </Show>
 
-                        // Create issue button
-                        <Show when=move || project.get().map(|p| p.is_linked()).unwrap_or(false)>
+                        // Create issue button (only when linked and not archived —
+                        // creating new issues against a gone repo would 404)
+                        <Show when=move || project.get().map(|p| p.is_linked() && !p.is_archived).unwrap_or(false)>
                             <button
                                 class="flex items-center gap-2 px-3 py-1.5 text-sm bg-gradient-to-r from-gm-accent-cyan to-gm-accent-purple text-white rounded-lg hover:opacity-90 transition-opacity"
                                 on:click=move |_| set_show_create_issue_modal.set(true)
@@ -281,6 +296,28 @@ pub fn ProjectDashboardPage(
                         </Show>
                     </div>
                 </div>
+
+                // Archived banner: shown for projects whose linked
+                // repository disappeared from GitHub. Persistent (no
+                // dismiss) because the underlying state — broken
+                // sync — hasn't been resolved until the user re-links
+                // or deletes. The action button below mirrors the
+                // header "Re-link Repository" so users see a clear
+                // recovery path even if they scroll past the header.
+                <Show when=move || project.get().map(|p| p.is_archived).unwrap_or(false)>
+                    <div class="mt-3 p-3 bg-amber-500/10 border border-amber-500/40 rounded-lg flex items-center justify-between gap-3 text-sm">
+                        <div class="text-amber-300">
+                            <strong>"このプロジェクトはアーカイブ状態です。"</strong>
+                            " リンクされた GitHub リポジトリが見つかりません（削除またはリネーム済み）。再リンクするか、プロジェクトを削除してください。"
+                        </div>
+                        <button
+                            class="shrink-0 px-3 py-1.5 text-sm bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/60 text-amber-200 rounded-lg transition-colors"
+                            on:click=move |_| set_show_link_modal.set(true)
+                        >
+                            "Re-link"
+                        </button>
+                    </div>
+                </Show>
 
                 // Error message
                 <Show when=move || error.get().is_some()>

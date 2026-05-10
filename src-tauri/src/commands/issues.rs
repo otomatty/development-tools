@@ -28,8 +28,10 @@ use crate::commands::AppState;
 use crate::database::models::project::{
     CachedIssue, IssueStatus, KanbanBoard, Project, ProjectWithStats, RepositoryInfo,
 };
-use crate::github::client::GitHubError;
-use crate::github::issues::{generate_actions_template, GitHubSearchItem, IssuesClient};
+use crate::github::client::{GitHubError, GitHubResult};
+use crate::github::issues::{
+    generate_actions_template, GitHubRepository, GitHubSearchItem, IssuesClient,
+};
 use crate::github::{GitHubClient, PrProgress};
 
 /// Get all projects for the current user
@@ -385,6 +387,51 @@ pub(crate) enum ProjectSyncOutcome {
     Archived,
 }
 
+/// Result of confirming whether a 404 from the issues endpoint really
+/// means the linked repository was deleted (vs. a token-scope problem
+/// or a transient GitHub issue). See `confirm_repository_gone`.
+#[derive(Debug)]
+pub(crate) enum RepositoryGoneCheck {
+    /// `/repos/{owner}/{repo}` also returned 404 — repo is gone.
+    Confirmed,
+    /// `/repos/{owner}/{repo}` succeeded — the repo exists, so the
+    /// issues 404 was caused by something else (most likely a missing
+    /// token scope). Do *not* archive on this signal.
+    RepoExists,
+    /// `/repos/{owner}/{repo}` returned an error other than 404 (rate
+    /// limit, network glitch, 5xx, …). Treat as transient: don't mutate
+    /// archive state, surface the original error so a retry can clear
+    /// it.
+    Indeterminate(GitHubError),
+}
+
+/// Pure classifier for the `/repos/{owner}/{repo}` probe response.
+/// Split out from [`confirm_repository_gone`] so unit tests can cover the
+/// branch logic without spinning up an HTTP mock.
+pub(crate) fn classify_repository_probe(
+    probe: GitHubResult<GitHubRepository>,
+) -> RepositoryGoneCheck {
+    match probe {
+        Err(GitHubError::NotFound(_)) => RepositoryGoneCheck::Confirmed,
+        Ok(_) => RepositoryGoneCheck::RepoExists,
+        Err(err) => RepositoryGoneCheck::Indeterminate(err),
+    }
+}
+
+/// Probe the canonical `/repos/{owner}/{repo}` endpoint to distinguish
+/// a permanent repository deletion from a transient or permission-only
+/// 404 on the issues endpoint. Issuing one extra REST call is cheap
+/// next to the cost of a wrong archive: a false-positive archive
+/// silently drops the project out of `sync_all_projects` until the
+/// user manually re-links it.
+pub(crate) async fn confirm_repository_gone(
+    client: &IssuesClient,
+    owner: &str,
+    repo: &str,
+) -> RepositoryGoneCheck {
+    classify_repository_probe(client.get_repository(owner, repo).await)
+}
+
 /// Internal sync helper that returns the structural outcome alongside the
 /// cached issues. Keeping this separate from the Tauri command lets
 /// `sync_all_projects` learn whether a project just transitioned to
@@ -412,18 +459,49 @@ async fn sync_project_issues_inner(
     loop {
         let result = client.get_issues(&owner, &repo, "all", 100, page).await;
 
-        // GitHub returns 404 either when the repo was hard-deleted or when
-        // it was renamed without a redirect we can follow. Both cases are
-        // permanent for this owner/repo pair: archive the project and
-        // surface the stale cache instead of stopping the scheduler.
+        // A 404 on `/repos/{owner}/{repo}/issues` is *not* by itself a
+        // reliable "repository was deleted" signal — the same status code
+        // also surfaces for permission / scope problems (e.g. token lost
+        // `issues:read`, or the repo became private and the user lost
+        // access). Archiving on the issues 404 alone risks a false
+        // positive that would, combined with `sync_all_projects`'s
+        // `is_archived = 0` filter, take a healthy project out of the
+        // sync rotation indefinitely. Confirm the deletion against the
+        // canonical `/repos/{owner}/{repo}` endpoint before mutating
+        // state — see PR #213 review (chatgpt-codex P2).
         if let Err(GitHubError::NotFound(_)) = &result {
-            let now = Utc::now().to_rfc3339();
-            mark_project_repository_gone(state.db.pool(), project_id, user_id, &now).await?;
-            eprintln!(
-                "Project {} ({}/{}) archived: repository returned 404",
-                project_id, owner, repo
-            );
-            return Ok(ProjectSyncOutcome::Archived);
+            match confirm_repository_gone(&client, &owner, &repo).await {
+                RepositoryGoneCheck::Confirmed => {
+                    let now = Utc::now().to_rfc3339();
+                    mark_project_repository_gone(state.db.pool(), project_id, user_id, &now)
+                        .await?;
+                    eprintln!(
+                        "Project {} ({}/{}) archived: repository returned 404 (confirmed via /repos)",
+                        project_id, owner, repo
+                    );
+                    return Ok(ProjectSyncOutcome::Archived);
+                }
+                RepositoryGoneCheck::RepoExists => {
+                    // Repo is reachable but issues are not — almost always
+                    // a token-scope issue. Don't archive; surface the
+                    // mismatch so the user can fix their token instead
+                    // of having the project quietly disappear.
+                    return Err(format!(
+                        "リポジトリ {}/{} は存在しますが、Issues エンドポイントが 404 を返しました。\
+                         GitHub トークンの `issues:read` 権限を確認してください。",
+                        owner, repo
+                    ));
+                }
+                RepositoryGoneCheck::Indeterminate(err) => {
+                    // Confirmation itself failed (network blip, rate
+                    // limit, etc.). Defer to the original error path so
+                    // we don't mutate state on shaky evidence — the
+                    // next sync run will retry both calls.
+                    return map_github_result::<()>(app, state.inner(), Err(err))
+                        .await
+                        .map(|_| ProjectSyncOutcome::Synced);
+                }
+            }
         }
 
         let issues = map_github_result(app, state.inner(), result).await?;
@@ -1688,6 +1766,78 @@ mod tests {
         ));
         assert!(!is_pr_progress_fallback_eligible(
             &GitHubError::RepositoryGone("octo/deleted".into())
+        ));
+    }
+
+    // PR #213 review feedback (chatgpt-codex P2): a 404 on the issues
+    // endpoint by itself is not a reliable deletion signal — token
+    // scope problems and private-repo access loss surface the same
+    // status code. The classifier must:
+    //   - Confirm only when `/repos/{owner}/{repo}` *also* 404s.
+    //   - Refuse to archive when the repo probe succeeds (token /
+    //     scope issue, not a deletion).
+    //   - Defer state changes for any other error class (rate limit,
+    //     network, 5xx, …) so the next sync run can retry.
+    fn make_repo_fixture() -> GitHubRepository {
+        use crate::github::issues::GitHubOwner;
+        GitHubRepository {
+            id: 1,
+            name: "alive".into(),
+            full_name: "octo/alive".into(),
+            private: false,
+            description: None,
+            html_url: "https://github.com/octo/alive".into(),
+            open_issues_count: 0,
+            owner: GitHubOwner {
+                login: "octo".into(),
+                id: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn classify_repository_probe_confirms_on_404() {
+        let probe: GitHubResult<GitHubRepository> =
+            Err(GitHubError::NotFound("/repos/octo/x".into()));
+        assert!(matches!(
+            classify_repository_probe(probe),
+            RepositoryGoneCheck::Confirmed
+        ));
+    }
+
+    #[test]
+    fn classify_repository_probe_refuses_archive_when_repo_exists() {
+        // Issues endpoint 404 + repo endpoint 200 → almost always a
+        // token-scope issue (e.g. missing `issues:read`). Archiving
+        // here would take a healthy project out of sync rotation
+        // until the user manually re-links.
+        let probe: GitHubResult<GitHubRepository> = Ok(make_repo_fixture());
+        assert!(matches!(
+            classify_repository_probe(probe),
+            RepositoryGoneCheck::RepoExists
+        ));
+    }
+
+    #[test]
+    fn classify_repository_probe_defers_on_other_errors() {
+        // Rate limits, network blips, 5xx etc. must NOT trigger archive.
+        let probe: GitHubResult<GitHubRepository> = Err(GitHubError::RateLimited(0));
+        assert!(matches!(
+            classify_repository_probe(probe),
+            RepositoryGoneCheck::Indeterminate(GitHubError::RateLimited(_))
+        ));
+
+        let probe: GitHubResult<GitHubRepository> =
+            Err(GitHubError::ApiError("Status 500: down".into()));
+        assert!(matches!(
+            classify_repository_probe(probe),
+            RepositoryGoneCheck::Indeterminate(GitHubError::ApiError(_))
+        ));
+
+        let probe: GitHubResult<GitHubRepository> = Err(GitHubError::Unauthorized);
+        assert!(matches!(
+            classify_repository_probe(probe),
+            RepositoryGoneCheck::Indeterminate(GitHubError::Unauthorized)
         ));
     }
 
