@@ -624,6 +624,139 @@ async fn test_update_github_aggregates_preserves_xp_and_streak() {
     assert_eq!(after.last_activity_date, before.last_activity_date);
 }
 
+// ---------------------------------------------------------------------------
+// Issue #194: xp_history.source coexistence (recalculation vs live entries).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_record_xp_gain_defaults_to_live_source() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    db.record_xp_gain(user.id, "github_sync", 50, Some("first sync"), None, None)
+        .await
+        .expect("Should record xp gain");
+
+    let history = db
+        .get_recent_xp_history(user.id, 10)
+        .await
+        .expect("Should fetch history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].source, "live");
+    assert_eq!(history[0].xp_amount, 50);
+}
+
+#[tokio::test]
+async fn test_record_xp_recalculation_is_separate_from_live() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    db.record_xp_gain(user.id, "github_sync", 100, Some("live"), None, None)
+        .await
+        .expect("live row");
+    db.record_xp_recalculation(user.id, 80, Some("recalc"), None)
+        .await
+        .expect("recalc row");
+
+    // user_stats.total_xp must NOT include the recalculation row.
+    // record_xp_gain / record_xp_recalculation only write xp_history;
+    // adding to user_stats.total_xp is the live caller's responsibility.
+    let stats = db
+        .get_user_stats(user.id)
+        .await
+        .expect("Should get stats")
+        .expect("Stats should exist");
+    assert_eq!(stats.total_xp, 0);
+
+    let history = db
+        .get_recent_xp_history(user.id, 10)
+        .await
+        .expect("Should fetch history");
+    let live_count = history.iter().filter(|e| e.source == "live").count();
+    let recalc_count = history.iter().filter(|e| e.source == "recalculated").count();
+    assert_eq!(live_count, 1);
+    assert_eq!(recalc_count, 1);
+}
+
+#[tokio::test]
+async fn test_get_xp_total_in_range_filters_by_source_and_window() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Two live rows ~ now, plus a recalc row that must NOT be counted.
+    db.record_xp_gain(user.id, "github_sync", 30, None, None, None)
+        .await
+        .unwrap();
+    db.record_xp_gain(user.id, "streak_bonus", 20, None, None, None)
+        .await
+        .unwrap();
+    db.record_xp_recalculation(user.id, 999, None, None)
+        .await
+        .unwrap();
+
+    let yesterday = Utc::now() - chrono::Duration::days(1);
+    let live_total = db
+        .get_xp_total_in_range(user.id, yesterday, "live")
+        .await
+        .expect("Should fetch live total");
+    let recalc_total = db
+        .get_xp_total_in_range(user.id, yesterday, "recalculated")
+        .await
+        .expect("Should fetch recalc total");
+
+    assert_eq!(live_total, 50);
+    assert_eq!(recalc_total, 999);
+
+    // Window in the future returns 0 (no rows newer than tomorrow).
+    let tomorrow = Utc::now() + chrono::Duration::days(1);
+    let future_total = db
+        .get_xp_total_in_range(user.id, tomorrow, "live")
+        .await
+        .expect("Should fetch future total");
+    assert_eq!(future_total, 0);
+}
+
+#[tokio::test]
+async fn test_get_last_recalculation_at_returns_latest_recalc_only() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // No recalc rows yet → None.
+    let initial = db
+        .get_last_recalculation_at(user.id)
+        .await
+        .expect("Should query empty");
+    assert!(initial.is_none());
+
+    // Live row alone must not satisfy the rate-limit guard.
+    db.record_xp_gain(user.id, "github_sync", 10, None, None, None)
+        .await
+        .unwrap();
+    assert!(db
+        .get_last_recalculation_at(user.id)
+        .await
+        .unwrap()
+        .is_none());
+
+    db.record_xp_recalculation(user.id, 1, None, None)
+        .await
+        .unwrap();
+    let latest = db.get_last_recalculation_at(user.id).await.unwrap();
+    assert!(latest.is_some(), "Should return the recalc timestamp");
+}
+
 #[tokio::test]
 async fn test_progress_capped_at_target() {
     let db = setup_test_db().await;

@@ -250,10 +250,31 @@ impl GitHubClient {
         &self,
         username: &str,
     ) -> GitHubResult<ContributionsCollection> {
+        self.get_contribution_calendar_window(username, None, None)
+            .await
+    }
+
+    /// Get contribution calendar scoped to a `[from, to]` UTC window.
+    ///
+    /// Both bounds are optional — passing `None` matches GitHub's default
+    /// behaviour (the past ~1 year). When both are supplied the GraphQL API
+    /// enforces a maximum span of one year, so callers must clamp `from`
+    /// themselves before invoking this method.
+    ///
+    /// Used by `recalculate_xp_history` (Issue #194) to get per-window
+    /// category totals (`totalCommitContributions`, etc.) so the past-year
+    /// XP recalculation can reuse `XpBreakdown::calculate` over the exact
+    /// window the user selected.
+    pub async fn get_contribution_calendar_window(
+        &self,
+        username: &str,
+        from: Option<chrono::DateTime<Utc>>,
+        to: Option<chrono::DateTime<Utc>>,
+    ) -> GitHubResult<ContributionsCollection> {
         let query = r#"
-            query($login: String!) {
+            query($login: String!, $from: DateTime, $to: DateTime) {
                 user(login: $login) {
-                    contributionsCollection {
+                    contributionsCollection(from: $from, to: $to) {
                         contributionCalendar {
                             totalContributions
                             weeks {
@@ -273,7 +294,11 @@ impl GitHubClient {
             }
         "#;
 
-        let variables = serde_json::json!({ "login": username });
+        let variables = serde_json::json!({
+            "login": username,
+            "from": from.map(|dt| dt.to_rfc3339()),
+            "to": to.map(|dt| dt.to_rfc3339()),
+        });
         let response: ContributionCollectionResponse = self.graphql(query, Some(variables)).await?;
 
         response

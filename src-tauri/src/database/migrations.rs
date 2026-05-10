@@ -465,6 +465,34 @@ ALTER TABLE user_stats ADD COLUMN languages_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE user_stats ADD COLUMN total_stars_received INTEGER NOT NULL DEFAULT 0;
 "#,
     },
+    Migration {
+        version: 15,
+        name: "add_xp_history_source",
+        sql: r#"
+-- Distinguish how each xp_history row was produced so the past-year
+-- recalculation feature (Issue #194 / Audit §6.2 / §8 G-13) can coexist
+-- with the live sync stream without overwriting it.
+--
+-- 'live'         — recorded by run_github_sync / streak bonus / manual add_xp
+--                  (default for all existing rows so this migration is a no-op
+--                  for live behaviour and `total_xp` is unchanged).
+-- 'recalculated' — written by recalculate_xp_history; these rows are NOT
+--                  added to `user_stats.total_xp`. They exist purely as an
+--                  audit / comparison surface so the UI can render
+--                  "live vs recalculated" without destroying the original
+--                  XP record.
+--
+-- Keeping the original 'live' rows intact preserves the audit trail and
+-- makes the recalculation idempotent: re-running just inserts another
+-- 'recalculated' row, never mutates past 'live' entries.
+ALTER TABLE xp_history ADD COLUMN source TEXT NOT NULL DEFAULT 'live';
+
+-- Index supports both (a) the rate-limit guard's "most recent recalc per
+-- user" lookup and (b) the per-window total used for before/after diffing.
+CREATE INDEX IF NOT EXISTS idx_xp_history_user_source_created
+    ON xp_history(user_id, source, created_at);
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

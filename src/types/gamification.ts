@@ -139,6 +139,10 @@ export interface XpHistoryEntry {
   githubEventId: string | null;
   breakdown: XpBreakdown | null;
   createdAt: string;
+  /// "live" は user_stats.total_xp に反映される通常エントリ。
+  /// "recalculated" は Issue #194 の再計算コマンドが書き込んだ監査用エントリで、
+  /// user_stats.total_xp には加算されない。
+  source: string;
 }
 
 /// XP獲得時のブレークダウン
@@ -435,6 +439,62 @@ export interface LanguageBreakdownResponse {
   since: string;
   /// 走査したリポジトリ数
   repositoriesScanned: number;
+}
+
+// ============================================
+// 過去データの遡及 XP 再計算（Issue #194）
+// ============================================
+
+/// 再計算 XP の内訳。`SyncResult.xpBreakdown` (`XpBreakdownResult`) と同じ形を
+/// バックエンドが返すが、コマンド固有の型として明示する。
+export interface RecalculatedXpBreakdown {
+  commitsXp: number;
+  prsCreatedXp: number;
+  prsMergedXp: number;
+  issuesCreatedXp: number;
+  issuesClosedXp: number;
+  reviewsXp: number;
+  starsXp: number;
+  streakBonusXp: number;
+  totalXp: number;
+}
+
+/// 再計算ウィンドウ内で取得した GitHub 側のカテゴリ別合計。
+/// `contributionsCollection` から取得できる範囲のみ。
+export interface RecalcContributionTotals {
+  commits: number;
+  pullRequests: number;
+  issues: number;
+  reviews: number;
+  currentStreak: number;
+}
+
+/// `recalculate_xp_history` コマンドの返却値。
+///
+/// `xp_history` への書き込みは `source = 'recalculated'` で行われ、
+/// `user_stats.total_xp` は変更しない（DoD: 計算前後の値を比較表示できる）。
+export interface RecalculationResult {
+  /// ウィンドウの下限 (RFC3339)
+  since: string;
+  /// ウィンドウの上限 = 再計算実行時刻 (RFC3339)
+  until: string;
+  /// 再計算で得られた合計 XP
+  recalculatedTotalXp: number;
+  /// 再計算 XP の内訳
+  recalculatedBreakdown: RecalculatedXpBreakdown;
+  /// 同じウィンドウ内の `source = 'live'` 合計 XP（比較用）
+  previousLiveTotalXpInWindow: number;
+  /// recalculatedTotalXp - previousLiveTotalXpInWindow
+  xpDiff: number;
+  /// 挿入された `source = 'recalculated'` の xp_history.id
+  recalculationHistoryId: number;
+  /// ウィンドウの日数
+  windowDays: number;
+  /// `XpBreakdown::calculate` に渡したカテゴリ別合計
+  contributions: RecalcContributionTotals;
+  /// `contributionsCollection` から取得できないカテゴリ
+  /// (`prs_merged`, `issues_closed`, `stars`)
+  uncoveredCategories: string[];
 }
 
 /// 純増減行数を取得

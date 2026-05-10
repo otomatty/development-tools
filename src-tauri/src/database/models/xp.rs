@@ -64,6 +64,12 @@ pub struct XpHistoryEntry {
     pub github_event_id: Option<String>,
     pub breakdown: Option<XpBreakdown>,
     pub created_at: DateTime<Utc>,
+    /// How this row was produced. `"live"` for entries that contribute to
+    /// `user_stats.total_xp` (sync, streak bonus, manual add_xp);
+    /// `"recalculated"` for audit-only rows written by
+    /// `recalculate_xp_history` (Issue #194). Older rows pre-migration v15
+    /// default to `"live"`.
+    pub source: String,
 }
 
 /// XP action types for database
