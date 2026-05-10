@@ -130,6 +130,13 @@ export const Home = () => {
     githubStatsQuery.data === null && githubStatsQuery.error === null;
   const userPending =
     userStatsQuery.data === null && userStatsQuery.error === null;
+  // Same `data === null && error === null` anchor as the other queries so
+  // the LanguageBreakdownCard renders its skeleton (not an Empty state) for
+  // the indeterminate frame between `enabled = true` and the hook's first
+  // commit.
+  const languageBreakdownPending =
+    languageBreakdownQuery.data === null &&
+    languageBreakdownQuery.error === null;
   const initialDataLoading =
     isLoggedIn && (githubPending || userPending || levelLoading);
 
@@ -138,19 +145,23 @@ export const Home = () => {
   const fromCache =
     githubStatsQuery.fromCache ||
     userStatsQuery.fromCache ||
-    activityQuery.fromCache;
+    activityQuery.fromCache ||
+    languageBreakdownQuery.fromCache;
   const hasError =
     githubStatsQuery.error !== null ||
     userStatsQuery.error !== null ||
-    activityQuery.error !== null;
+    activityQuery.error !== null ||
+    languageBreakdownQuery.error !== null;
   const hasData =
     githubStatsQuery.data !== null ||
     userStatsQuery.data !== null ||
-    activityQuery.data !== null;
+    activityQuery.data !== null ||
+    languageBreakdownQuery.data !== null;
   const isRevalidating =
     githubStatsQuery.isRevalidating ||
     userStatsQuery.isRevalidating ||
-    activityQuery.isRevalidating;
+    activityQuery.isRevalidating ||
+    languageBreakdownQuery.isRevalidating;
   // Surface the older of the cache timestamps across all sources so the
   // user sees the worst-case staleness rather than the freshest one.
   const bannerCachedAt =
@@ -158,6 +169,7 @@ export const Home = () => {
       githubStatsQuery.cachedAt,
       userStatsQuery.cachedAt,
       activityQuery.cachedAt,
+      languageBreakdownQuery.cachedAt,
     ]
       .filter((value): value is string => value !== null)
       .sort()[0] ?? null;
@@ -182,7 +194,9 @@ export const Home = () => {
             githubStats={githubStatsQuery.data}
             statsDiff={null}
             languageBreakdown={languageBreakdownQuery.data}
-            languageBreakdownLoading={languageBreakdownQuery.isLoading}
+            languageBreakdownLoading={
+              languageBreakdownQuery.isLoading || languageBreakdownPending
+            }
             languageBreakdownError={languageBreakdownQuery.error}
             languageBreakdownFromCache={languageBreakdownQuery.fromCache}
           />

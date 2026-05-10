@@ -234,7 +234,7 @@ const LanguagePie: React.FC<{ data: LanguageBreakdownResponse }> = ({ data }) =>
           className="fill-dt-text-main"
           style={{ fontSize: '12px' }}
         >
-          {data.repositoriesScanned} repos
+          {data.repositoriesScanned} リポジトリ
         </text>
         <text
           x={CX}
@@ -310,7 +310,7 @@ const RepositoryBars: React.FC<{ repositories: RepositoryCodeStats[] }> = ({ rep
                           repo.primaryLanguageColor ?? FALLBACK_COLORS[0],
                       }}
                       title={repo.primaryLanguage}
-                      aria-label={`Primary language: ${repo.primaryLanguage}`}
+                      aria-label={`主要言語: ${repo.primaryLanguage}`}
                     />
                   )}
                   {repo.url ? (
@@ -334,7 +334,7 @@ const RepositoryBars: React.FC<{ repositories: RepositoryCodeStats[] }> = ({ rep
                   <span className="mx-1 text-slate-500">·</span>
                   <span className="text-rose-400">−{formatLines(repo.deletions)}</span>
                   <span className="mx-1 text-slate-500">·</span>
-                  <span>{repo.commitsCount} commits</span>
+                  <span>{repo.commitsCount} コミット</span>
                 </span>
               </div>
 
@@ -352,8 +352,8 @@ const RepositoryBars: React.FC<{ repositories: RepositoryCodeStats[] }> = ({ rep
               </div>
 
               <span className="sr-only">
-                {repo.nameWithOwner} added {repo.additions} lines and removed {repo.deletions}
-                lines across {repo.commitsCount} commits ({formatLines(churn)} total churn).
+                {repo.nameWithOwner} は {repo.additions} 行追加、{repo.deletions} 行削除、
+                {repo.commitsCount} コミット（総変更量 {formatLines(churn)}）。
               </span>
             </li>
           );

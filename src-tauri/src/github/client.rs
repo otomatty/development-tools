@@ -776,13 +776,42 @@ impl GitHubClient {
     ) -> GitHubResult<LanguageBreakdownResponse> {
         let capped = max_repos.clamp(1, 100);
 
+        // Resolve the user's node id so `history(author: {id: ...})` filters
+        // commits down to the signed-in user. Without this, collaborator
+        // pushes on the default branch get attributed to the dashboard owner,
+        // making the per-repository additions/deletions bars meaningless on
+        // any team repo. Mirrors the pattern used by `get_today_commits`.
+        let id_query = r#"
+            query($login: String!) {
+                user(login: $login) { id }
+            }
+        "#;
+
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct UserIdResponse {
+            user: Option<UserId>,
+        }
+        #[derive(serde::Deserialize)]
+        struct UserId {
+            id: String,
+        }
+
+        let id_resp: UserIdResponse = self
+            .graphql(id_query, Some(serde_json::json!({ "login": username })))
+            .await?;
+        let author_id = id_resp
+            .user
+            .map(|u| u.id)
+            .ok_or_else(|| GitHubError::NotFound(format!("User {} not found", username)))?;
+
         let query = r#"
-            query($login: String!, $since: GitTimestamp!, $maxRepos: Int!) {
+            query($login: String!, $since: GitTimestamp!, $maxRepos: Int!, $author: ID!) {
                 user(login: $login) {
                     repositories(
                         first: $maxRepos,
                         isFork: false,
-                        ownerAffiliations: [OWNER, COLLABORATOR],
+                        ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER],
                         orderBy: {field: PUSHED_AT, direction: DESC}
                     ) {
                         nodes {
@@ -800,7 +829,7 @@ impl GitHubClient {
                             defaultBranchRef {
                                 target {
                                     ... on Commit {
-                                        history(first: 100, since: $since) {
+                                        history(first: 100, since: $since, author: {id: $author}) {
                                             nodes {
                                                 additions
                                                 deletions
@@ -827,6 +856,7 @@ impl GitHubClient {
             "login": username,
             "since": since,
             "maxRepos": capped,
+            "author": author_id,
         });
 
         let response: LanguageBreakdownQueryResponse =
@@ -873,9 +903,14 @@ impl GitHubClient {
                     if let Some(target) = branch_ref.target {
                         if let Some(history) = target.history {
                             for commit in history.nodes {
-                                additions += commit.additions;
-                                deletions += commit.deletions;
-                                commits_count += 1;
+                                // saturating_add guards against i32 overflow on
+                                // pathological diffs (generated code, vendored
+                                // monorepos) so the sync never panics in debug
+                                // builds. Saturation produces a visible-but-
+                                // bounded number rather than wrapping silently.
+                                additions = additions.saturating_add(commit.additions);
+                                deletions = deletions.saturating_add(commit.deletions);
+                                commits_count = commits_count.saturating_add(1);
                             }
                         }
                     }
@@ -898,10 +933,14 @@ impl GitHubClient {
         // Sort repositories by total churn (additions + deletions) descending
         // so the bar chart leads with the most active repos. Repos with no
         // commits in the window but a known primary language fall to the
-        // bottom — they're useful context, not the headline.
+        // bottom — they're useful context, not the headline. Cast to i64
+        // before summing so a near-`i32::MAX` repo can't panic the sort in
+        // debug builds.
         repositories.sort_by(|a, b| {
-            (b.additions + b.deletions)
-                .cmp(&(a.additions + a.deletions))
+            let churn_a = a.additions as i64 + a.deletions as i64;
+            let churn_b = b.additions as i64 + b.deletions as i64;
+            churn_b
+                .cmp(&churn_a)
                 .then_with(|| b.commits_count.cmp(&a.commits_count))
         });
 
