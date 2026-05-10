@@ -11,6 +11,7 @@ export * from './gamification';
 export * from './issue';
 export * from './network';
 export * from './notifications';
+export * from './session';
 export * from './settings';
 export * from './ui';
 
@@ -19,6 +20,7 @@ export enum AppPage {
   Home = 'Home',
   Projects = 'Projects',
   Issues = 'Issues',
+  Pomodoro = 'Pomodoro',
   Settings = 'Settings',
   XpHistory = 'XpHistory',
   NotFound = 'NotFound',
