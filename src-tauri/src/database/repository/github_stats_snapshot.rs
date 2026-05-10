@@ -27,15 +27,18 @@ impl Database {
         sqlx::query(
             r#"
             INSERT INTO github_stats_snapshots (
-                user_id, total_commits, total_prs, total_reviews, 
-                total_issues, total_stars_received, total_contributions, snapshot_date
+                user_id, total_commits, total_prs, total_prs_merged, total_reviews,
+                total_issues, total_issues_closed, total_stars_received,
+                total_contributions, snapshot_date
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
                 total_commits = excluded.total_commits,
                 total_prs = excluded.total_prs,
+                total_prs_merged = excluded.total_prs_merged,
                 total_reviews = excluded.total_reviews,
                 total_issues = excluded.total_issues,
+                total_issues_closed = excluded.total_issues_closed,
                 total_stars_received = excluded.total_stars_received,
                 total_contributions = excluded.total_contributions
             "#,
@@ -43,8 +46,10 @@ impl Database {
         .bind(snapshot.user_id)
         .bind(snapshot.total_commits)
         .bind(snapshot.total_prs)
+        .bind(snapshot.total_prs_merged)
         .bind(snapshot.total_reviews)
         .bind(snapshot.total_issues)
+        .bind(snapshot.total_issues_closed)
         .bind(snapshot.total_stars_received)
         .bind(snapshot.total_contributions)
         .bind(&snapshot.snapshot_date)
@@ -56,8 +61,8 @@ impl Database {
 
     /// Get the most recent snapshot before a given date
     ///
-    /// Used for calculating day-over-day differences.
-    /// Returns None if no previous snapshot exists.
+    /// Used for the daily-comparison UI (e.g. "+5 commits vs yesterday").
+    /// Returns None if no previous-day snapshot exists.
     pub async fn get_previous_github_stats_snapshot(
         &self,
         user_id: i64,
@@ -65,8 +70,9 @@ impl Database {
     ) -> DbResult<Option<GitHubStatsSnapshot>> {
         let row = sqlx::query(
             r#"
-            SELECT id, user_id, total_commits, total_prs, total_reviews,
-                   total_issues, total_stars_received, total_contributions,
+            SELECT id, user_id, total_commits, total_prs, total_prs_merged,
+                   total_reviews, total_issues, total_issues_closed,
+                   total_stars_received, total_contributions,
                    snapshot_date, created_at
             FROM github_stats_snapshots
             WHERE user_id = ? AND snapshot_date < ?
@@ -79,18 +85,36 @@ impl Database {
         .fetch_optional(self.pool())
         .await?;
 
-        Ok(row.map(|r| GitHubStatsSnapshot {
-            id: r.get("id"),
-            user_id: r.get("user_id"),
-            total_commits: r.get("total_commits"),
-            total_prs: r.get("total_prs"),
-            total_reviews: r.get("total_reviews"),
-            total_issues: r.get("total_issues"),
-            total_stars_received: r.get("total_stars_received"),
-            total_contributions: r.get("total_contributions"),
-            snapshot_date: r.get("snapshot_date"),
-            created_at: r.get("created_at"),
-        }))
+        Ok(row.map(map_snapshot_row))
+    }
+
+    /// Get the most recent snapshot for a user, regardless of date.
+    ///
+    /// Used as the XP-diff base by `run_github_sync` (Issue #189). When the
+    /// user has already synced earlier today, this returns *today's* row
+    /// rather than yesterday's, so successive syncs don't double-count
+    /// activity that's already been awarded XP.
+    pub async fn get_latest_github_stats_snapshot(
+        &self,
+        user_id: i64,
+    ) -> DbResult<Option<GitHubStatsSnapshot>> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, user_id, total_commits, total_prs, total_prs_merged,
+                   total_reviews, total_issues, total_issues_closed,
+                   total_stars_received, total_contributions,
+                   snapshot_date, created_at
+            FROM github_stats_snapshots
+            WHERE user_id = ?
+            ORDER BY snapshot_date DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(self.pool())
+        .await?;
+
+        Ok(row.map(map_snapshot_row))
     }
 
     /// Get a snapshot for a specific date
@@ -103,8 +127,9 @@ impl Database {
     ) -> DbResult<Option<GitHubStatsSnapshot>> {
         let row = sqlx::query(
             r#"
-            SELECT id, user_id, total_commits, total_prs, total_reviews,
-                   total_issues, total_stars_received, total_contributions,
+            SELECT id, user_id, total_commits, total_prs, total_prs_merged,
+                   total_reviews, total_issues, total_issues_closed,
+                   total_stars_received, total_contributions,
                    snapshot_date, created_at
             FROM github_stats_snapshots
             WHERE user_id = ? AND snapshot_date = ?
@@ -115,18 +140,24 @@ impl Database {
         .fetch_optional(self.pool())
         .await?;
 
-        Ok(row.map(|r| GitHubStatsSnapshot {
-            id: r.get("id"),
-            user_id: r.get("user_id"),
-            total_commits: r.get("total_commits"),
-            total_prs: r.get("total_prs"),
-            total_reviews: r.get("total_reviews"),
-            total_issues: r.get("total_issues"),
-            total_stars_received: r.get("total_stars_received"),
-            total_contributions: r.get("total_contributions"),
-            snapshot_date: r.get("snapshot_date"),
-            created_at: r.get("created_at"),
-        }))
+        Ok(row.map(map_snapshot_row))
+    }
+}
+
+fn map_snapshot_row(r: sqlx::sqlite::SqliteRow) -> GitHubStatsSnapshot {
+    GitHubStatsSnapshot {
+        id: r.get("id"),
+        user_id: r.get("user_id"),
+        total_commits: r.get("total_commits"),
+        total_prs: r.get("total_prs"),
+        total_prs_merged: r.get("total_prs_merged"),
+        total_reviews: r.get("total_reviews"),
+        total_issues: r.get("total_issues"),
+        total_issues_closed: r.get("total_issues_closed"),
+        total_stars_received: r.get("total_stars_received"),
+        total_contributions: r.get("total_contributions"),
+        snapshot_date: r.get("snapshot_date"),
+        created_at: r.get("created_at"),
     }
 }
 
@@ -148,6 +179,7 @@ mod tests {
         db
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_snapshot(
         user_id: i64,
         commits: i32,
@@ -158,12 +190,16 @@ mod tests {
         contributions: i32,
         date: &str,
     ) -> GitHubStatsSnapshot {
+        // Tests written before Issue #189 didn't track prs_merged /
+        // issues_closed; default to 0 to keep existing assertions stable.
         GitHubStatsSnapshot::new(
             user_id,
             commits,
             prs,
+            0,
             reviews,
             issues,
+            0,
             stars,
             contributions,
             date,
@@ -291,6 +327,78 @@ mod tests {
             .expect("Should query without error");
 
         assert!(snapshot.is_none(), "Should have no snapshot for this date");
+    }
+
+    // TC-107: Latest snapshot ignores date and returns the most recent row.
+    // Used as the XP-diff base by `run_github_sync` after Issue #189.
+    #[tokio::test]
+    async fn test_get_latest_snapshot_returns_most_recent() {
+        let db = setup_test_db().await;
+
+        let yesterday = create_snapshot(1, 90, 18, 25, 12, 45, 180, "2025-11-29");
+        db.save_github_stats_snapshot(&yesterday)
+            .await
+            .expect("Should save yesterday snapshot");
+
+        let today = create_snapshot(1, 100, 20, 30, 15, 50, 200, "2025-11-30");
+        db.save_github_stats_snapshot(&today)
+            .await
+            .expect("Should save today snapshot");
+
+        let latest = db
+            .get_latest_github_stats_snapshot(1)
+            .await
+            .expect("Should query latest snapshot")
+            .expect("Latest snapshot should exist");
+
+        assert_eq!(latest.snapshot_date, "2025-11-30");
+        assert_eq!(latest.total_commits, 100);
+    }
+
+    // TC-108: Latest snapshot returns None when the user has no snapshots
+    // (fresh install path — `run_github_sync` falls back to "first sync").
+    #[tokio::test]
+    async fn test_get_latest_snapshot_returns_none_when_empty() {
+        let db = setup_test_db().await;
+
+        let latest = db
+            .get_latest_github_stats_snapshot(1)
+            .await
+            .expect("Should query without error");
+
+        assert!(latest.is_none(), "Should have no snapshots for fresh user");
+    }
+
+    // TC-109: Save and retrieve preserves total_prs_merged / total_issues_closed
+    // (the two columns added by Issue #189 / migration v12).
+    #[tokio::test]
+    async fn test_snapshot_persists_prs_merged_and_issues_closed() {
+        let db = setup_test_db().await;
+
+        let snapshot = GitHubStatsSnapshot::new(
+            1,
+            100,
+            20,
+            12, // prs_merged
+            30,
+            15,
+            8, // issues_closed
+            50,
+            200,
+            "2025-11-30",
+        );
+        db.save_github_stats_snapshot(&snapshot)
+            .await
+            .expect("Should save snapshot");
+
+        let saved = db
+            .get_github_stats_snapshot_for_date(1, "2025-11-30")
+            .await
+            .expect("Should query")
+            .expect("Snapshot should exist");
+
+        assert_eq!(saved.total_prs_merged, 12);
+        assert_eq!(saved.total_issues_closed, 8);
     }
 
     // TC-106: Multiple users have separate snapshots

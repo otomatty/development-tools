@@ -78,8 +78,9 @@ RateLimited { reason, seconds }      - レート制限解除を待つ
 重なっても、片方が完了するまでもう片方はブロックされる。
 
 Mutex を取らないと、両者が同じ pre-sync snapshot
-（`get_previous_github_stats`）を読んで XP / バッジ / チャレンジ進捗を
+（`get_latest_github_stats_snapshot`）を読んで XP / バッジ / チャレンジ進捗を
 それぞれ適用してしまい、ユーザーの XP が二重加算される。
+（旧 `get_previous_github_stats` KV は Issue #189 で廃止し、`github_stats_snapshots` に統合済み。）
 
 ### スリープのクランプ理由
 

@@ -148,6 +148,16 @@ pub struct XpBreakdown {
 impl XpBreakdown {
     /// 同期で得た差分活動量から XP 内訳を算出する。
     ///
+    /// # 引数の型について
+    ///
+    /// 各カウント引数は意味的に「非負の差分」であり、`u64` を要求する。
+    /// 呼び出し側（`run_github_sync`）は `u64::saturating_sub` で前回値からの
+    /// 差分を取り、累計値が同期間に減少したケース（例: スターを失う、
+    /// repository 削除）でも 0 にクランプする。これにより
+    /// `XpBreakdown` の各フィールドが常に非負になる（Issue #189 / DoD）。
+    /// 旧 `i32` シグネチャの時代は `XpBreakdown` 内部に負値が現れる可能性が
+    /// 残っており、`if xp_gained > 0` の DB 加算ガードに依存していた。
+    ///
     /// # 戻り値の `total_xp` について
     ///
     /// `total_xp = (各活動 XP の合計) + streak_bonus_xp` であり、**ここで計算する
@@ -160,57 +170,63 @@ impl XpBreakdown {
     /// - 表示用合計を作る際は `total_xp + 外部ボーナス` と明示的に組み立てる
     ///
     /// 二重計上を避けるため、本関数の戻り値の `streak_bonus_xp` を再度足さないこと。
+    #[allow(clippy::too_many_arguments)]
     pub fn calculate(
-        commits: i32,
-        prs_created: i32,
-        prs_merged: i32,
-        issues_created: i32,
-        issues_closed: i32,
-        reviews: i32,
-        stars: i32,
+        commits: u64,
+        prs_created: u64,
+        prs_merged: u64,
+        issues_created: u64,
+        issues_closed: u64,
+        reviews: u64,
+        stars: u64,
         streak: i32,
     ) -> Self {
-        // 入力カウントが極端に大きいケース（API 側に上限がない、または将来の拡張）でも
-        // 個別積・合計でラップアラウンドしないよう、内部計算はすべて i64 で行う。
-        // 構造体フィールドは i32 のため、最後に saturating でクランプして格納する。
-        let saturate = |v: i64| v.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        // 入力カウントが極端に大きいケースでも個別積・合計でラップアラウンド
+        // しないよう、内部計算はすべて u64 + saturating で行う。
+        // 構造体フィールドは i32 のため、最後に i32::MAX で飽和して格納する。
+        let saturate_u64_to_i32 = |v: u64| {
+            if v > i32::MAX as u64 {
+                i32::MAX
+            } else {
+                v as i32
+            }
+        };
 
-        let commits_xp_i64 = commits as i64 * COMMIT_XP as i64;
-        let prs_created_xp_i64 = prs_created as i64 * PR_XP as i64;
-        let prs_merged_xp_i64 = prs_merged as i64 * PR_MERGED_XP as i64;
-        let issues_created_xp_i64 = issues_created as i64 * ISSUE_XP as i64;
-        let issues_closed_xp_i64 = issues_closed as i64 * ISSUE_CLOSED_XP as i64;
-        let reviews_xp_i64 = reviews as i64 * REVIEW_XP as i64;
-        let stars_xp_i64 = stars as i64 * STAR_XP as i64;
+        // XP 定数は正の小整数なので u64 へキャストしても情報落ちはない。
+        let commits_xp = commits.saturating_mul(COMMIT_XP as u64);
+        let prs_created_xp = prs_created.saturating_mul(PR_XP as u64);
+        let prs_merged_xp = prs_merged.saturating_mul(PR_MERGED_XP as u64);
+        let issues_created_xp = issues_created.saturating_mul(ISSUE_XP as u64);
+        let issues_closed_xp = issues_closed.saturating_mul(ISSUE_CLOSED_XP as u64);
+        let reviews_xp = reviews.saturating_mul(REVIEW_XP as u64);
+        let stars_xp = stars.saturating_mul(STAR_XP as u64);
 
-        let base_total_i64 = commits_xp_i64
-            + prs_created_xp_i64
-            + prs_merged_xp_i64
-            + issues_created_xp_i64
-            + issues_closed_xp_i64
-            + reviews_xp_i64
-            + stars_xp_i64;
+        let base_total = commits_xp
+            .saturating_add(prs_created_xp)
+            .saturating_add(prs_merged_xp)
+            .saturating_add(issues_created_xp)
+            .saturating_add(issues_closed_xp)
+            .saturating_add(reviews_xp)
+            .saturating_add(stars_xp);
 
         // ストリークボーナス: `base_total * min(streak, STREAK_BONUS_CAP_DAYS) / 100`。
         // 1 日あたり +1%、上限 `STREAK_BONUS_CAP_DAYS`% (= 10%)。
-        let streak_bonus_xp_i64 = if streak > 0 {
-            (base_total_i64 * streak.min(STREAK_BONUS_CAP_DAYS) as i64) / 100
-        } else {
-            0
-        };
+        // streak は `streak.max(0)` 相当に正規化したうえで掛け算する。
+        let capped_streak_days = streak.clamp(0, STREAK_BONUS_CAP_DAYS) as u64;
+        let streak_bonus_xp = base_total.saturating_mul(capped_streak_days) / 100;
 
-        let total_xp_i64 = base_total_i64 + streak_bonus_xp_i64;
+        let total_xp = base_total.saturating_add(streak_bonus_xp);
 
         Self {
-            commits_xp: saturate(commits_xp_i64),
-            prs_created_xp: saturate(prs_created_xp_i64),
-            prs_merged_xp: saturate(prs_merged_xp_i64),
-            issues_created_xp: saturate(issues_created_xp_i64),
-            issues_closed_xp: saturate(issues_closed_xp_i64),
-            reviews_xp: saturate(reviews_xp_i64),
-            stars_xp: saturate(stars_xp_i64),
-            streak_bonus_xp: saturate(streak_bonus_xp_i64),
-            total_xp: saturate(total_xp_i64),
+            commits_xp: saturate_u64_to_i32(commits_xp),
+            prs_created_xp: saturate_u64_to_i32(prs_created_xp),
+            prs_merged_xp: saturate_u64_to_i32(prs_merged_xp),
+            issues_created_xp: saturate_u64_to_i32(issues_created_xp),
+            issues_closed_xp: saturate_u64_to_i32(issues_closed_xp),
+            reviews_xp: saturate_u64_to_i32(reviews_xp),
+            stars_xp: saturate_u64_to_i32(stars_xp),
+            streak_bonus_xp: saturate_u64_to_i32(streak_bonus_xp),
+            total_xp: saturate_u64_to_i32(total_xp),
         }
     }
 }
@@ -293,9 +309,81 @@ mod tests {
     #[test]
     fn test_breakdown_saturates_on_overflow() {
         // i32::MAX 個のコミット × COMMIT_XP(=10) は i32 範囲を大きく超えるが、
-        // 内部 i64 計算 → 末端 saturating cast によってラップアラウンドせず i32::MAX に丸まる。
-        let bd = XpBreakdown::calculate(i32::MAX, 0, 0, 0, 0, 0, 0, 0);
+        // 内部 u64 計算 → 末端 saturating cast によってラップアラウンドせず i32::MAX に丸まる。
+        let bd = XpBreakdown::calculate(i32::MAX as u64, 0, 0, 0, 0, 0, 0, 0);
         assert_eq!(bd.commits_xp, i32::MAX);
         assert_eq!(bd.total_xp, i32::MAX);
+    }
+
+    // Issue #189 / DoD: `XpBreakdown` の各フィールドが非負であることを保証する。
+    // u64 シグネチャに変更したため、入力レベルで負値が表現できず、
+    // 内部計算（`saturating_mul` / `saturating_add`）も非負を保つ。
+    #[test]
+    fn test_breakdown_fields_are_non_negative() {
+        // ゼロ入力
+        let zero = XpBreakdown::calculate(0, 0, 0, 0, 0, 0, 0, 0);
+        for field in [
+            zero.commits_xp,
+            zero.prs_created_xp,
+            zero.prs_merged_xp,
+            zero.issues_created_xp,
+            zero.issues_closed_xp,
+            zero.reviews_xp,
+            zero.stars_xp,
+            zero.streak_bonus_xp,
+            zero.total_xp,
+        ] {
+            assert!(field >= 0, "XpBreakdown field must be >= 0 (got {})", field);
+        }
+
+        // 中間的な入力
+        let typical = XpBreakdown::calculate(7, 3, 2, 5, 4, 6, 1, 5);
+        for field in [
+            typical.commits_xp,
+            typical.prs_created_xp,
+            typical.prs_merged_xp,
+            typical.issues_created_xp,
+            typical.issues_closed_xp,
+            typical.reviews_xp,
+            typical.stars_xp,
+            typical.streak_bonus_xp,
+            typical.total_xp,
+        ] {
+            assert!(field >= 0, "XpBreakdown field must be >= 0 (got {})", field);
+        }
+
+        // 飽和入力でも非負
+        let saturated = XpBreakdown::calculate(
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            100,
+        );
+        for field in [
+            saturated.commits_xp,
+            saturated.prs_created_xp,
+            saturated.prs_merged_xp,
+            saturated.issues_created_xp,
+            saturated.issues_closed_xp,
+            saturated.reviews_xp,
+            saturated.stars_xp,
+            saturated.streak_bonus_xp,
+            saturated.total_xp,
+        ] {
+            assert!(field >= 0, "XpBreakdown field must be >= 0 (got {})", field);
+        }
+    }
+
+    // Issue #189: 負のストリーク値が混入しても 0 にクランプされ、
+    // streak_bonus_xp が負にならない。
+    #[test]
+    fn test_breakdown_negative_streak_clamped_to_zero_bonus() {
+        let bd = XpBreakdown::calculate(1, 1, 1, 1, 1, 1, 1, -42);
+        assert_eq!(bd.streak_bonus_xp, 0);
+        assert_eq!(bd.total_xp, 175);
     }
 }

@@ -17,7 +17,10 @@ use serde::{Deserialize, Serialize};
 /// GitHub statistics snapshot for a specific date
 ///
 /// Stores a point-in-time snapshot of user's GitHub statistics.
-/// Used for calculating day-over-day differences.
+/// Used for both calculating day-over-day differences (display) and
+/// computing XP diffs across syncs (Issue #189 — single source of truth
+/// for "previous GitHub stats", replacing the legacy
+/// `previous_github_stats` KV in `activity_cache`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHubStatsSnapshot {
@@ -25,8 +28,14 @@ pub struct GitHubStatsSnapshot {
     pub user_id: i64,
     pub total_commits: i32,
     pub total_prs: i32,
+    /// Cumulative merged PRs. Required for XP calculation; not surfaced
+    /// in the daily-comparison UI.
+    pub total_prs_merged: i32,
     pub total_reviews: i32,
     pub total_issues: i32,
+    /// Cumulative closed issues. Required for XP calculation; not surfaced
+    /// in the daily-comparison UI.
+    pub total_issues_closed: i32,
     pub total_stars_received: i32,
     pub total_contributions: i32,
     /// Snapshot date in YYYY-MM-DD format
@@ -53,12 +62,15 @@ pub struct StatsDiff {
 
 impl GitHubStatsSnapshot {
     /// Create a new snapshot from current GitHub stats
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         user_id: i64,
         total_commits: i32,
         total_prs: i32,
+        total_prs_merged: i32,
         total_reviews: i32,
         total_issues: i32,
+        total_issues_closed: i32,
         total_stars_received: i32,
         total_contributions: i32,
         snapshot_date: &str,
@@ -68,8 +80,10 @@ impl GitHubStatsSnapshot {
             user_id,
             total_commits,
             total_prs,
+            total_prs_merged,
             total_reviews,
             total_issues,
+            total_issues_closed,
             total_stars_received,
             total_contributions,
             snapshot_date: snapshot_date.to_string(),
@@ -130,8 +144,10 @@ mod tests {
             1,   // user_id
             100, // commits
             20,  // prs
+            12,  // prs_merged
             30,  // reviews
             15,  // issues
+            8,   // issues_closed
             50,  // stars
             200, // contributions
             "2025-11-30",
@@ -140,8 +156,10 @@ mod tests {
         assert_eq!(snapshot.user_id, 1);
         assert_eq!(snapshot.total_commits, 100);
         assert_eq!(snapshot.total_prs, 20);
+        assert_eq!(snapshot.total_prs_merged, 12);
         assert_eq!(snapshot.total_reviews, 30);
         assert_eq!(snapshot.total_issues, 15);
+        assert_eq!(snapshot.total_issues_closed, 8);
         assert_eq!(snapshot.total_stars_received, 50);
         assert_eq!(snapshot.total_contributions, 200);
         assert_eq!(snapshot.snapshot_date, "2025-11-30");
@@ -155,8 +173,10 @@ mod tests {
             user_id: 1,
             total_commits: 90,
             total_prs: 18,
+            total_prs_merged: 10,
             total_reviews: 25,
             total_issues: 12,
+            total_issues_closed: 6,
             total_stars_received: 45,
             total_contributions: 180,
             snapshot_date: "2025-11-29".to_string(),
@@ -167,8 +187,10 @@ mod tests {
             1,
             100, // +10 commits
             20,  // +2 prs
+            12,  // +2 prs_merged
             30,  // +5 reviews
             15,  // +3 issues
+            8,   // +2 issues_closed
             50,  // +5 stars
             200, // +20 contributions
             "2025-11-30",
@@ -188,7 +210,7 @@ mod tests {
     // TC-003: calculate_diff without previous snapshot
     #[test]
     fn test_calculate_diff_without_previous() {
-        let current = GitHubStatsSnapshot::new(1, 100, 20, 30, 15, 50, 200, "2025-11-30");
+        let current = GitHubStatsSnapshot::new(1, 100, 20, 12, 30, 15, 8, 50, 200, "2025-11-30");
 
         let diff = current.calculate_diff(None);
 
@@ -255,8 +277,10 @@ mod tests {
             user_id: 1,
             total_commits: 100,
             total_prs: 20,
+            total_prs_merged: 12,
             total_reviews: 30,
             total_issues: 15,
+            total_issues_closed: 8,
             total_stars_received: 50,
             total_contributions: 200,
             snapshot_date: "2025-11-29".to_string(),
@@ -268,8 +292,10 @@ mod tests {
             1,
             100, // no change
             20,  // no change
+            12,  // no change
             30,  // no change
             15,  // no change
+            8,   // no change
             45,  // -5 stars
             200, // no change
             "2025-11-30",
