@@ -58,8 +58,6 @@ use commands::{
     get_near_completion_badges,
     // GitHub Notifications commands (Issue #186)
     get_notifications,
-    // Issue #191: explicit refresh for badge progress (heavy aggregate API call)
-    refresh_badges_progress,
     get_project,
     get_project_issues,
     get_projects,
@@ -79,6 +77,8 @@ use commands::{
     open_external_url,
     open_url,
     poll_device_token,
+    // Issue #191: explicit refresh for badge progress (heavy aggregate API call)
+    refresh_badges_progress,
     relink_repository,
     reset_all_data,
     reset_settings,

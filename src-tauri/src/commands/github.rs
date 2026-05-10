@@ -7,8 +7,8 @@ use tauri::{command, AppHandle, Emitter, State};
 use super::auth::AppState;
 use crate::auth::map_github_result;
 use crate::database::{
-    badge, challenge, level, streak, xp, GitHubStatsSnapshot, UserStats,
-    UserStatsGitHubAggregates, XpActionType,
+    badge, challenge, level, streak, xp, GitHubStatsSnapshot, UserStats, UserStatsGitHubAggregates,
+    XpActionType,
 };
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
 use crate::utils::notifications::send_notification;
@@ -634,10 +634,7 @@ pub async fn run_github_sync(
     {
         Ok(stats) => stats,
         Err(e) => {
-            eprintln!(
-                "Failed to mirror GitHub aggregates onto user_stats: {}",
-                e
-            );
+            eprintln!("Failed to mirror GitHub aggregates onto user_stats: {}", e);
             updated_stats
         }
     };
