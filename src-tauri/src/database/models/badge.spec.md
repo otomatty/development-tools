@@ -25,8 +25,9 @@
    (`get_badges_with_progress` / `get_near_completion_badges`)。
 2. これらの呼び出しが GitHub API を叩かないことを保証する。
 3. 「最新化したい」ユーザー操作のために
-   `refresh_badges_progress` を提供する（このコマンドだけが
-   `client.get_user_stats` を叩く）。
+   `refresh_badges_progress` を提供する。`run_github_sync` も
+   `client.get_user_stats` を叩くが、バッジ表示系コマンドの中で
+   直接 GitHub 取得を行うのはこの `refresh_badges_progress` だけ。
 
 ## データフロー
 

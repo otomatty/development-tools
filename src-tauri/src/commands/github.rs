@@ -1054,6 +1054,35 @@ async fn db_only_badge_context(
     Ok((badge_context_from_user_stats(&user_stats), user))
 }
 
+/// Helper: read the user's earned badges from the DB and run them
+/// through `badge::get_badges_with_progress`. Shared between the
+/// DB-only `get_badges_with_progress` command and the GitHub-refreshing
+/// `refresh_badges_progress` command so both produce identically-shaped
+/// payloads from the same evaluator.
+async fn badges_with_progress_for_user(
+    state: &State<'_, AppState>,
+    user_id: i64,
+    badge_context: &badge::BadgeEvalContext,
+) -> Result<Vec<badge::BadgeWithProgress>, String> {
+    let earned_badges = state
+        .db
+        .get_user_badges(user_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // `badge::get_badges_with_progress` expects (badge_id, earned_at?)
+    // tuples, with the timestamp serialised as RFC3339.
+    let earned_badges_with_date: Vec<(String, Option<String>)> = earned_badges
+        .into_iter()
+        .map(|b| (b.badge_id, Some(b.earned_at.to_rfc3339())))
+        .collect();
+
+    Ok(badge::get_badges_with_progress(
+        badge_context,
+        &earned_badges_with_date,
+    ))
+}
+
 /// Get badges with progress information.
 ///
 /// Reads entirely from the local `user_stats` row — no GitHub API calls.
@@ -1064,25 +1093,7 @@ pub async fn get_badges_with_progress(
     state: State<'_, AppState>,
 ) -> Result<Vec<badge::BadgeWithProgress>, String> {
     let (badge_context, user) = db_only_badge_context(&state).await?;
-
-    // Get earned badges
-    let earned_badges = state
-        .db
-        .get_user_badges(user.id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Convert to the format expected by get_badges_with_progress
-    // DateTime<Utc> -> String (ISO 8601 format)
-    let earned_badges_with_date: Vec<(String, Option<String>)> = earned_badges
-        .into_iter()
-        .map(|b| (b.badge_id, Some(b.earned_at.to_rfc3339())))
-        .collect();
-
-    // Get badges with progress
-    let badges = badge::get_badges_with_progress(&badge_context, &earned_badges_with_date);
-
-    Ok(badges)
+    badges_with_progress_for_user(&state, user.id, &badge_context).await
 }
 
 /// Get badges that are close to being earned.
@@ -1146,6 +1157,27 @@ pub async fn refresh_badges_progress(
     )
     .await?;
 
+    // Mirror the streak fields too — `badge_context_from_user_stats`
+    // pulls `current_streak` / `longest_streak` from `user_stats`, so
+    // without this step a "refresh" right after a streak change would
+    // still render streak badges against the previous sync's value
+    // even though we just made a fresh API call. Surfacing the error
+    // (rather than swallowing it) is consistent with `run_github_sync`
+    // and matches the user intent — they explicitly asked for fresh
+    // numbers, so a partial refresh is worse than an explicit failure.
+    if let Some(streak_info) = &github_stats.streak_info {
+        state
+            .db
+            .update_streak_from_github(
+                user.id,
+                streak_info.current_streak,
+                streak_info.longest_streak,
+                streak_info.last_activity_date.as_deref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
     let aggregates = github_stats_aggregates(&github_stats);
     let user_stats = state
         .db
@@ -1154,21 +1186,7 @@ pub async fn refresh_badges_progress(
         .map_err(|e| e.to_string())?;
 
     let badge_context = badge_context_from_user_stats(&user_stats);
-
-    let earned_badges = state
-        .db
-        .get_user_badges(user.id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let earned_badges_with_date: Vec<(String, Option<String>)> = earned_badges
-        .into_iter()
-        .map(|b| (b.badge_id, Some(b.earned_at.to_rfc3339())))
-        .collect();
-
-    Ok(badge::get_badges_with_progress(
-        &badge_context,
-        &earned_badges_with_date,
-    ))
+    badges_with_progress_for_user(&state, user.id, &badge_context).await
 }
 
 // ============================================================================
