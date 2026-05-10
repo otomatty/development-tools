@@ -704,25 +704,88 @@ async fn test_get_xp_total_in_range_filters_by_source_and_window() {
         .unwrap();
 
     let yesterday = Utc::now() - chrono::Duration::days(1);
+    let tomorrow = Utc::now() + chrono::Duration::days(1);
     let live_total = db
-        .get_xp_total_in_range(user.id, yesterday, "live")
+        .get_xp_total_in_range(user.id, yesterday, tomorrow, "live")
         .await
         .expect("Should fetch live total");
     let recalc_total = db
-        .get_xp_total_in_range(user.id, yesterday, "recalculated")
+        .get_xp_total_in_range(user.id, yesterday, tomorrow, "recalculated")
         .await
         .expect("Should fetch recalc total");
 
     assert_eq!(live_total, 50);
     assert_eq!(recalc_total, 999);
 
-    // Window in the future returns 0 (no rows newer than tomorrow).
-    let tomorrow = Utc::now() + chrono::Duration::days(1);
+    // Window entirely in the future returns 0 (no rows in [tomorrow, day-after]).
+    let day_after = Utc::now() + chrono::Duration::days(2);
     let future_total = db
-        .get_xp_total_in_range(user.id, tomorrow, "live")
+        .get_xp_total_in_range(user.id, tomorrow, day_after, "live")
         .await
         .expect("Should fetch future total");
     assert_eq!(future_total, 0);
+
+    // Upper-bound clamp: a window that ends before "now" must exclude
+    // the just-inserted rows even though they pass the lower bound.
+    let two_days_ago = Utc::now() - chrono::Duration::days(2);
+    let past_window_total = db
+        .get_xp_total_in_range(user.id, two_days_ago, yesterday, "live")
+        .await
+        .expect("Should fetch past-window total");
+    assert_eq!(past_window_total, 0);
+}
+
+/// Regression for PR #217 P1 review: comparing RFC3339 `since` against
+/// legacy `YYYY-MM-DD HH:MM:SS` `created_at` values must not drop rows.
+///
+/// We seed a legacy-format row directly so `datetime(created_at)`
+/// normalisation in `get_xp_total_in_range` /
+/// `get_last_recalculation_at` is exercised on the format that older
+/// (pre-Issue #194) installs actually have.
+#[tokio::test]
+async fn test_get_xp_total_in_range_handles_legacy_timestamp_format() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Bypass record_xp_gain so the inserted row keeps SQLite's
+    // CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS"). The wall
+    // time used here ('2025-12-01 10:00:00') is intentionally chosen
+    // so that the boundary RFC3339 `since` ('2025-12-01T00:00:00+00:00')
+    // sorts *after* it lexicographically — the bug being regressed.
+    sqlx::query(
+        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
+         VALUES (?, 'github_sync', 42, 'live', '2025-12-01 10:00:00')",
+    )
+    .bind(user.id)
+    .execute(db.pool())
+    .await
+    .expect("Insert legacy row");
+
+    let since: chrono::DateTime<Utc> = "2025-12-01T00:00:00+00:00".parse().unwrap();
+    let until: chrono::DateTime<Utc> = "2025-12-02T00:00:00+00:00".parse().unwrap();
+    let total = db
+        .get_xp_total_in_range(user.id, since, until, "live")
+        .await
+        .expect("Should fetch legacy-row total");
+    assert_eq!(total, 42, "legacy YYYY-MM-DD HH:MM:SS row must be included");
+
+    // A recalc row in the same format must satisfy the rate-limit guard.
+    sqlx::query(
+        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
+         VALUES (?, 'recalculation', 0, 'recalculated', '2025-12-01 11:00:00')",
+    )
+    .bind(user.id)
+    .execute(db.pool())
+    .await
+    .expect("Insert legacy recalc row");
+    let last = db
+        .get_last_recalculation_at(user.id)
+        .await
+        .expect("Should fetch latest recalc");
+    assert!(last.is_some(), "legacy recalc row must be discoverable");
 }
 
 #[tokio::test]

@@ -122,13 +122,22 @@ impl Database {
     }
 
     /// Sum `xp_history.xp_amount` for a user, scoped to a `source` value and
-    /// a `[since, now]` window. Used by `recalculate_xp_history` to render
+    /// a `[since, until]` window. Used by `recalculate_xp_history` to render
     /// "previous live XP earned in this window" alongside the recalculated
     /// value (DoD: 計算前後の値を比較表示できる).
+    ///
+    /// Both bounds are normalised through SQLite's `datetime()` function so
+    /// the comparison is correct even when the row mixes the new RFC3339
+    /// format (`YYYY-MM-DDTHH:MM:SS.fff+00:00`) and the legacy
+    /// `CURRENT_TIMESTAMP` default (`YYYY-MM-DD HH:MM:SS`). A naïve
+    /// lexicographic compare across those two formats can drop boundary
+    /// rows because `' ' < 'T'` ASCII-wise, which broke the "before" total
+    /// for any user with pre-migration v15 rows on the boundary day.
     pub async fn get_xp_total_in_range(
         &self,
         user_id: i64,
         since: DateTime<Utc>,
+        until: DateTime<Utc>,
         source: &str,
     ) -> DbResult<i32> {
         let total: Option<i32> = sqlx::query_scalar(
@@ -137,12 +146,14 @@ impl Database {
             FROM xp_history
             WHERE user_id = ?
               AND source = ?
-              AND created_at >= ?
+              AND datetime(created_at) >= datetime(?)
+              AND datetime(created_at) <= datetime(?)
             "#,
         )
         .bind(user_id)
         .bind(source)
         .bind(since.to_rfc3339())
+        .bind(until.to_rfc3339())
         .fetch_one(self.pool())
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -153,6 +164,12 @@ impl Database {
     /// Most-recent recalculation timestamp for a user, used by the
     /// rate-limit guard in `recalculate_xp_history`. `None` means the user
     /// has never run a recalculation.
+    ///
+    /// `ORDER BY datetime(created_at) DESC` (rather than the raw column)
+    /// ensures legacy `YYYY-MM-DD HH:MM:SS` rows and new RFC3339 rows are
+    /// compared on a single canonical scale — see the comment on
+    /// `get_xp_total_in_range` for why a lexicographic ordering on the raw
+    /// column would otherwise mis-order across formats.
     pub async fn get_last_recalculation_at(
         &self,
         user_id: i64,
@@ -162,7 +179,7 @@ impl Database {
             SELECT created_at
             FROM xp_history
             WHERE user_id = ? AND source = ?
-            ORDER BY created_at DESC
+            ORDER BY datetime(created_at) DESC
             LIMIT 1
             "#,
         )

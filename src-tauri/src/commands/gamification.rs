@@ -347,8 +347,18 @@ pub async fn recalculate_xp_history(
         ));
     }
 
-    // Rate-limit guard — short and read-only so we can reject before
-    // taking the sync lock or hitting the GraphQL API.
+    // Hold the sync lock so a manual recalc can't race a scheduler-driven
+    // `run_github_sync` *and* so two concurrent recalc calls can't both
+    // pass the rate-limit guard before either has written its row. The
+    // rate-limit check therefore runs INSIDE the locked section — moving
+    // it before `lock()` would re-introduce the TOCTOU window flagged in
+    // PR #217 review.
+    let _guard = state.sync_lock.lock().await;
+
+    // Re-take the clock after acquiring the lock; `lock()` itself can
+    // wait for the scheduler-driven sync to finish, so the upper bound
+    // of the window must reflect that wait.
+    let recalc_at = Utc::now();
     if let Some(last) = state
         .db
         .get_last_recalculation_at(user.id)
@@ -356,8 +366,8 @@ pub async fn recalculate_xp_history(
         .map_err(|e| e.to_string())?
     {
         let next_allowed = last + Duration::minutes(RECALC_RATE_LIMIT_MINUTES);
-        if next_allowed > now {
-            let wait_minutes = (next_allowed - now).num_minutes().max(1);
+        if next_allowed > recalc_at {
+            let wait_minutes = (next_allowed - recalc_at).num_minutes().max(1);
             return Err(format!(
                 "XP 再計算は{}分に1回までです。次回は約{}分後 ({}) に実行できます。",
                 RECALC_RATE_LIMIT_MINUTES,
@@ -366,10 +376,6 @@ pub async fn recalculate_xp_history(
             ));
         }
     }
-
-    // Hold the sync lock so a manual recalc can't race a scheduler-driven
-    // `run_github_sync`. The locking pattern mirrors `run_github_sync`.
-    let _guard = state.sync_lock.lock().await;
 
     let token = state
         .token_manager
@@ -382,7 +388,7 @@ pub async fn recalculate_xp_history(
         &app,
         state.inner(),
         client
-            .get_contribution_calendar_window(&user.username, Some(parsed_since), Some(now))
+            .get_contribution_calendar_window(&user.username, Some(parsed_since), Some(recalc_at))
             .await,
     )
     .await?;
@@ -420,7 +426,7 @@ pub async fn recalculate_xp_history(
         current_streak,
     );
 
-    let window_days = (now - parsed_since).num_days().max(0);
+    let window_days = (recalc_at - parsed_since).num_days().max(0);
     let description = format!(
         "過去{}日分のXP再計算 (commits={}, prs={}, issues={}, reviews={}, streak={})",
         window_days,
@@ -442,11 +448,17 @@ pub async fn recalculate_xp_history(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Bound the live-XP comparison query to the exact `[since, recalc_at]`
+    // window the result reports, so the "before" total never drifts even
+    // if `run_github_sync` was queued behind our sync_lock and recorded a
+    // row between `recalc_at` and this query — that row would belong to
+    // the *next* window, not this one.
     let previous_live_total = state
         .db
         .get_xp_total_in_range(
             user.id,
             parsed_since,
+            recalc_at,
             crate::database::repository::XP_HISTORY_SOURCE_LIVE,
         )
         .await
@@ -454,7 +466,7 @@ pub async fn recalculate_xp_history(
 
     Ok(RecalculationResult {
         since: parsed_since.to_rfc3339(),
-        until: now.to_rfc3339(),
+        until: recalc_at.to_rfc3339(),
         recalculated_total_xp: breakdown.total_xp,
         recalculated_breakdown: RecalculatedXpBreakdown::from(&breakdown),
         previous_live_total_xp_in_window: previous_live_total,
