@@ -19,6 +19,7 @@ import {
   DataManagement,
   AppInfo,
   SettingsReset,
+  XpRecalculation,
 } from '../../components/features/settings';
 
 type SettingsSection = 'Account' | 'Notification' | 'Sync' | 'Appearance' | 'DataManagement' | 'AppInfo';
@@ -100,9 +101,13 @@ export const Settings = () => {
           icon="database"
           expanded={isExpanded('DataManagement')}
           onToggle={() => toggleSection('DataManagement')}
-          maxHeight="1200px"
+          maxHeight="1600px"
         >
-          <DataManagement />
+          <div className="space-y-6">
+            <DataManagement />
+            <div className="border-t border-gm-accent-cyan/20" />
+            <XpRecalculation />
+          </div>
         </AccordionSection>
 
         {/* App Info Section */}

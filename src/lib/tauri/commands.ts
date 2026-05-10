@@ -34,6 +34,7 @@ import type {
   Badge,
   BadgeDefinition,
   XpHistoryEntry,
+  RecalculationResult,
   ChallengeInfo,
   CreateChallengeRequest,
   ChallengeStats,
@@ -374,6 +375,16 @@ export const gamification = {
    */
   getBadgeDefinitions: (): Promise<BadgeDefinition[]> =>
     invoke<BadgeDefinition[]>('get_badge_definitions'),
+
+  /**
+   * 過去 1 年分の XP を contributionCalendar から再計算する（Issue #194）。
+   *
+   * `xp_history` には `source = 'recalculated'` の監査エントリが追加されるが、
+   * `user_stats.total_xp` は変更されない。レート制限ガードで 1 時間に
+   * 1 回のみ実行できる。
+   */
+  recalculateXpHistory: (since?: string | null): Promise<RecalculationResult> =>
+    invoke<RecalculationResult>('recalculate_xp_history', { since: since ?? null }),
 };
 
 // ============================================================================

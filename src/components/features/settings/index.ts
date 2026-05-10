@@ -14,3 +14,4 @@ export { SyncSettings } from './SyncSettings';
 export { DataManagement } from './DataManagement';
 export { SettingsReset } from './SettingsReset';
 export { AppInfo } from './AppInfo';
+export { XpRecalculation } from './XpRecalculation';

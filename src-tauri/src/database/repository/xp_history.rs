@@ -6,9 +6,25 @@ use sqlx::Row;
 use crate::database::connection::{Database, DatabaseError, DbResult};
 use crate::database::models::{XpBreakdown, XpHistoryEntry};
 
+/// `xp_history.source` value for entries produced by the live sync stream
+/// (`run_github_sync`, streak bonus, manual `add_xp`, …). This is the default
+/// for every pre-Issue #194 row.
+pub const XP_HISTORY_SOURCE_LIVE: &str = "live";
+
+/// `xp_history.source` value for entries produced by `recalculate_xp_history`
+/// (Issue #194). These rows are intentionally NOT folded into
+/// `user_stats.total_xp` — they exist for audit / comparison only, so a
+/// recalculation never overwrites or double-counts the live XP stream.
+pub const XP_HISTORY_SOURCE_RECALCULATED: &str = "recalculated";
+
 /// XP History repository operations
 impl Database {
-    /// Record XP gain with optional breakdown
+    /// Record an XP gain produced by the live sync stream.
+    ///
+    /// Thin wrapper over [`record_xp_gain_with_source`] that pins the new
+    /// `xp_history.source` column to [`XP_HISTORY_SOURCE_LIVE`] so existing
+    /// callers don't need to thread the source through. Recalculation
+    /// entries must go through [`record_xp_recalculation`] instead.
     pub async fn record_xp_gain(
         &self,
         user_id: i64,
@@ -18,6 +34,32 @@ impl Database {
         github_event_id: Option<&str>,
         breakdown: Option<&XpBreakdown>,
     ) -> DbResult<i64> {
+        self.record_xp_gain_with_source(
+            user_id,
+            action_type,
+            xp_amount,
+            description,
+            github_event_id,
+            breakdown,
+            XP_HISTORY_SOURCE_LIVE,
+        )
+        .await
+    }
+
+    /// Record an XP gain, tagging it with the supplied `source`.
+    ///
+    /// Centralises the INSERT so the live path and the recalculation path
+    /// can't drift apart on serialization or column ordering.
+    pub async fn record_xp_gain_with_source(
+        &self,
+        user_id: i64,
+        action_type: &str,
+        xp_amount: i32,
+        description: Option<&str>,
+        github_event_id: Option<&str>,
+        breakdown: Option<&XpBreakdown>,
+        source: &str,
+    ) -> DbResult<i64> {
         let breakdown_json = breakdown
             .map(|b| serde_json::to_string(b))
             .transpose()
@@ -25,10 +67,19 @@ impl Database {
                 DatabaseError::Query(format!("Failed to serialize XP breakdown: {}", e))
             })?;
 
+        // Bind `created_at` explicitly as RFC3339 (with microseconds)
+        // instead of falling back to SQLite's CURRENT_TIMESTAMP default,
+        // which uses 'YYYY-MM-DD HH:MM:SS'. Both formats sort
+        // lexicographically against UTC RFC3339, but pinning the column
+        // to a single format makes the range queries in
+        // `get_xp_total_in_range` and the rate-limit guard in
+        // `get_last_recalculation_at` deterministic and lets the
+        // recalculation feature reuse RFC3339 throughout.
+        let now = Utc::now().to_rfc3339();
         let id = sqlx::query(
             r#"
-            INSERT INTO xp_history (user_id, action_type, xp_amount, description, github_event_id, breakdown_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO xp_history (user_id, action_type, xp_amount, description, github_event_id, breakdown_json, source, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(user_id)
@@ -37,12 +88,102 @@ impl Database {
         .bind(description)
         .bind(github_event_id)
         .bind(breakdown_json)
+        .bind(source)
+        .bind(now)
         .execute(self.pool())
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?
         .last_insert_rowid();
 
         Ok(id)
+    }
+
+    /// Record a past-year XP recalculation (Issue #194).
+    ///
+    /// Always writes with `source = 'recalculated'` so `user_stats.total_xp`
+    /// is left untouched — the row is for audit / before-after comparison.
+    pub async fn record_xp_recalculation(
+        &self,
+        user_id: i64,
+        xp_amount: i32,
+        description: Option<&str>,
+        breakdown: Option<&XpBreakdown>,
+    ) -> DbResult<i64> {
+        self.record_xp_gain_with_source(
+            user_id,
+            "recalculation",
+            xp_amount,
+            description,
+            None,
+            breakdown,
+            XP_HISTORY_SOURCE_RECALCULATED,
+        )
+        .await
+    }
+
+    /// Sum `xp_history.xp_amount` for a user, scoped to a `source` value and
+    /// a `[since, until]` window. Used by `recalculate_xp_history` to render
+    /// "previous live XP earned in this window" alongside the recalculated
+    /// value (DoD: 計算前後の値を比較表示できる).
+    ///
+    /// Migration v16 backfilled every legacy `YYYY-MM-DD HH:MM:SS` row to
+    /// `YYYY-MM-DDTHH:MM:SS+00:00`, so the entire column is now in a single
+    /// canonical RFC3339 form. That lets us compare strings lexicographically
+    /// — preserving sub-second precision (no `datetime()` truncation; see
+    /// Codex P2 review) and letting the `idx_xp_history_user_source_created`
+    /// composite index drive the range scan directly.
+    pub async fn get_xp_total_in_range(
+        &self,
+        user_id: i64,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+        source: &str,
+    ) -> DbResult<i32> {
+        let total: Option<i32> = sqlx::query_scalar(
+            r#"
+            SELECT COALESCE(SUM(xp_amount), 0)
+            FROM xp_history
+            WHERE user_id = ?
+              AND source = ?
+              AND created_at >= ?
+              AND created_at <= ?
+            "#,
+        )
+        .bind(user_id)
+        .bind(source)
+        .bind(since.to_rfc3339())
+        .bind(until.to_rfc3339())
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(total.unwrap_or(0))
+    }
+
+    /// Most-recent recalculation timestamp for a user, used by the
+    /// rate-limit guard in `recalculate_xp_history`. `None` means the user
+    /// has never run a recalculation.
+    ///
+    /// Lexicographic ORDER BY is correct because migration v16 normalised
+    /// all `xp_history.created_at` rows to canonical RFC3339 — see
+    /// `get_xp_total_in_range` for the rationale.
+    pub async fn get_last_recalculation_at(&self, user_id: i64) -> DbResult<Option<DateTime<Utc>>> {
+        let row: Option<(String,)> = sqlx::query_as(
+            r#"
+            SELECT created_at
+            FROM xp_history
+            WHERE user_id = ? AND source = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id)
+        .bind(XP_HISTORY_SOURCE_RECALCULATED)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(row.and_then(|(s,)| parse_xp_history_timestamp(&s)))
     }
 
     /// Check if XP was already recorded for a GitHub event
@@ -58,6 +199,10 @@ impl Database {
     }
 
     /// Get recent XP history
+    ///
+    /// Lexicographic ORDER BY is correct because migration v16 normalised
+    /// all `xp_history.created_at` rows to canonical RFC3339 — see
+    /// `get_xp_total_in_range` for the rationale.
     pub async fn get_recent_xp_history(
         &self,
         user_id: i64,
@@ -65,7 +210,7 @@ impl Database {
     ) -> DbResult<Vec<XpHistoryEntry>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, user_id, action_type, xp_amount, description, github_event_id, breakdown_json, created_at
+            SELECT id, user_id, action_type, xp_amount, description, github_event_id, breakdown_json, created_at, source
             FROM xp_history
             WHERE user_id = ?
             ORDER BY created_at DESC
@@ -93,6 +238,33 @@ impl Database {
                     }
                 });
 
+                // `try_get` instead of `get` so a NULL / unexpected-type
+                // `created_at` cell can't panic the whole query. The
+                // RFC3339-or-legacy parse is also fallible, so we log
+                // both failure modes (matching the breakdown_json
+                // handling above) and fall back to `Utc::now()` rather
+                // than aborting the entire history fetch on a single
+                // malformed row.
+                let created_at = row
+                    .try_get::<String, _>("created_at")
+                    .map_err(|e| {
+                        // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+                        eprintln!("[WARN] Failed to read xp_history.created_at: {}", e);
+                    })
+                    .ok()
+                    .and_then(|s| {
+                        let parsed = parse_xp_history_timestamp(&s);
+                        if parsed.is_none() {
+                            // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+                            eprintln!(
+                                "[WARN] Failed to parse xp_history.created_at value: {:?}",
+                                s
+                            );
+                        }
+                        parsed
+                    })
+                    .unwrap_or_else(Utc::now);
+
                 XpHistoryEntry {
                     id: row.get("id"),
                     user_id: row.get("user_id"),
@@ -101,13 +273,29 @@ impl Database {
                     description: row.get("description"),
                     github_event_id: row.get("github_event_id"),
                     breakdown,
-                    created_at: DateTime::parse_from_rfc3339(row.get::<&str, _>("created_at"))
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
+                    created_at,
+                    source: row.get("source"),
                 }
             })
             .collect();
 
         Ok(entries)
     }
+}
+
+/// Parse a `xp_history.created_at` cell into a UTC `DateTime`.
+///
+/// Older rows (pre-Issue #194) were inserted without an explicit
+/// `created_at` bind and use SQLite's `CURRENT_TIMESTAMP` default
+/// (`YYYY-MM-DD HH:MM:SS`). New rows are written as RFC3339 (see
+/// `record_xp_gain_with_source`). This helper accepts either, so the
+/// rate-limit guard works for both legacy and fresh entries.
+fn parse_xp_history_timestamp(raw: &str) -> Option<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
+        return Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc));
+    }
+    None
 }

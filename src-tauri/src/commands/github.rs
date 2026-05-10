@@ -12,6 +12,7 @@ use crate::database::{
 };
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
 use crate::utils::notifications::send_notification;
+use crate::utils::numeric::clamp_to_u64;
 
 /// Saturating, sign-safe difference between two cumulative i32 counters.
 ///
@@ -23,15 +24,6 @@ use crate::utils::notifications::send_notification;
 /// "first sync" branches funnel through.
 fn diff_count(current: i32, previous: i32) -> u64 {
     clamp_to_u64(current).saturating_sub(clamp_to_u64(previous))
-}
-
-/// Clamp a possibly-negative `i32` count to a `u64` (negative → 0).
-fn clamp_to_u64(value: i32) -> u64 {
-    if value < 0 {
-        0
-    } else {
-        value as u64
-    }
 }
 
 /// Get GitHub user profile

@@ -624,6 +624,250 @@ async fn test_update_github_aggregates_preserves_xp_and_streak() {
     assert_eq!(after.last_activity_date, before.last_activity_date);
 }
 
+// ---------------------------------------------------------------------------
+// Issue #194: xp_history.source coexistence (recalculation vs live entries).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_record_xp_gain_defaults_to_live_source() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    db.record_xp_gain(user.id, "github_sync", 50, Some("first sync"), None, None)
+        .await
+        .expect("Should record xp gain");
+
+    let history = db
+        .get_recent_xp_history(user.id, 10)
+        .await
+        .expect("Should fetch history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].source, "live");
+    assert_eq!(history[0].xp_amount, 50);
+}
+
+#[tokio::test]
+async fn test_record_xp_recalculation_is_separate_from_live() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    db.record_xp_gain(user.id, "github_sync", 100, Some("live"), None, None)
+        .await
+        .expect("live row");
+    db.record_xp_recalculation(user.id, 80, Some("recalc"), None)
+        .await
+        .expect("recalc row");
+
+    // user_stats.total_xp must NOT include the recalculation row.
+    // record_xp_gain / record_xp_recalculation only write xp_history;
+    // adding to user_stats.total_xp is the live caller's responsibility.
+    let stats = db
+        .get_user_stats(user.id)
+        .await
+        .expect("Should get stats")
+        .expect("Stats should exist");
+    assert_eq!(stats.total_xp, 0);
+
+    let history = db
+        .get_recent_xp_history(user.id, 10)
+        .await
+        .expect("Should fetch history");
+    let live_count = history.iter().filter(|e| e.source == "live").count();
+    let recalc_count = history
+        .iter()
+        .filter(|e| e.source == "recalculated")
+        .count();
+    assert_eq!(live_count, 1);
+    assert_eq!(recalc_count, 1);
+}
+
+#[tokio::test]
+async fn test_get_xp_total_in_range_filters_by_source_and_window() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Two live rows ~ now, plus a recalc row that must NOT be counted.
+    db.record_xp_gain(user.id, "github_sync", 30, None, None, None)
+        .await
+        .unwrap();
+    db.record_xp_gain(user.id, "streak_bonus", 20, None, None, None)
+        .await
+        .unwrap();
+    db.record_xp_recalculation(user.id, 999, None, None)
+        .await
+        .unwrap();
+
+    let yesterday = Utc::now() - chrono::Duration::days(1);
+    let tomorrow = Utc::now() + chrono::Duration::days(1);
+    let live_total = db
+        .get_xp_total_in_range(user.id, yesterday, tomorrow, "live")
+        .await
+        .expect("Should fetch live total");
+    let recalc_total = db
+        .get_xp_total_in_range(user.id, yesterday, tomorrow, "recalculated")
+        .await
+        .expect("Should fetch recalc total");
+
+    assert_eq!(live_total, 50);
+    assert_eq!(recalc_total, 999);
+
+    // Window entirely in the future returns 0 (no rows in [tomorrow, day-after]).
+    let day_after = Utc::now() + chrono::Duration::days(2);
+    let future_total = db
+        .get_xp_total_in_range(user.id, tomorrow, day_after, "live")
+        .await
+        .expect("Should fetch future total");
+    assert_eq!(future_total, 0);
+
+    // Upper-bound clamp: a window that ends before "now" must exclude
+    // the just-inserted rows even though they pass the lower bound.
+    let two_days_ago = Utc::now() - chrono::Duration::days(2);
+    let past_window_total = db
+        .get_xp_total_in_range(user.id, two_days_ago, yesterday, "live")
+        .await
+        .expect("Should fetch past-window total");
+    assert_eq!(past_window_total, 0);
+}
+
+/// Regression for PR #217 / migration v16: a directly-inserted legacy
+/// `YYYY-MM-DD HH:MM:SS` row must end up canonical RFC3339 after the v16
+/// backfill SQL runs, so subsequent lexicographic range / ORDER BY
+/// queries are correct without `datetime()` wrapping.
+///
+/// We exercise the migration body directly because `setup_test_db` runs
+/// every migration once at boot, before any test row exists.
+#[tokio::test]
+async fn test_migration_v16_normalizes_legacy_created_at_to_rfc3339() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Insert a legacy-format row that v16 hasn't seen yet (it ran during
+    // setup, before this row existed). Mirrors the SQL in
+    // migrations.rs::Migration { version: 16 } so the test fails if the
+    // migration is ever weakened.
+    sqlx::query(
+        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
+         VALUES (?, 'github_sync', 42, 'live', '2025-12-01 10:00:00')",
+    )
+    .bind(user.id)
+    .execute(db.pool())
+    .await
+    .expect("Insert legacy row");
+    sqlx::query(
+        "UPDATE xp_history \
+            SET created_at = strftime('%Y-%m-%dT%H:%M:%S+00:00', created_at) \
+          WHERE created_at NOT LIKE '%T%'",
+    )
+    .execute(db.pool())
+    .await
+    .expect("Re-run v16 backfill");
+
+    let stored: String = sqlx::query_scalar("SELECT created_at FROM xp_history WHERE user_id = ?")
+        .bind(user.id)
+        .fetch_one(db.pool())
+        .await
+        .expect("Read normalised row");
+    assert_eq!(stored, "2025-12-01T10:00:00+00:00");
+
+    // And the canonical row participates in range queries lexicographically.
+    let since: chrono::DateTime<Utc> = "2025-12-01T00:00:00+00:00".parse().unwrap();
+    let until: chrono::DateTime<Utc> = "2025-12-02T00:00:00+00:00".parse().unwrap();
+    let total = db
+        .get_xp_total_in_range(user.id, since, until, "live")
+        .await
+        .expect("Should fetch normalised total");
+    assert_eq!(total, 42);
+}
+
+/// Regression for PR #217 Codex P2 review: range filtering must preserve
+/// sub-second precision. Wrapping bounds in `datetime()` previously
+/// rounded both sides to whole seconds, so a row written at .500ms
+/// would wrongly match a bound at .300ms in the same wall-clock second.
+/// After dropping `datetime()` (post-v16 canonicalisation), lexicographic
+/// RFC3339 compare keeps fractional precision intact.
+#[tokio::test]
+async fn test_get_xp_total_in_range_preserves_subsecond_precision() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Insert a row at exactly :00.500, then bound the window at :00.300.
+    // The row must NOT be counted because it occurs after the bound.
+    sqlx::query(
+        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
+         VALUES (?, 'github_sync', 99, 'live', '2025-12-01T10:00:00.500+00:00')",
+    )
+    .bind(user.id)
+    .execute(db.pool())
+    .await
+    .expect("Insert subsecond row");
+
+    let since: chrono::DateTime<Utc> = "2025-12-01T00:00:00+00:00".parse().unwrap();
+    let until: chrono::DateTime<Utc> = "2025-12-01T10:00:00.300+00:00".parse().unwrap();
+    let total = db
+        .get_xp_total_in_range(user.id, since, until, "live")
+        .await
+        .expect("Should fetch sub-second-bounded total");
+    assert_eq!(
+        total, 0,
+        "row at .500ms must NOT match a bound at .300ms in the same second"
+    );
+
+    // Widening the bound past .500 includes the row.
+    let until_wide: chrono::DateTime<Utc> = "2025-12-01T10:00:00.700+00:00".parse().unwrap();
+    let total_wide = db
+        .get_xp_total_in_range(user.id, since, until_wide, "live")
+        .await
+        .expect("Should fetch widened total");
+    assert_eq!(total_wide, 99);
+}
+
+#[tokio::test]
+async fn test_get_last_recalculation_at_returns_latest_recalc_only() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // No recalc rows yet → None.
+    let initial = db
+        .get_last_recalculation_at(user.id)
+        .await
+        .expect("Should query empty");
+    assert!(initial.is_none());
+
+    // Live row alone must not satisfy the rate-limit guard.
+    db.record_xp_gain(user.id, "github_sync", 10, None, None, None)
+        .await
+        .unwrap();
+    assert!(db
+        .get_last_recalculation_at(user.id)
+        .await
+        .unwrap()
+        .is_none());
+
+    db.record_xp_recalculation(user.id, 1, None, None)
+        .await
+        .unwrap();
+    let latest = db.get_last_recalculation_at(user.id).await.unwrap();
+    assert!(latest.is_some(), "Should return the recalc timestamp");
+}
+
 #[tokio::test]
 async fn test_progress_capped_at_target() {
     let db = setup_test_db().await;

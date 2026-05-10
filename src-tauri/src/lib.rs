@@ -79,6 +79,8 @@ use commands::{
     open_external_url,
     open_url,
     poll_device_token,
+    // Issue #194: past-year XP recalculation
+    recalculate_xp_history,
     // Issue #191: explicit refresh for badge progress (heavy aggregate API call)
     refresh_badges_progress,
     relink_repository,
@@ -224,6 +226,8 @@ pub fn run() {
             award_badge,
             get_xp_history,
             get_badge_definitions,
+            // Past-year XP recalculation (Issue #194)
+            recalculate_xp_history,
             // Challenge commands
             get_active_challenges,
             get_all_challenges,

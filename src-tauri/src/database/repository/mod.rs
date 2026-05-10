@@ -20,3 +20,4 @@ mod tests;
 // (Most repository operations are methods on `Database` and become
 // available automatically when `Database` is imported.)
 pub use user_stats::UserStatsGitHubAggregates;
+pub use xp_history::{XP_HISTORY_SOURCE_LIVE, XP_HISTORY_SOURCE_RECALCULATED};
