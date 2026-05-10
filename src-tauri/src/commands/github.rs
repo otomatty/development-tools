@@ -1157,27 +1157,6 @@ pub async fn refresh_badges_progress(
     )
     .await?;
 
-    // Mirror the streak fields too — `badge_context_from_user_stats`
-    // pulls `current_streak` / `longest_streak` from `user_stats`, so
-    // without this step a "refresh" right after a streak change would
-    // still render streak badges against the previous sync's value
-    // even though we just made a fresh API call. Surfacing the error
-    // (rather than swallowing it) is consistent with `run_github_sync`
-    // and matches the user intent — they explicitly asked for fresh
-    // numbers, so a partial refresh is worse than an explicit failure.
-    if let Some(streak_info) = &github_stats.streak_info {
-        state
-            .db
-            .update_streak_from_github(
-                user.id,
-                streak_info.current_streak,
-                streak_info.longest_streak,
-                streak_info.last_activity_date.as_deref(),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
     let aggregates = github_stats_aggregates(&github_stats);
     let user_stats = state
         .db
@@ -1185,7 +1164,22 @@ pub async fn refresh_badges_progress(
         .await
         .map_err(|e| e.to_string())?;
 
-    let badge_context = badge_context_from_user_stats(&user_stats);
+    // Build the badge context from the freshly-persisted aggregates,
+    // then *overlay* `current_streak` / `longest_streak` from the live
+    // GitHub response. We deliberately do NOT persist streak changes
+    // here: `sync_github_stats` reads `user_stats.current_streak` as
+    // its `old_streak` baseline before recomputing the streak bonus,
+    // so a refresh that wrote the new streak first would make the
+    // next sync see no delta and silently skip the daily / milestone
+    // streak XP. Keeping the persistence path single-owner
+    // (`run_github_sync` only) preserves XP correctness while still
+    // giving the badge UI the fresh values the user expects.
+    let mut badge_context = badge_context_from_user_stats(&user_stats);
+    if let Some(streak_info) = &github_stats.streak_info {
+        badge_context.current_streak = streak_info.current_streak;
+        badge_context.longest_streak = streak_info.longest_streak;
+    }
+
     badges_with_progress_for_user(&state, user.id, &badge_context).await
 }
 

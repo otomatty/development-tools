@@ -77,6 +77,15 @@ get_badges_with_progress / get_near_completion_badges
 - `update_github_aggregates` は XP・current_level・current_streak・
   longest_streak・last_activity_date を **書き換えない**
   （これらは XP / streak の専用パスが書く）。
+- `refresh_badges_progress` は GitHub から取得した
+  `streak_info.current_streak` / `longest_streak` を
+  返り値の `BadgeEvalContext` には反映するが、
+  `user_stats` には **書き戻さない**。`run_github_sync` は
+  `user_stats.current_streak` を XP ストリークボーナスの
+  `old_streak` 基準値として読むため、refresh が DB に
+  書いてしまうと次回 sync で `(old_streak == new_streak)` と
+  なり日次／マイルストーンボーナスが恒久的に取り逃される。
+  ストリークの永続化は `run_github_sync` の単一責任。
 - 既存ユーザーは migration v14 直後、新規 6 列が `0` で初期化される。
   最初の `sync_github_stats` 実行で正しい値に上書きされる。
   それまでバッジ進捗は「不足」側に倒れるが、誤って「達成」側に
