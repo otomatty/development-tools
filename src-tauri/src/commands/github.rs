@@ -1157,6 +1157,16 @@ pub async fn refresh_badges_progress(
     )
     .await?;
 
+    // Take `sync_lock` before persisting so a concurrent
+    // `run_github_sync` (manual or scheduler-triggered) can't race us.
+    // Both writers touch the same `user_stats` aggregate columns; the
+    // GitHub fetch above happened *outside* the lock, so without
+    // serialisation a refresh that fetched an older snapshot but
+    // completed after a fresh sync would clobber the newer totals
+    // (last-writer-wins) and silently regress badge progress until
+    // the next sync/refresh.
+    let _guard = state.sync_lock.lock().await;
+
     let aggregates = github_stats_aggregates(&github_stats);
     let user_stats = state
         .db
