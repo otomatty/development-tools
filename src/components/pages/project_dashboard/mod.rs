@@ -135,6 +135,16 @@ pub fn ProjectDashboardPage(
     let on_repo_linked = move |updated_project: Project| {
         set_project.set(Some(updated_project));
         set_show_link_modal.set(false);
+        // Re-link to a different repo clears stale cached_issues on the
+        // backend (see `link_repository` — PR #213 P1 review). Refresh
+        // the kanban so the UI doesn't keep showing the old cards
+        // briefly while the user wonders whether the re-link took
+        // effect.
+        spawn_local(async move {
+            if let Ok(board) = tauri_api::get_kanban_board(project_id).await {
+                set_kanban.set(board);
+            }
+        });
     };
 
     // Handle issue created

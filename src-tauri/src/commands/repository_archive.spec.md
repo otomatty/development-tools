@@ -139,20 +139,34 @@ pub struct SyncAllProjectsResult {
 
 ### 再リンク（`relink_repository` / `link_repository`）
 
-`link_repository` を再利用するが、archive フラグの解除を明示的に行う:
+`link_repository` を再利用する。同一トランザクション内で:
+
+1. `projects` の repo_* と archive フラグを更新
+2. 「異なるリポジトリへの再リンク」（旧 `github_repo_id` ≠ 新 `repo_info.id`）
+   の場合のみ `DELETE FROM cached_issues WHERE project_id = ?` を実行
 
 ```sql
+BEGIN;
 UPDATE projects
 SET github_repo_id = ?, repo_owner = ?, repo_name = ?, repo_full_name = ?,
     is_archived = 0, archived_at = NULL, archived_reason = NULL,
     updated_at = ?
 WHERE id = ? AND user_id = ?;
+-- 異なるリポジトリへの再リンク時のみ:
+DELETE FROM cached_issues WHERE project_id = ?;
+COMMIT;
 ```
 
-`cached_issues.is_archived` は **意図的に解除しない**。新しい
-リポジトリの issue と古い owner/repo の issue が混ざるのを避けるため、
-次回 `sync_project_issues` が成功して INSERT/UPSERT で `is_archived = 0`
-を上書きするまでは旧 issue を archived として表示する。
+stale な cached_issues を保持しない理由（PR #213 P1 レビュー）:
+
+- kanban が旧リポジトリの issue 番号を表示し続ける
+- `update_issue_status` は `(project_id, number)` で cached_issues を
+  特定し、GitHub には **新しい** owner/repo + その番号で API を叩く
+- 結果、ドラッグで偶然同じ番号の無関係な issue を変更してしまう
+
+最初に同じリポジトリを再リンクするケース（権限変更後の確認等）では
+キャッシュを保持する。次回 sync で UPSERT が `is_archived = 0` を
+上書きする。
 
 ### エラー型
 

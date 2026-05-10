@@ -217,6 +217,84 @@ pub async fn get_user_repositories(
         .collect())
 }
 
+/// Apply the database-side effects of linking (or re-linking) a repository
+/// to a project. Pulled out so unit tests can exercise the
+/// re-link-clears-stale-cache invariant without spinning up the full
+/// Tauri runtime + GitHub HTTP client.
+///
+/// Re-linking to a *different* repository (previous `github_repo_id` is
+/// non-null and differs from the new one) hard-deletes the project's
+/// `cached_issues`. Without this, the kanban would keep showing cards
+/// from the old repo, and `update_issue_status` — which looks up by
+/// `(project_id, number)` — would route a drag on a stale card to a
+/// coincidentally-numbered issue in the newly linked repository
+/// (PR #213 P1 review). The whole operation runs in a single
+/// transaction so a crash between the UPDATE and the DELETE can't
+/// leave the project pointing at the new repo with old cache still
+/// queryable.
+pub(crate) async fn apply_repository_link(
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+    project_id: i64,
+    user_id: i64,
+    new_repo_id: i64,
+    owner: &str,
+    repo: &str,
+    full_name: &str,
+    now: &str,
+) -> Result<(), String> {
+    let previous_repo_id: Option<i64> =
+        sqlx::query_scalar("SELECT github_repo_id FROM projects WHERE id = ? AND user_id = ?")
+            .bind(project_id)
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("Failed to read project: {}", e))?
+            .flatten();
+
+    let is_relink_to_different_repo = previous_repo_id
+        .map(|prev| prev != new_repo_id)
+        .unwrap_or(false);
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("Failed to begin link transaction: {}", e))?;
+
+    sqlx::query(
+        r#"
+        UPDATE projects
+        SET github_repo_id = ?, repo_owner = ?, repo_name = ?, repo_full_name = ?,
+            is_archived = 0, archived_at = NULL, archived_reason = NULL,
+            updated_at = ?
+        WHERE id = ? AND user_id = ?
+        "#,
+    )
+    .bind(new_repo_id)
+    .bind(owner)
+    .bind(repo)
+    .bind(full_name)
+    .bind(now)
+    .bind(project_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("Failed to link repository: {}", e))?;
+
+    if is_relink_to_different_repo {
+        sqlx::query("DELETE FROM cached_issues WHERE project_id = ?")
+            .bind(project_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Failed to clear stale cached issues: {}", e))?;
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("Failed to commit link transaction: {}", e))?;
+
+    Ok(())
+}
+
 /// Link a repository to a project
 #[tauri::command]
 pub async fn link_repository(
@@ -238,35 +316,27 @@ pub async fn link_repository(
     )
     .await?;
 
+    // Detect whether this is a re-link to a *different* repository — the
+    // previous github_repo_id is non-null and doesn't match the new one.
+    // We need this signal to clear stale `cached_issues` rows (PR #213
+    // P1 review): otherwise the kanban would keep showing cards from the
+    // old repo, and `update_issue_status` matches on `(project_id,
+    // number)` while calling GitHub with the new owner/repo — so a drag
+    // could mutate an unrelated issue in the newly linked repository.
     let now = Utc::now().to_rfc3339();
     let full_name = format!("{}/{}", owner, repo);
 
-    // Update project with repository info. Clearing the archive flags here
-    // doubles as the re-link flow for previously orphaned projects (Issue
-    // #190): the user picks a new owner / repo and the project rejoins
-    // the active sync set without going through a separate "unarchive"
-    // dance. Cached issues remain marked archived until the next
-    // successful sync rebinds them — keeping them dimmed in the UI is
-    // safer than silently switching them to a new repository's identity.
-    sqlx::query(
-        r#"
-        UPDATE projects
-        SET github_repo_id = ?, repo_owner = ?, repo_name = ?, repo_full_name = ?,
-            is_archived = 0, archived_at = NULL, archived_reason = NULL,
-            updated_at = ?
-        WHERE id = ? AND user_id = ?
-        "#,
+    apply_repository_link(
+        state.db.pool(),
+        project_id,
+        user_id,
+        repo_info.id,
+        &owner,
+        &repo,
+        &full_name,
+        &now,
     )
-    .bind(repo_info.id)
-    .bind(&owner)
-    .bind(&repo)
-    .bind(&full_name)
-    .bind(&now)
-    .bind(project_id)
-    .bind(user_id)
-    .execute(state.db.pool())
-    .await
-    .map_err(|e| format!("Failed to link repository: {}", e))?;
+    .await?;
 
     // Create status labels in the repository
     if let Err(e) = client.create_status_labels(&owner, &repo).await {
@@ -1839,6 +1909,147 @@ mod tests {
             classify_repository_probe(probe),
             RepositoryGoneCheck::Indeterminate(GitHubError::Unauthorized)
         ));
+    }
+
+    // PR #213 review feedback (chatgpt-codex P1, third pass):
+    // re-linking to a *different* repository must clear the project's
+    // `cached_issues` rows. Otherwise the kanban keeps showing the
+    // old repo's cards, and `update_issue_status` (which matches on
+    // `(project_id, number)` and calls GitHub with the *new*
+    // owner/repo) could mutate a coincidentally-numbered issue in
+    // the newly linked repository.
+    #[tokio::test]
+    async fn relink_to_different_repo_clears_cached_issues() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+        let (user_id, project_id) = seed_project_with_issues(pool, 500, "octo", "old").await;
+
+        // Sanity: the seed produced two cached issues against the old
+        // repo (its `github_repo_id` is set to `github_id * 1000` per
+        // the helper — i.e. 500_000).
+        let (_, total) = issues_archive_count(pool, project_id).await;
+        assert_eq!(total, 2);
+
+        // Re-link to a *different* repo (different github_repo_id).
+        apply_repository_link(
+            pool,
+            project_id,
+            user_id,
+            999_999, // new repo id, distinct from 500 * 1000
+            "octo",
+            "new",
+            "octo/new",
+            "2026-05-10T20:00:00Z",
+        )
+        .await
+        .expect("relink");
+
+        // The project must now point at the new repo and be unarchived.
+        let project_row = sqlx::query(
+            "SELECT github_repo_id, repo_owner, repo_name, is_archived FROM projects WHERE id = ?",
+        )
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .expect("project");
+        assert_eq!(project_row.get::<i64, _>("github_repo_id"), 999_999);
+        assert_eq!(project_row.get::<String, _>("repo_owner"), "octo");
+        assert_eq!(project_row.get::<String, _>("repo_name"), "new");
+        assert_eq!(project_row.get::<i64, _>("is_archived"), 0);
+
+        // The stale cached_issues from the old repo must be gone so a
+        // drag on a stale card can't be routed to the new repo.
+        let (_, total_after) = issues_archive_count(pool, project_id).await;
+        assert_eq!(total_after, 0, "stale cached_issues must be cleared");
+    }
+
+    // First-time link (`github_repo_id` was null) must NOT delete cache —
+    // there is no old repo to be stale, and an idempotent flow needs to
+    // be safe to call.
+    #[tokio::test]
+    async fn first_time_link_preserves_empty_cache() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+
+        // Seed a user manually, then a project with NO repo linked yet.
+        let user_id: i64 = sqlx::query(
+            r#"
+            INSERT INTO users (github_id, username, access_token_encrypted)
+            VALUES (?, ?, 'enc') RETURNING id
+            "#,
+        )
+        .bind(600_i64)
+        .bind("user600")
+        .fetch_one(pool)
+        .await
+        .expect("user")
+        .get::<i64, _>("id");
+
+        let project_id: i64 =
+            sqlx::query("INSERT INTO projects (user_id, name) VALUES (?, ?) RETURNING id")
+                .bind(user_id)
+                .bind("Fresh Project")
+                .fetch_one(pool)
+                .await
+                .expect("project")
+                .get::<i64, _>("id");
+
+        // First-time link.
+        apply_repository_link(
+            pool,
+            project_id,
+            user_id,
+            12345,
+            "octo",
+            "first",
+            "octo/first",
+            "2026-05-10T20:00:00Z",
+        )
+        .await
+        .expect("link");
+
+        let project_row =
+            sqlx::query("SELECT github_repo_id, is_archived FROM projects WHERE id = ?")
+                .bind(project_id)
+                .fetch_one(pool)
+                .await
+                .expect("project");
+        assert_eq!(project_row.get::<i64, _>("github_repo_id"), 12345);
+        assert_eq!(project_row.get::<i64, _>("is_archived"), 0);
+    }
+
+    // Re-linking to the *same* repository (e.g. the user is confirming
+    // a transient 404 wasn't a real deletion) must preserve the cache —
+    // wiping it would force an unnecessary full sync round-trip and
+    // erase the kanban for several seconds with no benefit.
+    #[tokio::test]
+    async fn relink_to_same_repo_preserves_cache() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+        let (user_id, project_id) = seed_project_with_issues(pool, 700, "octo", "stable").await;
+        let same_repo_id = 700_i64 * 1000; // matches helper's seed
+
+        let (_, total_before) = issues_archive_count(pool, project_id).await;
+        assert_eq!(total_before, 2);
+
+        apply_repository_link(
+            pool,
+            project_id,
+            user_id,
+            same_repo_id,
+            "octo",
+            "stable",
+            "octo/stable",
+            "2026-05-10T20:00:00Z",
+        )
+        .await
+        .expect("relink same");
+
+        let (_, total_after) = issues_archive_count(pool, project_id).await;
+        assert_eq!(
+            total_after, 2,
+            "same-repo re-link must preserve cached_issues"
+        );
     }
 
     // Regression guard for PR #213 review feedback (chatgpt-codex
