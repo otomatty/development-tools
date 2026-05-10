@@ -17,13 +17,25 @@ import { StatsDisplay } from './StatsDisplay';
 import { ChallengeCard } from './ChallengeCard';
 import { BadgeGrid } from './BadgeGrid';
 import { ContributionGraph } from './ContributionGraph';
-import type { LevelInfo, UserStats, GitHubStats, StatsDiffResult } from '../../../types';
+import { LanguageBreakdownCard } from './LanguageBreakdownCard';
+import type {
+  LevelInfo,
+  UserStats,
+  GitHubStats,
+  StatsDiffResult,
+  LanguageBreakdownResponse,
+} from '../../../types';
 
 interface DashboardContentProps {
   levelInfo?: LevelInfo | null;
   userStats?: UserStats | null;
   githubStats?: GitHubStats | null;
   statsDiff?: StatsDiffResult | null;
+  /// 言語別 / リポジトリ別ブレイクダウン (Issue #193)
+  languageBreakdown?: LanguageBreakdownResponse | null;
+  languageBreakdownLoading?: boolean;
+  languageBreakdownError?: Error | null;
+  languageBreakdownFromCache?: boolean;
 }
 
 // Skeleton components
@@ -89,7 +101,16 @@ const ContributionGraphSkeleton: React.FC = () => (
   </div>
 );
 
-export const DashboardContent: React.FC<DashboardContentProps> = ({ levelInfo, userStats, githubStats, statsDiff }) => {
+export const DashboardContent: React.FC<DashboardContentProps> = ({
+  levelInfo,
+  userStats,
+  githubStats,
+  statsDiff,
+  languageBreakdown,
+  languageBreakdownLoading,
+  languageBreakdownError,
+  languageBreakdownFromCache,
+}) => {
   const navigate = useNavigate();
 
   return (
@@ -137,6 +158,14 @@ export const DashboardContent: React.FC<DashboardContentProps> = ({ levelInfo, u
       <Suspense fallback={<ContributionGraphSkeleton />}>
         <ContributionGraph githubStats={githubStats} />
       </Suspense>
+
+      {/* Language / Repository Breakdown (Issue #193) */}
+      <LanguageBreakdownCard
+        data={languageBreakdown ?? null}
+        isLoading={languageBreakdownLoading ?? false}
+        error={languageBreakdownError ? languageBreakdownError.message : null}
+        fromCache={languageBreakdownFromCache ?? false}
+      />
     </div>
   );
 };

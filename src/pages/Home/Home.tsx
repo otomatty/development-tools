@@ -28,6 +28,10 @@ const USER_STATS_STALE_TIME_MS = 60 * 60 * 1000; // 60 minutes
 // Backend caches the events payload for 5 minutes — match it on the client
 // so a focus-revalidation triggers a fresh fetch instead of replaying cache.
 const ACTIVITY_STALE_TIME_MS = 5 * 60 * 1000;
+// Language / repository breakdown is cached server-side for 24h (Issue
+// #193). Mirroring that on the client keeps focus revalidations from
+// burning the GraphQL budget on what is fundamentally slow-moving data.
+const LANGUAGE_BREAKDOWN_STALE_TIME_MS = 24 * 60 * 60 * 1000;
 
 // Home skeleton loader
 const HomeSkeleton = () => (
@@ -64,6 +68,14 @@ export const Home = () => {
     staleTime: ACTIVITY_STALE_TIME_MS,
   });
 
+  const languageBreakdownQuery = useCachedFetch(
+    github.getLanguageBreakdownWithCache,
+    {
+      enabled,
+      staleTime: LANGUAGE_BREAKDOWN_STALE_TIME_MS,
+    },
+  );
+
   // `level_info` does not yet have a `_with_cache` variant — it is computed
   // from local DB state and is cheap, so a plain fetch is fine here.
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
@@ -96,11 +108,13 @@ export const Home = () => {
   const githubRevalidate = githubStatsQuery.revalidate;
   const userRevalidate = userStatsQuery.revalidate;
   const activityRevalidate = activityQuery.revalidate;
+  const languageBreakdownRevalidate = languageBreakdownQuery.revalidate;
   const handleRetry = useCallback(() => {
     void githubRevalidate();
     void userRevalidate();
     void activityRevalidate();
-  }, [githubRevalidate, userRevalidate, activityRevalidate]);
+    void languageBreakdownRevalidate();
+  }, [githubRevalidate, userRevalidate, activityRevalidate, languageBreakdownRevalidate]);
 
   // Initial loading: wait for auth restore and the first data fetch when
   // logged in. Cached data short-circuits this — once any cached value is
@@ -116,6 +130,13 @@ export const Home = () => {
     githubStatsQuery.data === null && githubStatsQuery.error === null;
   const userPending =
     userStatsQuery.data === null && userStatsQuery.error === null;
+  // Same `data === null && error === null` anchor as the other queries so
+  // the LanguageBreakdownCard renders its skeleton (not an Empty state) for
+  // the indeterminate frame between `enabled = true` and the hook's first
+  // commit.
+  const languageBreakdownPending =
+    languageBreakdownQuery.data === null &&
+    languageBreakdownQuery.error === null;
   const initialDataLoading =
     isLoggedIn && (githubPending || userPending || levelLoading);
 
@@ -124,19 +145,23 @@ export const Home = () => {
   const fromCache =
     githubStatsQuery.fromCache ||
     userStatsQuery.fromCache ||
-    activityQuery.fromCache;
+    activityQuery.fromCache ||
+    languageBreakdownQuery.fromCache;
   const hasError =
     githubStatsQuery.error !== null ||
     userStatsQuery.error !== null ||
-    activityQuery.error !== null;
+    activityQuery.error !== null ||
+    languageBreakdownQuery.error !== null;
   const hasData =
     githubStatsQuery.data !== null ||
     userStatsQuery.data !== null ||
-    activityQuery.data !== null;
+    activityQuery.data !== null ||
+    languageBreakdownQuery.data !== null;
   const isRevalidating =
     githubStatsQuery.isRevalidating ||
     userStatsQuery.isRevalidating ||
-    activityQuery.isRevalidating;
+    activityQuery.isRevalidating ||
+    languageBreakdownQuery.isRevalidating;
   // Surface the older of the cache timestamps across all sources so the
   // user sees the worst-case staleness rather than the freshest one.
   const bannerCachedAt =
@@ -144,6 +169,7 @@ export const Home = () => {
       githubStatsQuery.cachedAt,
       userStatsQuery.cachedAt,
       activityQuery.cachedAt,
+      languageBreakdownQuery.cachedAt,
     ]
       .filter((value): value is string => value !== null)
       .sort()[0] ?? null;
@@ -167,6 +193,12 @@ export const Home = () => {
             userStats={userStatsQuery.data}
             githubStats={githubStatsQuery.data}
             statsDiff={null}
+            languageBreakdown={languageBreakdownQuery.data}
+            languageBreakdownLoading={
+              languageBreakdownQuery.isLoading || languageBreakdownPending
+            }
+            languageBreakdownError={languageBreakdownQuery.error}
+            languageBreakdownFromCache={languageBreakdownQuery.fromCache}
           />
           <div className="mt-6">
             <ActivityTimeline

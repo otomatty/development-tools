@@ -43,6 +43,7 @@ import type {
   SyncResult,
   CodeStatsSyncResult,
   CodeStatsResponse,
+  LanguageBreakdownResponse,
   RateLimitInfo,
   RateLimitDetailed,
   TodayCommitsSummary,
@@ -531,6 +532,16 @@ export const github = {
    */
   getTodayCommitsWithCache: (): Promise<CachedResponse<TodayCommitsSummary>> =>
     invoke<CachedResponse<TodayCommitsSummary>>('get_today_commits_with_cache'),
+
+  /**
+   * 言語別／リポジトリ別コード統計の集計（Issue #193 — G-11）。
+   *
+   * 単一の GraphQL クエリで言語の byte 比率と過去 90 日のリポジトリ別
+   * 追加・削除を取得し、24 時間 SQLite キャッシュでフォアグラウンドの
+   * リバリデーションでもレート制限を消費しない設計。
+   */
+  getLanguageBreakdownWithCache: (): Promise<CachedResponse<LanguageBreakdownResponse>> =>
+    invoke<CachedResponse<LanguageBreakdownResponse>>('get_language_breakdown_with_cache'),
 };
 
 // ============================================================================

@@ -300,6 +300,102 @@ pub struct DailyCodeStatsAggregated {
 }
 
 // ============================================================================
+// Language / Repository Breakdown Types (Issue #193 — G-11)
+// ============================================================================
+
+/// GraphQL response wrapper for the language breakdown query.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageBreakdownQueryResponse {
+    pub user: Option<LanguageBreakdownUser>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageBreakdownUser {
+    pub repositories: LanguageBreakdownRepositoriesConnection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageBreakdownRepositoriesConnection {
+    pub nodes: Vec<LanguageBreakdownRepository>,
+}
+
+/// Repository node returned by the breakdown query — combines languages
+/// and commit history so a single GraphQL call drives both visualizations.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageBreakdownRepository {
+    pub name_with_owner: String,
+    pub url: Option<String>,
+    pub languages: Option<LanguageConnection>,
+    pub default_branch_ref: Option<DefaultBranchRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageConnection {
+    pub edges: Vec<LanguageEdge>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageEdge {
+    /// Bytes of code attributed to this language by GitHub linguist.
+    pub size: i64,
+    pub node: LanguageNode,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageNode {
+    pub name: String,
+    pub color: Option<String>,
+}
+
+/// Per-language aggregated stats surfaced to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageStats {
+    pub name: String,
+    /// Hex color (e.g. `#3178c6`) sourced from GitHub linguist when known.
+    pub color: Option<String>,
+    /// Bytes attributed to this language across the scanned repositories.
+    pub bytes: i64,
+    /// Share of `total_bytes` (0.0..=1.0).
+    pub percentage: f32,
+}
+
+/// Per-repository aggregated stats over the breakdown window.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryCodeStats {
+    pub name_with_owner: String,
+    pub url: Option<String>,
+    pub additions: i32,
+    pub deletions: i32,
+    pub commits_count: i32,
+    /// Primary language (highest byte count) for the repository, if any.
+    pub primary_language: Option<String>,
+    pub primary_language_color: Option<String>,
+}
+
+/// Combined response for the language / repository breakdown panel.
+///
+/// `since` is the ISO8601 lower bound applied to the commit history scan
+/// so the UI can label the chart period without recomputing it.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageBreakdownResponse {
+    pub languages: Vec<LanguageStats>,
+    pub repositories: Vec<RepositoryCodeStats>,
+    pub total_bytes: i64,
+    pub since: String,
+    pub repositories_scanned: i32,
+}
+
+// ============================================================================
 // Today's Commits Types (Issue #188 — G-01 realtime today commit count)
 // ============================================================================
 

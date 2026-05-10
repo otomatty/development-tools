@@ -49,6 +49,9 @@ pub mod cache_types {
     /// Realtime "今日のコミット数" — thin commit-count query used by the
     /// gamification today-quest UI. See Issue #188.
     pub const TODAY_COMMITS: &str = "today_commits";
+    /// Language / repository breakdown payload (per-language byte share +
+    /// per-repository additions/deletions). See Issue #193.
+    pub const LANGUAGE_BREAKDOWN: &str = "language_breakdown";
 }
 
 /// Default cache durations in minutes
@@ -89,4 +92,10 @@ pub mod cache_durations {
     /// 3-minute TTL gives the gamification today-quest UI near-realtime
     /// updates while keeping GraphQL spend trivial. See Issue #188.
     pub const TODAY_COMMITS: i64 = 3;
+    /// Language / repository breakdown cache duration (24 hours).
+    /// The underlying GraphQL query scans up to 100 repos with language
+    /// edges and 100 commits each — keeping a 24h TTL matches the issue
+    /// #193 requirement and prevents focus revalidations from burning
+    /// the GraphQL budget on what is fundamentally slow-moving data.
+    pub const LANGUAGE_BREAKDOWN: i64 = 1440;
 }
