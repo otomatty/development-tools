@@ -356,12 +356,19 @@ pub fn ProjectDashboardPage(
                     <NotLinkedState on_link=on_link_click />
                 </Show>
 
-                // Kanban board (when linked)
+                // Kanban board (when linked). The board is rendered
+                // read-only for archived projects so a drag can't fire
+                // `update_issue_status` against a gone repository —
+                // every such call would deterministically 404 and spam
+                // the user with errors. The board still shows the last
+                // synced cards so the historical view stays readable
+                // (PR #213 P2 review).
                 <Show when=move || !loading.get() && project.get().map(|p| p.is_linked()).unwrap_or(false)>
                     <KanbanBoard
                         board=kanban
                         status_change_signal=set_status_change_event
                         issue_click_signal=set_issue_click_event
+                        read_only=Signal::derive(move || project.get().map(|p| p.is_archived).unwrap_or(false))
                     />
                 </Show>
             </div>

@@ -883,6 +883,20 @@ pub async fn update_issue_status(
 ) -> Result<CachedIssue, String> {
     let project = get_project(state.clone(), project_id).await?;
 
+    // Defence in depth (PR #213 P2 review): the kanban now renders in
+    // read-only mode when the project is archived, but a stale UI
+    // state, a script, or a future caller might still invoke this
+    // command. Refuse the mutation here rather than letting it hit
+    // GitHub and 404 against the gone repository — that would also
+    // leave the local cache out of sync with reality if the next
+    // sync didn't run promptly.
+    if project.is_archived {
+        return Err(
+            "プロジェクトはアーカイブ状態です。Issue ステータスを変更するには、まず Re-link Repository でリポジトリを再リンクしてください。"
+                .to_string(),
+        );
+    }
+
     let owner = project.repo_owner.ok_or("Repository not linked")?;
     let repo = project.repo_name.ok_or("Repository not linked")?;
 
@@ -948,6 +962,16 @@ pub async fn create_github_issue(
     priority: Option<String>,
 ) -> Result<CachedIssue, String> {
     let project = get_project(state.clone(), project_id).await?;
+
+    // Same defence as `update_issue_status`: refuse mutations against
+    // archived projects so a stale UI doesn't post issues against a
+    // gone repository. PR #213 P2 review.
+    if project.is_archived {
+        return Err(
+            "プロジェクトはアーカイブ状態です。Issue を作成するには、まず Re-link Repository でリポジトリを再リンクしてください。"
+                .to_string(),
+        );
+    }
 
     let owner = project.repo_owner.ok_or("Repository not linked")?;
     let repo = project.repo_name.ok_or("Repository not linked")?;
@@ -2051,6 +2075,52 @@ mod tests {
         assert_eq!(
             total_after, 2,
             "same-repo re-link must preserve cached_issues"
+        );
+    }
+
+    // PR #213 P2 review: mutations against archived projects must be
+    // refused on the backend side too, not just hidden from the UI.
+    // We can't easily exercise the full Tauri command (`update_issue_
+    // status` needs a Tauri runtime), so we cover the underlying
+    // invariant: after `mark_project_repository_gone`, the same
+    // `get_project`-style SELECT used by the command sees
+    // `is_archived = true`. The command's check is a single
+    // `if project.is_archived { return Err(...); }`, so the SELECT
+    // returning the right value is what the guard rests on.
+    #[tokio::test]
+    async fn archived_project_is_visible_to_subsequent_reads() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+        let (user_id, project_id) = seed_project_with_issues(pool, 800, "octo", "deleted").await;
+
+        mark_project_repository_gone(pool, project_id, user_id, "2026-05-10T20:00:00Z")
+            .await
+            .expect("archive");
+
+        // Mirror the SELECT shape used by `get_project` — the command's
+        // archive guard reads `project.is_archived` from this row. A
+        // regression that drops the column from the SELECT would make
+        // the archive check silently always-false and re-enable the
+        // 404-spam path.
+        let row = sqlx::query(
+            r#"
+            SELECT id, user_id, name, description, github_repo_id, repo_owner, repo_name,
+                   repo_full_name, is_actions_setup, last_synced_at,
+                   is_archived, archived_at, archived_reason,
+                   created_at, updated_at
+            FROM projects WHERE id = ? AND user_id = ?
+            "#,
+        )
+        .bind(project_id)
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .expect("project");
+
+        assert_eq!(row.get::<i64, _>("is_archived"), 1);
+        assert_eq!(
+            row.get::<Option<String>, _>("archived_reason").as_deref(),
+            Some("repository_gone")
         );
     }
 

@@ -31,11 +31,19 @@ pub struct MouseDragState {
 
 /// Kanban board component with mouse-based drag and drop support
 /// Uses mousedown/mouseup instead of HTML5 drag events for Tauri compatibility
+///
+/// `read_only` (defaulting to `false`) disables drag-to-change-status. Set
+/// it to `true` for archived / repository-gone projects so dragging a
+/// card doesn't fire `update_issue_status`, which would otherwise hit
+/// GitHub 404 every time and spam the user with errors against a repo
+/// that's gone (PR #213 P2 review). Cards remain clickable for the
+/// detail viewer / external GitHub link — only mutations are blocked.
 #[component]
 pub fn KanbanBoard(
     board: ReadSignal<KanbanBoardType>,
     status_change_signal: WriteSignal<Option<StatusChangeEvent>>,
     issue_click_signal: WriteSignal<Option<IssueClickEvent>>,
+    #[prop(into, optional)] read_only: Signal<bool>,
 ) -> impl IntoView {
     // Track the currently dragged issue using mouse events
     let (dragging, set_dragging) = signal(Option::<MouseDragState>::None);
@@ -134,6 +142,7 @@ pub fn KanbanBoard(
                                 set_dragging=set_dragging
                                 set_hover_column=set_hover_column
                                 hover_column=hover_column
+                                read_only=read_only
                             />
                         }
                     })
@@ -177,6 +186,7 @@ fn KanbanColumn(
     set_dragging: WriteSignal<Option<MouseDragState>>,
     set_hover_column: WriteSignal<Option<String>>,
     hover_column: ReadSignal<Option<String>>,
+    read_only: Signal<bool>,
 ) -> impl IntoView {
     let status_name = status.display_name();
     let status_value: &'static str = match status {
@@ -284,6 +294,7 @@ fn KanbanColumn(
                 status_change_signal=status_change_signal
                 dragging=dragging
                 set_dragging=set_dragging
+                read_only=read_only
             />
 
             // Drop indicator
@@ -310,6 +321,7 @@ fn CompletedColumnContent(
     status_change_signal: WriteSignal<Option<StatusChangeEvent>>,
     dragging: ReadSignal<Option<MouseDragState>>,
     set_dragging: WriteSignal<Option<MouseDragState>>,
+    read_only: Signal<bool>,
 ) -> impl IntoView {
     let is_completed_status = matches!(status, IssueStatus::Done | IssueStatus::Cancelled);
     let (show_all, set_show_all) = signal(false);
@@ -376,6 +388,7 @@ fn CompletedColumnContent(
                                             status_change_signal=status_change_signal
                                             dragging=dragging
                                             set_dragging=set_dragging
+                                            read_only=read_only
                                         />
                                     }
                                 })
@@ -429,6 +442,7 @@ fn CompletedColumnContent(
                                             status_change_signal=status_change_signal
                                             dragging=dragging
                                             set_dragging=set_dragging
+                                            read_only=read_only
                                         />
                                     }
                                 })
@@ -443,6 +457,10 @@ fn CompletedColumnContent(
 }
 
 /// Issue card with mouse-based drag support
+///
+/// `read_only` suppresses both the card-body and title `mousedown`
+/// drag-start handlers. Click-through to the detail / external GitHub
+/// link still works because those buttons stop event propagation.
 #[component]
 fn IssueCardDraggable(
     issue: CachedIssue,
@@ -450,6 +468,7 @@ fn IssueCardDraggable(
     status_change_signal: WriteSignal<Option<StatusChangeEvent>>,
     dragging: ReadSignal<Option<MouseDragState>>,
     set_dragging: WriteSignal<Option<MouseDragState>>,
+    read_only: Signal<bool>,
 ) -> impl IntoView {
     let (is_mouse_down, set_is_mouse_down) = signal(false);
     let issue_clone = issue.clone();
@@ -477,7 +496,13 @@ fn IssueCardDraggable(
             class=move || {
                 format!(
                     "bg-gray-800 rounded-lg p-3 shadow-md transition-all border select-none {}",
-                    if is_being_dragged() {
+                    if read_only.get() {
+                        // Archived / read-only: no drag affordance, no
+                        // hover halo. Card stays visible so the user
+                        // can still click the detail / GitHub link
+                        // buttons (those stop propagation).
+                        "cursor-default border-gray-700 opacity-90"
+                    } else if is_being_dragged() {
                         "opacity-30 border-gm-accent-cyan scale-95 cursor-grabbing"
                     } else if is_mouse_down.get() {
                         "cursor-grabbing border-gm-accent-cyan/50"
@@ -492,11 +517,18 @@ fn IssueCardDraggable(
             }
             // Prevent native drag
             draggable="false"
-            // Mouse down = start potential drag
+            // Mouse down = start potential drag (suppressed in read_only mode)
             on:mousedown={
                 let issue_status = issue_status_for_drag.clone();
                 let title = issue_title_for_drag.clone();
                 move |e: web_sys::MouseEvent| {
+                    if read_only.get() {
+                        // Don't even prevent_default — let normal click /
+                        // text-select behaviour through. The detail and
+                        // GitHub-link buttons inside still work because
+                        // they call `stop_propagation`.
+                        return;
+                    }
                     // Prevent text selection
                     e.prevent_default();
                     // Only start drag on primary button
@@ -566,13 +598,19 @@ fn IssueCardDraggable(
                 </div>
             </div>
 
-            // Title - draggable only (detail opens via button)
+            // Title - draggable only (detail opens via button). In
+            // read_only mode the mousedown handler short-circuits so
+            // archived projects can't fire a status change that would
+            // 404 on the gone repo.
             <h4
                 class="text-sm font-medium text-white mb-2 line-clamp-2"
                 on:mousedown={
                     let issue_status = issue_status_for_title_drag.clone();
                     let title = issue_title_for_title_drag.clone();
                     move |e: web_sys::MouseEvent| {
+                        if read_only.get() {
+                            return;
+                        }
                         // Start drag
                         e.prevent_default();
                         if e.button() == 0 {
