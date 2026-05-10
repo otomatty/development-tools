@@ -246,6 +246,20 @@ interface FinalizeResult {
   record: SessionRecord;
 }
 
+/// 進行中フェーズのカウントダウンが 0 まで届いたかを判定する。
+///
+/// `tick` 由来の自動完了と、`stop` / `skipPhase` を「すでに終わったフェーズに対して」
+/// 押された場合の手動完了を、同じ条件で扱うためのヘルパー。
+const isPhaseElapsed = (state: SessionStoreState): boolean => {
+  if (state.status === 'running' && state.endsAt !== null) {
+    return state.endsAt - Date.now() <= 0;
+  }
+  if (state.status === 'paused') {
+    return state.remainingSeconds <= 0;
+  }
+  return false;
+};
+
 /// 純粋関数: 現在のフェーズを履歴に書き込み、付与すべき XP を計算する。
 /// 外部副作用（XP 加算 API 呼び出し / イベント発火 / 永続化）は呼び出し側で行う。
 ///
@@ -401,7 +415,13 @@ export const useSession = create<SessionStoreState>((set, get) => ({
   stop: () => {
     const state = get();
     if (state.status === 'idle') return;
-    const result = finalizePhasePure(state, false);
+    // If the phase has already elapsed (e.g. background-throttled tab or
+    // restored from a stale `endsAt`), treat the click as completing the
+    // session — the planned time *did* finish, the tick just hasn't run
+    // yet. Hard-coding `false` here would silently demote a fully-served
+    // focus phase to "interrupted" and skip the XP grant.
+    const completed = isPhaseElapsed(state);
+    const result = finalizePhasePure(state, completed);
     if (result) {
       set({
         history: result.history,
@@ -429,7 +449,12 @@ export const useSession = create<SessionStoreState>((set, get) => ({
   skipPhase: () => {
     const state = get();
     if (state.status === 'idle') return;
-    const result = finalizePhasePure(state, false);
+    // Same elapsed-detection as `stop`: skipping a phase whose timer has
+    // already hit zero should be recorded as a completion, not an early
+    // exit. This matters when the next tick is delayed (suspended tab,
+    // OS sleep) — the user shouldn't lose XP for clicking the button.
+    const completed = isPhaseElapsed(state);
+    const result = finalizePhasePure(state, completed);
     let cycleCountAfter = state.cycleCount;
     if (result) {
       cycleCountAfter = result.cycleCount;
