@@ -501,13 +501,16 @@ export const useSession = create<SessionStoreState>((set, get) => ({
     // remaining time + planned snapshot so the user sees the new value
     // before they hit start. Running / paused sessions keep their
     // pre-edit snapshot — the new config takes effect at the next phase.
-    if (get().status === 'idle') {
-      const seconds = Math.max(1, sessionPhaseMinutes(get().phase, next) * 60);
+    const stateAfterConfig = get();
+    if (stateAfterConfig.status === 'idle') {
+      const seconds = Math.max(1, sessionPhaseMinutes(stateAfterConfig.phase, next) * 60);
       set({
         remainingSeconds: seconds,
         phasePlannedSeconds: seconds,
         phaseXpReward:
-          get().phase === 'focus' ? Math.max(0, Math.floor(next.focusCompletionXp)) : 0,
+          stateAfterConfig.phase === 'focus'
+            ? Math.max(0, Math.floor(next.focusCompletionXp))
+            : 0,
       });
     }
     persistAll();
@@ -515,16 +518,17 @@ export const useSession = create<SessionStoreState>((set, get) => ({
 
   resetConfig: () => {
     set({ config: { ...DEFAULT_POMODORO_CONFIG } });
-    if (get().status === 'idle') {
+    const stateAfterReset = get();
+    if (stateAfterReset.status === 'idle') {
       const seconds = Math.max(
         1,
-        sessionPhaseMinutes(get().phase, DEFAULT_POMODORO_CONFIG) * 60,
+        sessionPhaseMinutes(stateAfterReset.phase, DEFAULT_POMODORO_CONFIG) * 60,
       );
       set({
         remainingSeconds: seconds,
         phasePlannedSeconds: seconds,
         phaseXpReward:
-          get().phase === 'focus'
+          stateAfterReset.phase === 'focus'
             ? Math.max(0, Math.floor(DEFAULT_POMODORO_CONFIG.focusCompletionXp))
             : 0,
       });
