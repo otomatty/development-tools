@@ -77,6 +77,8 @@ use commands::{
     open_external_url,
     open_url,
     poll_device_token,
+    // Issue #191: explicit refresh for badge progress (heavy aggregate API call)
+    refresh_badges_progress,
     relink_repository,
     reset_all_data,
     reset_settings,
@@ -197,6 +199,7 @@ pub fn run() {
             get_contribution_calendar,
             get_badges_with_progress,
             get_near_completion_badges,
+            refresh_badges_progress,
             // Cache fallback commands
             get_github_stats_with_cache,
             get_user_stats_with_cache,

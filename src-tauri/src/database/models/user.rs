@@ -35,6 +35,15 @@ pub struct UserStats {
     pub total_prs: i32,
     pub total_reviews: i32,
     pub total_issues: i32,
+    // Badge evaluation fields (Issue #191): persisted on every
+    // `sync_github_stats` so badge progress can be computed without
+    // re-hitting the GitHub aggregate API.
+    pub weekly_streak: i32,
+    pub monthly_streak: i32,
+    pub total_prs_merged: i32,
+    pub total_issues_closed: i32,
+    pub languages_count: i32,
+    pub total_stars_received: i32,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -52,6 +61,12 @@ impl Default for UserStats {
             total_prs: 0,
             total_reviews: 0,
             total_issues: 0,
+            weekly_streak: 0,
+            monthly_streak: 0,
+            total_prs_merged: 0,
+            total_issues_closed: 0,
+            languages_count: 0,
+            total_stars_received: 0,
             updated_at: Utc::now(),
         }
     }

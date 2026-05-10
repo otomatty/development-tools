@@ -19,6 +19,7 @@ pub use challenge::{
 };
 pub use connection::{Database, DatabaseError, DbResult};
 pub use models::*;
+pub use repository::UserStatsGitHubAggregates;
 
 // Re-export nested modules for backward compatibility (used as database::level::*, database::badge::*, etc.)
 // These re-export the inner modules that contain the actual functions

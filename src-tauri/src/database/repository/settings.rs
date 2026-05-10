@@ -267,6 +267,12 @@ impl Database {
                 total_prs = 0,
                 total_reviews = 0,
                 total_issues = 0,
+                weekly_streak = 0,
+                monthly_streak = 0,
+                total_prs_merged = 0,
+                total_issues_closed = 0,
+                languages_count = 0,
+                total_stars_received = 0,
                 updated_at = ?
             WHERE user_id = ?
             "#,

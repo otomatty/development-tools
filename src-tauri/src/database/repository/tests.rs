@@ -503,6 +503,128 @@ async fn test_get_last_weekly_challenge_date() {
 }
 
 #[tokio::test]
+async fn test_update_github_aggregates_persists_badge_eval_fields() {
+    use crate::database::UserStatsGitHubAggregates;
+
+    let db = setup_test_db().await;
+
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Defaults are all zero on a freshly-created stats row.
+    let initial = db
+        .get_user_stats(user.id)
+        .await
+        .expect("Should get stats")
+        .expect("Stats should exist");
+    assert_eq!(initial.weekly_streak, 0);
+    assert_eq!(initial.monthly_streak, 0);
+    assert_eq!(initial.total_prs_merged, 0);
+    assert_eq!(initial.total_issues_closed, 0);
+    assert_eq!(initial.languages_count, 0);
+    assert_eq!(initial.total_stars_received, 0);
+
+    let agg = UserStatsGitHubAggregates {
+        total_commits: 250,
+        total_prs: 40,
+        total_reviews: 12,
+        total_issues: 8,
+        total_prs_merged: 30,
+        total_issues_closed: 5,
+        weekly_streak: 4,
+        monthly_streak: 2,
+        languages_count: 6,
+        total_stars_received: 75,
+    };
+
+    let updated = db
+        .update_github_aggregates(user.id, &agg)
+        .await
+        .expect("Should update aggregates");
+
+    // Aggregates from GitHub mirror onto user_stats so the badge UI can
+    // read them on subsequent calls without re-fetching from GitHub.
+    assert_eq!(updated.total_commits, 250);
+    assert_eq!(updated.total_prs, 40);
+    assert_eq!(updated.total_reviews, 12);
+    assert_eq!(updated.total_issues, 8);
+    assert_eq!(updated.total_prs_merged, 30);
+    assert_eq!(updated.total_issues_closed, 5);
+    assert_eq!(updated.weekly_streak, 4);
+    assert_eq!(updated.monthly_streak, 2);
+    assert_eq!(updated.languages_count, 6);
+    assert_eq!(updated.total_stars_received, 75);
+
+    // Round-trips through SELECT — the `RETURNING *` value matches a
+    // fresh fetch.
+    let refetched = db
+        .get_user_stats(user.id)
+        .await
+        .expect("Should re-fetch")
+        .expect("Stats should exist");
+    assert_eq!(refetched.total_prs_merged, 30);
+    assert_eq!(refetched.total_stars_received, 75);
+    assert_eq!(refetched.languages_count, 6);
+}
+
+#[tokio::test]
+async fn test_update_github_aggregates_preserves_xp_and_streak() {
+    use crate::database::UserStatsGitHubAggregates;
+
+    let db = setup_test_db().await;
+
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Seed XP and streak — these must not be touched by the aggregates
+    // mirror, which is responsible only for the GitHub-derived counts.
+    db.add_xp(user.id, 500).await.expect("Should add XP");
+    db.update_streak_from_github(user.id, 7, 14, Some("2026-04-26"))
+        .await
+        .expect("Should update streak from GitHub");
+
+    let before = db
+        .get_user_stats(user.id)
+        .await
+        .expect("fetch")
+        .expect("stats exist");
+
+    db.update_github_aggregates(
+        user.id,
+        &UserStatsGitHubAggregates {
+            total_commits: 99,
+            total_prs: 11,
+            total_reviews: 4,
+            total_issues: 3,
+            total_prs_merged: 9,
+            total_issues_closed: 2,
+            weekly_streak: 3,
+            monthly_streak: 1,
+            languages_count: 4,
+            total_stars_received: 21,
+        },
+    )
+    .await
+    .expect("Should update aggregates");
+
+    let after = db
+        .get_user_stats(user.id)
+        .await
+        .expect("fetch")
+        .expect("stats exist");
+
+    assert_eq!(after.total_xp, before.total_xp);
+    assert_eq!(after.current_level, before.current_level);
+    assert_eq!(after.current_streak, before.current_streak);
+    assert_eq!(after.longest_streak, before.longest_streak);
+    assert_eq!(after.last_activity_date, before.last_activity_date);
+}
+
+#[tokio::test]
 async fn test_progress_capped_at_target() {
     let db = setup_test_db().await;
 

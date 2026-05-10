@@ -16,6 +16,7 @@ mod xp_history;
 #[cfg(test)]
 mod tests;
 
-// Re-export all repository operations
-// Note: Repository operations are implemented as methods on Database,
-// so they're automatically available when Database is imported.
+// Re-export repository-owned types that callers need to construct directly.
+// (Most repository operations are methods on `Database` and become
+// available automatically when `Database` is imported.)
+pub use user_stats::UserStatsGitHubAggregates;

@@ -471,6 +471,15 @@ export const github = {
     invoke<BadgeWithProgress[]>('get_near_completion_badges', { threshold_percent }),
 
   /**
+   * Force-refresh badge progress aggregates from GitHub (heavy: REST 4 +
+   * GraphQL 1). Use only for an explicit user "refresh" gesture — the
+   * default `getBadgesWithProgress` reads from the local DB so it's free
+   * to call on every render. See Issue #191.
+   */
+  refreshBadgesProgress: (): Promise<BadgeWithProgress[]> =>
+    invoke<BadgeWithProgress[]>('refresh_badges_progress'),
+
+  /**
    * Sync code statistics from GitHub
    */
   syncCodeStats: (force_full_sync?: boolean | null): Promise<CodeStatsSyncResult> =>

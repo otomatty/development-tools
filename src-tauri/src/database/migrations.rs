@@ -443,6 +443,28 @@ ALTER TABLE cached_issues ADD COLUMN archived_at DATETIME;
 CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(user_id, is_archived);
 "#,
     },
+    Migration {
+        version: 14,
+        name: "add_user_stats_badge_eval_fields",
+        sql: r#"
+-- Extend `user_stats` with the aggregate fields the badge evaluator needs
+-- so `get_badges_with_progress` can run entirely against the local DB
+-- instead of re-fetching `client.get_user_stats` (REST 4 + GraphQL 1) on
+-- every render. See Issue #191 / Audit §6.3 / §9.1.
+--
+-- Older rows default to 0 — the next `sync_github_stats` run rewrites
+-- these from the freshly fetched `GitHubStats`, so the badge UI catches
+-- up after the first post-migration sync. Until then, badges that
+-- depend on these new metrics show 0 progress (never *spurious* progress),
+-- which is the same behaviour a brand-new user gets.
+ALTER TABLE user_stats ADD COLUMN weekly_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_stats ADD COLUMN monthly_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_stats ADD COLUMN total_prs_merged INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_stats ADD COLUMN total_issues_closed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_stats ADD COLUMN languages_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_stats ADD COLUMN total_stars_received INTEGER NOT NULL DEFAULT 0;
+"#,
+    },
 ];
 
 /// Create the migrations tracking table
