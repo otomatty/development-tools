@@ -7,7 +7,8 @@ use tauri::{command, AppHandle, Emitter, State};
 use super::auth::AppState;
 use crate::auth::map_github_result;
 use crate::database::{
-    badge, challenge, level, streak, xp, GitHubStatsSnapshot, UserStats, XpActionType,
+    badge, challenge, level, streak, xp, GitHubStatsSnapshot, UserStats,
+    UserStatsGitHubAggregates, XpActionType,
 };
 use crate::github::{GitHubClient, GitHubStats, GitHubUser};
 use crate::utils::notifications::send_notification;
@@ -615,6 +616,32 @@ pub async fn run_github_sync(
         }
     }
 
+    // Mirror the GitHub-derived aggregates onto `user_stats` so the badge
+    // evaluator (`get_badges_with_progress`) can build its
+    // `BadgeEvalContext` purely from the local DB on subsequent calls.
+    // Without this, every badge-grid render would re-call
+    // `client.get_user_stats` (REST 4 + GraphQL 1) and burn the Search
+    // 30 req/min budget. See Issue #191 / Audit §6.3 / §9.1.
+    //
+    // Best-effort: a write failure is logged but does not fail the sync
+    // — the next sync will retry, and badge progress just stays at the
+    // previous snapshot's values until then.
+    let aggregates = github_stats_aggregates(&github_stats);
+    let updated_stats = match state
+        .db
+        .update_github_aggregates(user.id, &aggregates)
+        .await
+    {
+        Ok(stats) => stats,
+        Err(e) => {
+            eprintln!(
+                "Failed to mirror GitHub aggregates onto user_stats: {}",
+                e
+            );
+            updated_stats
+        }
+    };
+
     // Badge evaluation
     let badge_context = badge::BadgeEvalContext {
         total_commits: github_stats.total_commits,
@@ -966,12 +993,51 @@ pub async fn get_contribution_calendar(
     serde_json::to_value(contributions.contribution_calendar).map_err(|e| e.to_string())
 }
 
-/// Helper function to build badge evaluation context
-///
-/// Consolidates the common logic for building BadgeEvalContext used by
-/// both `get_badges_with_progress` and `get_near_completion_badges`.
-async fn build_badge_context(
-    app: &AppHandle,
+/// Project a `GitHubStats` payload onto the subset of fields we mirror on
+/// `user_stats` (Issue #191). Defined as a free function so both
+/// `run_github_sync` (which already has fresh stats) and the explicit
+/// `refresh_badges_progress` path can derive the same `UserStats`-shaped
+/// aggregates.
+fn github_stats_aggregates(stats: &GitHubStats) -> UserStatsGitHubAggregates {
+    UserStatsGitHubAggregates {
+        total_commits: stats.total_commits,
+        total_prs: stats.total_prs,
+        total_reviews: stats.total_reviews,
+        total_issues: stats.total_issues,
+        total_prs_merged: stats.total_prs_merged,
+        total_issues_closed: stats.total_issues_closed,
+        weekly_streak: stats.weekly_streak,
+        monthly_streak: stats.monthly_streak,
+        languages_count: stats.languages_count,
+        total_stars_received: stats.total_stars_received,
+    }
+}
+
+/// Build a `BadgeEvalContext` purely from the locally-cached `user_stats`
+/// row. No GitHub API calls — Issue #191 (Audit §6.3) — so the badge UI
+/// renders without re-spending the Search 30 req/min budget on every
+/// view. Fresh values are written back during `sync_github_stats` (or
+/// the user-triggered `refresh_badges_progress`).
+fn badge_context_from_user_stats(stats: &UserStats) -> badge::BadgeEvalContext {
+    badge::BadgeEvalContext {
+        total_commits: stats.total_commits,
+        current_streak: stats.current_streak,
+        longest_streak: stats.longest_streak,
+        weekly_streak: stats.weekly_streak,
+        monthly_streak: stats.monthly_streak,
+        total_reviews: stats.total_reviews,
+        total_prs: stats.total_prs,
+        total_prs_merged: stats.total_prs_merged,
+        total_issues_closed: stats.total_issues_closed,
+        languages_count: stats.languages_count,
+        current_level: level::level_from_xp(stats.total_xp),
+        total_stars_received: stats.total_stars_received,
+    }
+}
+
+/// Helper: load the current user and their `user_stats` row, returning
+/// the badge evaluation context built from local DB only.
+async fn db_only_badge_context(
     state: &State<'_, AppState>,
 ) -> Result<(badge::BadgeEvalContext, crate::database::models::User), String> {
     let user = state
@@ -981,7 +1047,6 @@ async fn build_badge_context(
         .map_err(|e| e.to_string())?
         .ok_or("Not logged in")?;
 
-    // Get user stats
     let user_stats = state
         .db
         .get_user_stats(user.id)
@@ -989,50 +1054,19 @@ async fn build_badge_context(
         .map_err(|e| e.to_string())?
         .ok_or("User stats not found")?;
 
-    // Get GitHub stats for additional context
-    let token = state
-        .token_manager
-        .get_access_token()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let client = GitHubClient::new(token);
-    let github_stats = map_github_result(
-        app,
-        state.inner(),
-        client.get_user_stats(&user.username).await,
-    )
-    .await?;
-
-    // Calculate level
-    let current_level = level::level_from_xp(user_stats.total_xp);
-
-    // Build badge evaluation context
-    let badge_context = badge::BadgeEvalContext {
-        total_commits: github_stats.total_commits,
-        current_streak: user_stats.current_streak,
-        longest_streak: user_stats.longest_streak,
-        weekly_streak: github_stats.weekly_streak,
-        monthly_streak: github_stats.monthly_streak,
-        total_reviews: github_stats.total_reviews,
-        total_prs: github_stats.total_prs,
-        total_prs_merged: github_stats.total_prs_merged,
-        total_issues_closed: github_stats.total_issues_closed,
-        languages_count: github_stats.languages_count,
-        current_level: current_level as i32,
-        total_stars_received: github_stats.total_stars_received,
-    };
-
-    Ok((badge_context, user))
+    Ok((badge_context_from_user_stats(&user_stats), user))
 }
 
-/// Get badges with progress information
+/// Get badges with progress information.
+///
+/// Reads entirely from the local `user_stats` row — no GitHub API calls.
+/// `sync_github_stats` (and the user-triggered `refresh_badges_progress`)
+/// is the only writer of the underlying aggregates. See Issue #191.
 #[command]
 pub async fn get_badges_with_progress(
-    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<badge::BadgeWithProgress>, String> {
-    let (badge_context, user) = build_badge_context(&app, &state).await?;
+    let (badge_context, user) = db_only_badge_context(&state).await?;
 
     // Get earned badges
     let earned_badges = state
@@ -1054,15 +1088,16 @@ pub async fn get_badges_with_progress(
     Ok(badges)
 }
 
-/// Get badges that are close to being earned
+/// Get badges that are close to being earned.
+///
+/// DB-only — see `get_badges_with_progress`.
 #[command]
 pub async fn get_near_completion_badges(
-    app: AppHandle,
     state: State<'_, AppState>,
     threshold_percent: Option<f32>,
 ) -> Result<Vec<badge::BadgeWithProgress>, String> {
     let threshold = threshold_percent.unwrap_or(50.0);
-    let (badge_context, user) = build_badge_context(&app, &state).await?;
+    let (badge_context, user) = db_only_badge_context(&state).await?;
 
     // Get earned badge IDs
     let earned_badges = state
@@ -1077,6 +1112,66 @@ pub async fn get_near_completion_badges(
     let badges = badge::get_near_completion_badges(&badge_context, &earned_badge_ids, threshold);
 
     Ok(badges)
+}
+
+/// Force-refresh the badge-evaluation aggregates on `user_stats` from
+/// GitHub and return the recomputed badge progress list.
+///
+/// `get_badges_with_progress` is intentionally DB-only (Issue #191) so
+/// it can run on every render without touching the GitHub API. This
+/// command is the explicit "I want fresh numbers" escape hatch — it
+/// re-runs the heavy `client.get_user_stats` query (REST 4 + GraphQL 1)
+/// and writes the result back to `user_stats` so the next badge-grid
+/// render also sees the refreshed values.
+#[command]
+pub async fn refresh_badges_progress(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<badge::BadgeWithProgress>, String> {
+    let user = state
+        .token_manager
+        .get_current_user()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Not logged in")?;
+
+    let token = state
+        .token_manager
+        .get_access_token()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let client = GitHubClient::new(token);
+    let github_stats = map_github_result(
+        &app,
+        state.inner(),
+        client.get_user_stats(&user.username).await,
+    )
+    .await?;
+
+    let aggregates = github_stats_aggregates(&github_stats);
+    let user_stats = state
+        .db
+        .update_github_aggregates(user.id, &aggregates)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let badge_context = badge_context_from_user_stats(&user_stats);
+
+    let earned_badges = state
+        .db
+        .get_user_badges(user.id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let earned_badges_with_date: Vec<(String, Option<String>)> = earned_badges
+        .into_iter()
+        .map(|b| (b.badge_id, Some(b.earned_at.to_rfc3339())))
+        .collect();
+
+    Ok(badge::get_badges_with_progress(
+        &badge_context,
+        &earned_badges_with_date,
+    ))
 }
 
 // ============================================================================

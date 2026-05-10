@@ -58,6 +58,8 @@ use commands::{
     get_near_completion_badges,
     // GitHub Notifications commands (Issue #186)
     get_notifications,
+    // Issue #191: explicit refresh for badge progress (heavy aggregate API call)
+    refresh_badges_progress,
     get_project,
     get_project_issues,
     get_projects,
@@ -197,6 +199,7 @@ pub fn run() {
             get_contribution_calendar,
             get_badges_with_progress,
             get_near_completion_badges,
+            refresh_badges_progress,
             // Cache fallback commands
             get_github_stats_with_cache,
             get_user_stats_with_cache,

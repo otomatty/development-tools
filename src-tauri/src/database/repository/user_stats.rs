@@ -20,6 +20,12 @@ pub(crate) struct UserStatsRow {
     pub total_prs: i32,
     pub total_reviews: i32,
     pub total_issues: i32,
+    pub weekly_streak: i32,
+    pub monthly_streak: i32,
+    pub total_prs_merged: i32,
+    pub total_issues_closed: i32,
+    pub languages_count: i32,
+    pub total_stars_received: i32,
     pub updated_at: String,
 }
 
@@ -41,6 +47,12 @@ impl TryFrom<UserStatsRow> for UserStats {
             total_prs: row.total_prs,
             total_reviews: row.total_reviews,
             total_issues: row.total_issues,
+            weekly_streak: row.weekly_streak,
+            monthly_streak: row.monthly_streak,
+            total_prs_merged: row.total_prs_merged,
+            total_issues_closed: row.total_issues_closed,
+            languages_count: row.languages_count,
+            total_stars_received: row.total_stars_received,
             updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
@@ -234,7 +246,7 @@ impl Database {
 
         sqlx::query(
             r#"
-            UPDATE user_stats 
+            UPDATE user_stats
             SET total_commits = total_commits + ?,
                 total_prs = total_prs + ?,
                 total_reviews = total_reviews + ?,
@@ -255,4 +267,68 @@ impl Database {
 
         Ok(())
     }
+
+    /// Snapshot of GitHub-derived aggregates we mirror on `user_stats` so
+    /// the badge evaluator (`get_badges_with_progress`) can compute
+    /// progress without re-hitting `client.get_user_stats`. See Issue #191.
+    pub async fn update_github_aggregates(
+        &self,
+        user_id: i64,
+        agg: &UserStatsGitHubAggregates,
+    ) -> DbResult<UserStats> {
+        let now = Utc::now().to_rfc3339();
+
+        let updated_row: UserStatsRow = sqlx::query_as(
+            r#"
+            UPDATE user_stats
+            SET total_commits = ?,
+                total_prs = ?,
+                total_reviews = ?,
+                total_issues = ?,
+                total_prs_merged = ?,
+                total_issues_closed = ?,
+                weekly_streak = ?,
+                monthly_streak = ?,
+                languages_count = ?,
+                total_stars_received = ?,
+                updated_at = ?
+            WHERE user_id = ?
+            RETURNING *
+            "#,
+        )
+        .bind(agg.total_commits)
+        .bind(agg.total_prs)
+        .bind(agg.total_reviews)
+        .bind(agg.total_issues)
+        .bind(agg.total_prs_merged)
+        .bind(agg.total_issues_closed)
+        .bind(agg.weekly_streak)
+        .bind(agg.monthly_streak)
+        .bind(agg.languages_count)
+        .bind(agg.total_stars_received)
+        .bind(&now)
+        .bind(user_id)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        updated_row.try_into()
+    }
+}
+
+/// Aggregates derived from `GitHubStats` that we mirror on `user_stats`.
+/// Kept as a plain struct (not the `GitHubStats` itself) so the repository
+/// layer doesn't depend on the `github` module.
+#[derive(Debug, Clone, Default)]
+pub struct UserStatsGitHubAggregates {
+    pub total_commits: i32,
+    pub total_prs: i32,
+    pub total_reviews: i32,
+    pub total_issues: i32,
+    pub total_prs_merged: i32,
+    pub total_issues_closed: i32,
+    pub weekly_streak: i32,
+    pub monthly_streak: i32,
+    pub languages_count: i32,
+    pub total_stars_received: i32,
 }
