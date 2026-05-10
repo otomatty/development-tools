@@ -134,6 +134,17 @@ pub struct Project {
     pub repo_full_name: Option<String>,
     pub is_actions_setup: bool,
     pub last_synced_at: Option<String>,
+    /// True when the linked GitHub repository disappeared (404). The UI
+    /// should show an "archived" badge and offer a re-link / delete
+    /// action — see Issue #190.
+    #[serde(default)]
+    pub is_archived: bool,
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    /// Short tag describing why the project was archived. Currently only
+    /// `"repository_gone"`.
+    #[serde(default)]
+    pub archived_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -142,6 +153,13 @@ impl Project {
     /// Check if repository is linked
     pub fn is_linked(&self) -> bool {
         self.github_repo_id.is_some()
+    }
+
+    /// True when the linked repository is gone from GitHub. UI banners
+    /// use this rather than reading `is_archived` directly so the source
+    /// can grow new reasons later without rewriting call sites.
+    pub fn is_repository_gone(&self) -> bool {
+        self.is_archived && self.archived_reason.as_deref() == Some("repository_gone")
     }
 
     /// Get repository display name
@@ -178,6 +196,22 @@ pub struct CachedIssue {
     pub github_created_at: Option<String>,
     pub github_updated_at: Option<String>,
     pub cached_at: String,
+    /// Mirrors the parent project's archive flag so the kanban board
+    /// can dim or hide orphaned issues. See Issue #190.
+    #[serde(default)]
+    pub is_archived: bool,
+    #[serde(default)]
+    pub archived_at: Option<String>,
+}
+
+/// Response payload from `sync_project_issues`. Carries both the resulting
+/// cached issues and an explicit `archived` flag so the UI can show a
+/// re-link banner instead of treating a 404 as silent success. Issue #190.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProjectIssuesResponse {
+    pub issues: Vec<CachedIssue>,
+    pub archived: bool,
 }
 
 impl CachedIssue {

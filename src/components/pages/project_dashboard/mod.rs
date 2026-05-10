@@ -88,14 +88,29 @@ pub fn ProjectDashboardPage(
         set_syncing.set(true);
         spawn_local(async move {
             match tauri_api::sync_project_issues(project_id).await {
-                Ok(issues) => {
-                    // Rebuild kanban from synced issues
-                    let board = KanbanBoardType::from_issues(issues);
+                Ok(response) => {
+                    // Rebuild kanban from synced issues. When the project
+                    // was just archived (404 from GitHub), `issues` is the
+                    // last-known cache so the user still sees what was
+                    // there — but we surface the archive transition as
+                    // an actionable error so the banner / re-link UI is
+                    // visible. Without this signal, a deleted repository
+                    // would look like a successful sync with stale data
+                    // (Issue #190 / PR #213 review feedback).
+                    let board = KanbanBoardType::from_issues(response.issues);
                     set_kanban.set(board);
 
-                    // Update project's last_synced_at
+                    // Refresh the project so `is_archived` etc. reflect
+                    // the new state for the badge / banner UI.
                     if let Ok(updated_project) = tauri_api::get_project(project_id).await {
                         set_project.set(Some(updated_project));
+                    }
+
+                    if response.archived {
+                        set_error.set(Some(
+                            "リンクされた GitHub リポジトリが見つかりません（削除またはリネーム済み）。再リンクするか、プロジェクトを削除してください。"
+                                .to_string(),
+                        ));
                     }
                 }
                 Err(e) => {

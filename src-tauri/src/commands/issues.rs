@@ -529,22 +529,42 @@ async fn sync_project_issues_inner(
     Ok(ProjectSyncOutcome::Synced)
 }
 
+/// Response payload for [`sync_project_issues`]. Surfaces both the resulting
+/// cached issues and whether the project just transitioned to archived
+/// state, so the UI can render an actionable banner ("repository was
+/// deleted — re-link or remove") instead of treating a 404 as a silent
+/// success with stale data. See Issue #190 / PR #213 review feedback.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProjectIssuesResponse {
+    pub issues: Vec<CachedIssue>,
+    /// True when this sync run flipped the project into archived state
+    /// because GitHub returned 404 for the linked repository. False for
+    /// a successful sync, including when an already-archived project
+    /// gets re-linked and refreshed.
+    pub archived: bool,
+}
+
 /// Sync issues from GitHub to local cache.
 ///
 /// Behaviour for a 404 from the linked repository (Issue #190): the project
-/// is marked archived and the command returns the (now-stale) cache instead
-/// of bubbling a hard error. This keeps `sync_all_projects` and the
-/// scheduler running across every other project the user has linked.
+/// is marked archived and the response carries `archived: true` together
+/// with the (now-stale) cache. The command does NOT return `Err` for the
+/// archive case — that lets `sync_all_projects` and the scheduler keep
+/// running across every other project the user has linked, while still
+/// giving single-project callers an explicit signal.
 #[tauri::command]
 pub async fn sync_project_issues(
     app: AppHandle,
     state: State<'_, AppState>,
     project_id: i64,
-) -> Result<Vec<CachedIssue>, String> {
-    // The outcome is captured by `sync_all_projects` directly; for the
-    // single-project Tauri command we only need the resulting cache.
-    let _outcome = sync_project_issues_inner(&app, &state, project_id).await?;
-    get_project_issues(state, project_id, None).await
+) -> Result<SyncProjectIssuesResponse, String> {
+    let outcome = sync_project_issues_inner(&app, &state, project_id).await?;
+    let issues = get_project_issues(state, project_id, None).await?;
+    Ok(SyncProjectIssuesResponse {
+        issues,
+        archived: matches!(outcome, ProjectSyncOutcome::Archived),
+    })
 }
 
 /// Sync all linked projects for the current user. Per-project failures are
@@ -1669,6 +1689,39 @@ mod tests {
         assert!(!is_pr_progress_fallback_eligible(
             &GitHubError::RepositoryGone("octo/deleted".into())
         ));
+    }
+
+    // Regression guard for PR #213 review feedback (chatgpt-codex
+    // P1, second pass): `sync_project_issues` must surface the archive
+    // transition through its return shape, not silently swallow it as
+    // `Ok(Vec<CachedIssue>)`. Without this signal, a deleted repository
+    // would render to single-project callers as a successful sync with
+    // stale data and no banner, so the user has no way to discover they
+    // need to re-link.
+    //
+    // We verify the structural contract on `SyncProjectIssuesResponse`:
+    // - `archived: true` ⇔ `ProjectSyncOutcome::Archived` was observed
+    // - the cached `issues` are still populated so the UI can render
+    //   the historical kanban under the banner.
+    #[test]
+    fn sync_project_issues_response_carries_archived_flag() {
+        let archived = SyncProjectIssuesResponse {
+            issues: vec![],
+            archived: true,
+        };
+        let synced = SyncProjectIssuesResponse {
+            issues: vec![],
+            archived: false,
+        };
+        assert!(archived.archived);
+        assert!(!synced.archived);
+
+        // Also assert the JSON wire shape uses camelCase, which the
+        // frontends in `src/types/issue.ts` (React) and
+        // `src/types/issue.rs` (Leptos) rely on.
+        let json = serde_json::to_string(&archived).expect("serialize");
+        assert!(json.contains("\"archived\":true"));
+        assert!(json.contains("\"issues\":["));
     }
 
     // Regression guard for the review feedback on PR #213

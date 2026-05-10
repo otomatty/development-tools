@@ -152,6 +152,15 @@ export interface ProjectWithStats {
   totalIssuesCount: number;
 }
 
+/// Response returned by `sync_project_issues`. The `archived` flag is true
+/// when GitHub returned 404 for the linked repository in this run, so the
+/// UI can render an actionable banner instead of treating stale cache as
+/// a successful sync. See Issue #190.
+export interface SyncProjectIssuesResponse {
+  issues: CachedIssue[];
+  archived: boolean;
+}
+
 /// Result returned by `sync_all_projects`. See Issue #190.
 export interface SyncAllProjectsResult {
   /// Project IDs that synced successfully.

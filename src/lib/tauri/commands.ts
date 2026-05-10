@@ -29,6 +29,7 @@ import type {
   MyOpenWork,
   PrProgress,
   SyncAllProjectsResult,
+  SyncProjectIssuesResponse,
   LevelInfo,
   Badge,
   BadgeDefinition,
@@ -259,13 +260,14 @@ export const issues = {
   /**
    * Sync issues from GitHub to local cache.
    *
-   * If the linked repository returns 404 (deleted / renamed) the project
-   * is silently archived and the (now stale) cached issues are returned
-   * instead of throwing — see Issue #190. Inspect `Project.isArchived` to
-   * detect the transition.
+   * Returns `{ issues, archived }` — `archived` is true when this sync
+   * run flipped the project into archived state because GitHub returned
+   * 404 for the linked repository. The cached issues are still
+   * populated in that case (last-known snapshot) so the UI can render
+   * the historical kanban under an "archived" banner. Issue #190.
    */
-  syncProjectIssues: (project_id: number): Promise<CachedIssue[]> =>
-    invoke<CachedIssue[]>('sync_project_issues', { project_id }),
+  syncProjectIssues: (project_id: number): Promise<SyncProjectIssuesResponse> =>
+    invoke<SyncProjectIssuesResponse>('sync_project_issues', { project_id }),
 
   /**
    * Sync every linked, non-archived project for the current user.
