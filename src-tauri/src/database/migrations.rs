@@ -493,6 +493,41 @@ CREATE INDEX IF NOT EXISTS idx_xp_history_user_source_created
     ON xp_history(user_id, source, created_at);
 "#,
     },
+    Migration {
+        version: 16,
+        name: "normalize_xp_history_created_at_to_rfc3339",
+        sql: r#"
+-- One-shot canonicalisation of `xp_history.created_at`.
+--
+-- Rows recorded before Issue #194 were inserted via SQLite's
+-- `CURRENT_TIMESTAMP` default and stored as `YYYY-MM-DD HH:MM:SS` (UTC,
+-- whole seconds). Rows recorded after Issue #194 are written as RFC3339
+-- with sub-second precision (e.g. `2026-05-10T22:11:33.482912+00:00`).
+--
+-- The mixed format forced range queries to wrap `created_at` in
+-- `datetime(...)` for correctness, which (a) prevented the
+-- `(user_id, source, created_at)` index from being used for the range
+-- portion and (b) silently rounded both sides to whole seconds, so a
+-- sub-second-precision live row written near the bound could be
+-- mis-classified by `recalculate_xp_history`'s before/after diff
+-- (Codex P2 review on PR #217).
+--
+-- Backfilling the legacy rows to `YYYY-MM-DDTHH:MM:SS+00:00` gives the
+-- whole table a single canonical lexicographic ordering that:
+--   1. matches the new RFC3339 inserts byte-for-byte for the same
+--      whole-second instant;
+--   2. preserves sub-second precision (no `datetime()` truncation);
+--   3. lets the v15 composite index drive range scans directly.
+--
+-- Idempotent guard: the `WHERE` clause skips any row that already has
+-- a 'T' (i.e. is already RFC3339), so re-running the migration on a
+-- fresh install (with no legacy rows) or on a partially-migrated DB
+-- is a no-op.
+UPDATE xp_history
+   SET created_at = strftime('%Y-%m-%dT%H:%M:%S+00:00', created_at)
+ WHERE created_at NOT LIKE '%T%';
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

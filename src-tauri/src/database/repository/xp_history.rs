@@ -126,13 +126,12 @@ impl Database {
     /// "previous live XP earned in this window" alongside the recalculated
     /// value (DoD: 計算前後の値を比較表示できる).
     ///
-    /// Both bounds are normalised through SQLite's `datetime()` function so
-    /// the comparison is correct even when the row mixes the new RFC3339
-    /// format (`YYYY-MM-DDTHH:MM:SS.fff+00:00`) and the legacy
-    /// `CURRENT_TIMESTAMP` default (`YYYY-MM-DD HH:MM:SS`). A naïve
-    /// lexicographic compare across those two formats can drop boundary
-    /// rows because `' ' < 'T'` ASCII-wise, which broke the "before" total
-    /// for any user with pre-migration v15 rows on the boundary day.
+    /// Migration v16 backfilled every legacy `YYYY-MM-DD HH:MM:SS` row to
+    /// `YYYY-MM-DDTHH:MM:SS+00:00`, so the entire column is now in a single
+    /// canonical RFC3339 form. That lets us compare strings lexicographically
+    /// — preserving sub-second precision (no `datetime()` truncation; see
+    /// Codex P2 review) and letting the `idx_xp_history_user_source_created`
+    /// composite index drive the range scan directly.
     pub async fn get_xp_total_in_range(
         &self,
         user_id: i64,
@@ -146,8 +145,8 @@ impl Database {
             FROM xp_history
             WHERE user_id = ?
               AND source = ?
-              AND datetime(created_at) >= datetime(?)
-              AND datetime(created_at) <= datetime(?)
+              AND created_at >= ?
+              AND created_at <= ?
             "#,
         )
         .bind(user_id)
@@ -165,18 +164,16 @@ impl Database {
     /// rate-limit guard in `recalculate_xp_history`. `None` means the user
     /// has never run a recalculation.
     ///
-    /// `ORDER BY datetime(created_at) DESC` (rather than the raw column)
-    /// ensures legacy `YYYY-MM-DD HH:MM:SS` rows and new RFC3339 rows are
-    /// compared on a single canonical scale — see the comment on
-    /// `get_xp_total_in_range` for why a lexicographic ordering on the raw
-    /// column would otherwise mis-order across formats.
+    /// Lexicographic ORDER BY is correct because migration v16 normalised
+    /// all `xp_history.created_at` rows to canonical RFC3339 — see
+    /// `get_xp_total_in_range` for the rationale.
     pub async fn get_last_recalculation_at(&self, user_id: i64) -> DbResult<Option<DateTime<Utc>>> {
         let row: Option<(String,)> = sqlx::query_as(
             r#"
             SELECT created_at
             FROM xp_history
             WHERE user_id = ? AND source = ?
-            ORDER BY datetime(created_at) DESC
+            ORDER BY created_at DESC
             LIMIT 1
             "#,
         )
@@ -203,12 +200,9 @@ impl Database {
 
     /// Get recent XP history
     ///
-    /// `ORDER BY datetime(created_at) DESC` (rather than the raw column)
-    /// keeps the timeline chronologically correct for users who have a
-    /// mix of legacy `YYYY-MM-DD HH:MM:SS` rows (pre-Issue #194) and new
-    /// RFC3339 rows. A lexicographic sort on the raw text would place
-    /// every legacy row before every RFC3339 row of the same instant
-    /// because `' ' < 'T'` ASCII-wise.
+    /// Lexicographic ORDER BY is correct because migration v16 normalised
+    /// all `xp_history.created_at` rows to canonical RFC3339 — see
+    /// `get_xp_total_in_range` for the rationale.
     pub async fn get_recent_xp_history(
         &self,
         user_id: i64,
@@ -219,7 +213,7 @@ impl Database {
             SELECT id, user_id, action_type, xp_amount, description, github_event_id, breakdown_json, created_at, source
             FROM xp_history
             WHERE user_id = ?
-            ORDER BY datetime(created_at) DESC
+            ORDER BY created_at DESC
             LIMIT ?
             "#,
         )

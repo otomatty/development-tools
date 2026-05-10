@@ -461,12 +461,16 @@ export interface RecalculatedXpBreakdown {
 
 /// 再計算ウィンドウ内で取得した GitHub 側のカテゴリ別合計。
 /// `contributionsCollection` から取得できる範囲のみ。
+///
+/// `liveCurrentStreak` は再計算実行時点の "現在のストリーク" であり、
+/// 再計算ウィンドウ内のストリークではない点に注意。UI でも「現在のストリーク」
+/// として明示する。
 export interface RecalcContributionTotals {
   commits: number;
   pullRequests: number;
   issues: number;
   reviews: number;
-  currentStreak: number;
+  liveCurrentStreak: number;
 }
 
 /// `recalculate_xp_history` コマンドの返却値。

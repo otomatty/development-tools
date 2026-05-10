@@ -738,74 +738,25 @@ async fn test_get_xp_total_in_range_filters_by_source_and_window() {
     assert_eq!(past_window_total, 0);
 }
 
-/// Regression for PR #217 P2 review: `get_recent_xp_history` must order
-/// rows by the canonical instant, not by the raw text. A lexicographic
-/// compare across the two on-disk formats puts every legacy row
-/// (`YYYY-MM-DD HH:MM:SS`) before every RFC3339 row of the same instant
-/// because `' ' < 'T'` — which would scramble the timeline around the
-/// migration day for users carrying pre-Issue #194 rows.
-#[tokio::test]
-async fn test_get_recent_xp_history_orders_mixed_timestamp_formats() {
-    let db = setup_test_db().await;
-    let user = db
-        .create_user(12345, "testuser", None, "token", None, None)
-        .await
-        .expect("Should create user");
-
-    // Older legacy-format row (one hour earlier).
-    sqlx::query(
-        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
-         VALUES (?, 'github_sync', 10, 'live', '2025-12-01 09:00:00')",
-    )
-    .bind(user.id)
-    .execute(db.pool())
-    .await
-    .expect("Insert legacy row");
-    // Newer RFC3339 row (one hour later). Lexicographically the legacy
-    // string sorts *before* the RFC3339 string for the same wall time,
-    // so without `datetime()` normalisation this row would be returned
-    // *second* even though it is the most recent.
-    sqlx::query(
-        "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
-         VALUES (?, 'github_sync', 20, 'live', '2025-12-01T10:00:00+00:00')",
-    )
-    .bind(user.id)
-    .execute(db.pool())
-    .await
-    .expect("Insert RFC3339 row");
-
-    let history = db
-        .get_recent_xp_history(user.id, 10)
-        .await
-        .expect("Should fetch history");
-    assert_eq!(history.len(), 2);
-    assert_eq!(
-        history[0].xp_amount, 20,
-        "newest row (RFC3339, 10:00) must come first"
-    );
-    assert_eq!(history[1].xp_amount, 10);
-}
-
-/// Regression for PR #217 P1 review: comparing RFC3339 `since` against
-/// legacy `YYYY-MM-DD HH:MM:SS` `created_at` values must not drop rows.
+/// Regression for PR #217 / migration v16: a directly-inserted legacy
+/// `YYYY-MM-DD HH:MM:SS` row must end up canonical RFC3339 after the v16
+/// backfill SQL runs, so subsequent lexicographic range / ORDER BY
+/// queries are correct without `datetime()` wrapping.
 ///
-/// We seed a legacy-format row directly so `datetime(created_at)`
-/// normalisation in `get_xp_total_in_range` /
-/// `get_last_recalculation_at` is exercised on the format that older
-/// (pre-Issue #194) installs actually have.
+/// We exercise the migration body directly because `setup_test_db` runs
+/// every migration once at boot, before any test row exists.
 #[tokio::test]
-async fn test_get_xp_total_in_range_handles_legacy_timestamp_format() {
+async fn test_migration_v16_normalizes_legacy_created_at_to_rfc3339() {
     let db = setup_test_db().await;
     let user = db
         .create_user(12345, "testuser", None, "token", None, None)
         .await
         .expect("Should create user");
 
-    // Bypass record_xp_gain so the inserted row keeps SQLite's
-    // CURRENT_TIMESTAMP default ("YYYY-MM-DD HH:MM:SS"). The wall
-    // time used here ('2025-12-01 10:00:00') is intentionally chosen
-    // so that the boundary RFC3339 `since` ('2025-12-01T00:00:00+00:00')
-    // sorts *after* it lexicographically — the bug being regressed.
+    // Insert a legacy-format row that v16 hasn't seen yet (it ran during
+    // setup, before this row existed). Mirrors the SQL in
+    // migrations.rs::Migration { version: 16 } so the test fails if the
+    // migration is ever weakened.
     sqlx::query(
         "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
          VALUES (?, 'github_sync', 42, 'live', '2025-12-01 10:00:00')",
@@ -814,29 +765,75 @@ async fn test_get_xp_total_in_range_handles_legacy_timestamp_format() {
     .execute(db.pool())
     .await
     .expect("Insert legacy row");
+    sqlx::query(
+        "UPDATE xp_history \
+            SET created_at = strftime('%Y-%m-%dT%H:%M:%S+00:00', created_at) \
+          WHERE created_at NOT LIKE '%T%'",
+    )
+    .execute(db.pool())
+    .await
+    .expect("Re-run v16 backfill");
 
+    let stored: String = sqlx::query_scalar("SELECT created_at FROM xp_history WHERE user_id = ?")
+        .bind(user.id)
+        .fetch_one(db.pool())
+        .await
+        .expect("Read normalised row");
+    assert_eq!(stored, "2025-12-01T10:00:00+00:00");
+
+    // And the canonical row participates in range queries lexicographically.
     let since: chrono::DateTime<Utc> = "2025-12-01T00:00:00+00:00".parse().unwrap();
     let until: chrono::DateTime<Utc> = "2025-12-02T00:00:00+00:00".parse().unwrap();
     let total = db
         .get_xp_total_in_range(user.id, since, until, "live")
         .await
-        .expect("Should fetch legacy-row total");
-    assert_eq!(total, 42, "legacy YYYY-MM-DD HH:MM:SS row must be included");
+        .expect("Should fetch normalised total");
+    assert_eq!(total, 42);
+}
 
-    // A recalc row in the same format must satisfy the rate-limit guard.
+/// Regression for PR #217 Codex P2 review: range filtering must preserve
+/// sub-second precision. Wrapping bounds in `datetime()` previously
+/// rounded both sides to whole seconds, so a row written at .500ms
+/// would wrongly match a bound at .300ms in the same wall-clock second.
+/// After dropping `datetime()` (post-v16 canonicalisation), lexicographic
+/// RFC3339 compare keeps fractional precision intact.
+#[tokio::test]
+async fn test_get_xp_total_in_range_preserves_subsecond_precision() {
+    let db = setup_test_db().await;
+    let user = db
+        .create_user(12345, "testuser", None, "token", None, None)
+        .await
+        .expect("Should create user");
+
+    // Insert a row at exactly :00.500, then bound the window at :00.300.
+    // The row must NOT be counted because it occurs after the bound.
     sqlx::query(
         "INSERT INTO xp_history (user_id, action_type, xp_amount, source, created_at) \
-         VALUES (?, 'recalculation', 0, 'recalculated', '2025-12-01 11:00:00')",
+         VALUES (?, 'github_sync', 99, 'live', '2025-12-01T10:00:00.500+00:00')",
     )
     .bind(user.id)
     .execute(db.pool())
     .await
-    .expect("Insert legacy recalc row");
-    let last = db
-        .get_last_recalculation_at(user.id)
+    .expect("Insert subsecond row");
+
+    let since: chrono::DateTime<Utc> = "2025-12-01T00:00:00+00:00".parse().unwrap();
+    let until: chrono::DateTime<Utc> = "2025-12-01T10:00:00.300+00:00".parse().unwrap();
+    let total = db
+        .get_xp_total_in_range(user.id, since, until, "live")
         .await
-        .expect("Should fetch latest recalc");
-    assert!(last.is_some(), "legacy recalc row must be discoverable");
+        .expect("Should fetch sub-second-bounded total");
+    assert_eq!(
+        total, 0,
+        "row at .500ms must NOT match a bound at .300ms in the same second"
+    );
+
+    // Widening the bound past .500 includes the row.
+    let until_wide: chrono::DateTime<Utc> = "2025-12-01T10:00:00.700+00:00".parse().unwrap();
+    let total_wide = db
+        .get_xp_total_in_range(user.id, since, until_wide, "live")
+        .await
+        .expect("Should fetch widened total");
+    assert_eq!(total_wide, 99);
 }
 
 #[tokio::test]

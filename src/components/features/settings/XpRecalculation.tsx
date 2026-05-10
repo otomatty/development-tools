@@ -222,10 +222,15 @@ const ResultModal: React.FC<ResultModalProps> = ({ result, onClose }) => {
               <div className="flex justify-between">
                 <span className="text-dt-text-sub">Streak Bonus</span>
                 <span className="text-white font-mono">
-                  {breakdown.streakBonusXp} XP (streak={result.contributions.currentStreak})
+                  {breakdown.streakBonusXp} XP (現在のストリーク={result.contributions.liveCurrentStreak}日)
                 </span>
               </div>
             </div>
+            <p className="mt-2 text-[11px] text-dt-text-sub leading-snug">
+              ※ ストリークボーナスは <span className="font-bold">現在のストリーク</span> を基準に計算しています
+              （`contributionsCollection` から再計算ウィンドウ内のストリークは取得できないため、
+              ライブ同期と同じ値を使用しています）。
+            </p>
           </div>
 
           {/* 未集計カテゴリの注意 */}

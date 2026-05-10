@@ -9,6 +9,7 @@ use super::auth::AppState;
 use crate::auth::map_github_result;
 use crate::database::{badge, level, xp::XpBreakdown, Badge, UserStats, XpHistoryEntry};
 use crate::github::GitHubClient;
+use crate::utils::numeric::clamp_to_u64;
 
 /// Level info for frontend
 #[derive(Debug, Clone, serde::Serialize)]
@@ -296,6 +297,12 @@ pub struct RecalculationResult {
 }
 
 /// GitHub-side category totals consumed by `XpBreakdown::calculate`.
+///
+/// `live_current_streak` is the user's *current* streak as of the
+/// recalculation moment — NOT a streak re-derived from the recalculation
+/// window. The UI labels it as such so users don't read it as "streak
+/// during the recalculated period". See the comment in
+/// `recalculate_xp_history` for the rationale.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecalcContributionTotals {
@@ -303,7 +310,7 @@ pub struct RecalcContributionTotals {
     pub pull_requests: i32,
     pub issues: i32,
     pub reviews: i32,
-    pub current_streak: i32,
+    pub live_current_streak: i32,
 }
 
 /// Recalculate XP for the past `contributionCalendar` window
@@ -407,11 +414,22 @@ pub async fn recalculate_xp_history(
     )
     .await?;
 
-    // Use the live current_streak so the recalculation's streak bonus
-    // matches what `run_github_sync` would award today. Streak history
-    // is not part of `contributionsCollection`, so we deliberately read
-    // it from local state rather than re-deriving it.
-    let current_streak = state
+    // Deliberate design: the streak bonus uses the **live current
+    // streak as of `recalc_at`**, not a streak re-derived from the
+    // recalculation window. Two reasons:
+    //
+    //   1. `contributionsCollection` doesn't expose per-day streak
+    //      state, so a window-derived streak would have to be
+    //      re-implemented from `contribution_calendar.weeks` and would
+    //      diverge from `Self::calculate_streak`'s production logic.
+    //   2. The bonus in `XpBreakdown::calculate` is "current consistency"
+    //      reward — using today's streak keeps the recalculation aligned
+    //      with what `run_github_sync` would award at this moment.
+    //
+    // `RecalcContributionTotals.current_streak` surfaces the value to
+    // the UI so the modal can label it explicitly as the live streak,
+    // not the historical one.
+    let live_current_streak = state
         .db
         .get_user_stats(user.id)
         .await
@@ -437,18 +455,18 @@ pub async fn recalculate_xp_history(
         /* issues_closed */ 0,
         reviews,
         /* stars */ 0,
-        current_streak,
+        live_current_streak,
     );
 
     let window_days = (recalc_at - parsed_since).num_days().max(0);
     let description = format!(
-        "過去{}日分のXP再計算 (commits={}, prs={}, issues={}, reviews={}, streak={})",
+        "過去{}日分のXP再計算 (commits={}, prs={}, issues={}, reviews={}, live_streak={})",
         window_days,
         contributions.total_commit_contributions,
         contributions.total_pull_request_contributions,
         contributions.total_issue_contributions,
         contributions.total_pull_request_review_contributions,
-        current_streak,
+        live_current_streak,
     );
 
     let recalc_id = state
@@ -492,20 +510,8 @@ pub async fn recalculate_xp_history(
             pull_requests: contributions.total_pull_request_contributions,
             issues: contributions.total_issue_contributions,
             reviews: contributions.total_pull_request_review_contributions,
-            current_streak,
+            live_current_streak,
         },
         uncovered_categories: vec!["prs_merged", "issues_closed", "stars"],
     })
-}
-
-/// Clamp a possibly-negative `i32` count to `u64` so it can feed
-/// `XpBreakdown::calculate`. Mirrors the helper in `commands::github`
-/// but duplicated here to avoid pulling the entire github command
-/// module into the gamification surface.
-fn clamp_to_u64(value: i32) -> u64 {
-    if value < 0 {
-        0
-    } else {
-        value as u64
-    }
 }
