@@ -41,7 +41,7 @@ pub async fn get_projects(state: State<'_, AppState>) -> Result<Vec<ProjectWithS
         r#"
         SELECT id, user_id, name, description, github_repo_id, repo_owner, repo_name,
                repo_full_name, is_actions_setup, last_synced_at,
-               COALESCE(is_archived, 0) AS is_archived, archived_at, archived_reason,
+               is_archived, archived_at, archived_reason,
                created_at, updated_at
         FROM projects
         WHERE user_id = ?
@@ -89,7 +89,7 @@ pub async fn get_project(state: State<'_, AppState>, project_id: i64) -> Result<
         r#"
         SELECT id, user_id, name, description, github_repo_id, repo_owner, repo_name,
                repo_full_name, is_actions_setup, last_synced_at,
-               COALESCE(is_archived, 0) AS is_archived, archived_at, archived_reason,
+               is_archived, archived_at, archived_reason,
                created_at, updated_at
         FROM projects
         WHERE id = ? AND user_id = ?
@@ -311,6 +311,10 @@ Repository: {}/{}
 /// repository. Idempotent — running twice on the same project is a no-op
 /// (the `COALESCE(archived_at, ?)` preserves the original timestamp).
 ///
+/// Both updates run inside a single transaction so a crash / connection
+/// drop between them can never leave a project flagged archived while
+/// its issues still appear active (or vice versa).
+///
 /// The cached_issues are flagged but kept (not deleted) so the user can
 /// still browse the historical kanban board after a repo deletion.
 /// `delete_project` remains the explicit physical-delete path.
@@ -324,6 +328,11 @@ pub(crate) async fn mark_project_repository_gone(
     user_id: i64,
     now: &str,
 ) -> Result<(), String> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("Failed to begin archive transaction: {}", e))?;
+
     sqlx::query(
         r#"
         UPDATE projects
@@ -339,7 +348,7 @@ pub(crate) async fn mark_project_repository_gone(
     .bind(now)
     .bind(project_id)
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| format!("Failed to archive project: {}", e))?;
 
@@ -353,32 +362,47 @@ pub(crate) async fn mark_project_repository_gone(
     )
     .bind(now)
     .bind(project_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| format!("Failed to archive cached issues: {}", e))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("Failed to commit archive transaction: {}", e))?;
 
     Ok(())
 }
 
-/// Sync issues from GitHub to local cache
-///
-/// Behaviour for a 404 from the linked repository (Issue #190): the project
-/// is marked archived and the command returns the (now-stale) cache instead
-/// of bubbling a hard error. This keeps `sync_all_projects` and the
-/// scheduler running across every other project the user has linked.
-#[tauri::command]
-pub async fn sync_project_issues(
-    app: AppHandle,
-    state: State<'_, AppState>,
+/// Outcome of a single project sync, returned by [`sync_project_issues_inner`]
+/// so callers (e.g. `sync_all_projects`) can bucket results without
+/// re-querying the database for the archive flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProjectSyncOutcome {
+    /// Issues were fetched and cached successfully.
+    Synced,
+    /// GitHub returned 404 for the linked repository — the project is
+    /// now archived. The on-disk `cached_issues` are flagged but kept.
+    Archived,
+}
+
+/// Internal sync helper that returns the structural outcome alongside the
+/// cached issues. Keeping this separate from the Tauri command lets
+/// `sync_all_projects` learn whether a project just transitioned to
+/// archived without doing a follow-up DB read for every project — the
+/// Tauri-facing `sync_project_issues` is a thin wrapper that discards
+/// the outcome to preserve its existing `Vec<CachedIssue>` signature.
+async fn sync_project_issues_inner(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
     project_id: i64,
-) -> Result<Vec<CachedIssue>, String> {
+) -> Result<ProjectSyncOutcome, String> {
     let project = get_project(state.clone(), project_id).await?;
     let user_id = project.user_id;
 
     let owner = project.repo_owner.ok_or("Repository not linked")?;
     let repo = project.repo_name.ok_or("Repository not linked")?;
 
-    let access_token = get_access_token(&state).await?;
+    let access_token = get_access_token(state).await?;
     let client = IssuesClient::new(access_token);
 
     // Fetch all issues (open and closed)
@@ -399,10 +423,10 @@ pub async fn sync_project_issues(
                 "Project {} ({}/{}) archived: repository returned 404",
                 project_id, owner, repo
             );
-            return get_project_issues(state, project_id, None).await;
+            return Ok(ProjectSyncOutcome::Archived);
         }
 
-        let issues = map_github_result(&app, state.inner(), result).await?;
+        let issues = map_github_result(app, state.inner(), result).await?;
 
         if issues.is_empty() {
             break;
@@ -502,6 +526,24 @@ pub async fn sync_project_issues(
     .await
     .map_err(|e| format!("Failed to update project: {}", e))?;
 
+    Ok(ProjectSyncOutcome::Synced)
+}
+
+/// Sync issues from GitHub to local cache.
+///
+/// Behaviour for a 404 from the linked repository (Issue #190): the project
+/// is marked archived and the command returns the (now-stale) cache instead
+/// of bubbling a hard error. This keeps `sync_all_projects` and the
+/// scheduler running across every other project the user has linked.
+#[tauri::command]
+pub async fn sync_project_issues(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: i64,
+) -> Result<Vec<CachedIssue>, String> {
+    // The outcome is captured by `sync_all_projects` directly; for the
+    // single-project Tauri command we only need the resulting cache.
+    let _outcome = sync_project_issues_inner(&app, &state, project_id).await?;
     get_project_issues(state, project_id, None).await
 }
 
@@ -520,15 +562,18 @@ pub async fn sync_all_projects(
     // archived. Skipping archived rows here is what makes the partial-sync
     // promise hold: a previously-gone repo never wedges the loop again
     // until the user explicitly re-links it.
+    //
+    // `is_archived` is `NOT NULL DEFAULT 0` (migration v13), so `COALESCE`
+    // is unnecessary — the column is always 0 or 1 on every row.
     let projects: Vec<Project> = sqlx::query_as(
         r#"
         SELECT id, user_id, name, description, github_repo_id, repo_owner, repo_name,
                repo_full_name, is_actions_setup, last_synced_at,
-               COALESCE(is_archived, 0) AS is_archived, archived_at, archived_reason,
+               is_archived, archived_at, archived_reason,
                created_at, updated_at
         FROM projects
         WHERE user_id = ? AND repo_owner IS NOT NULL AND repo_name IS NOT NULL
-          AND COALESCE(is_archived, 0) = 0
+          AND is_archived = 0
         ORDER BY last_synced_at ASC NULLS FIRST
         "#,
     )
@@ -543,25 +588,13 @@ pub async fn sync_all_projects(
 
     for project in projects {
         let project_id = project.id;
-        match sync_project_issues(app.clone(), state.clone(), project_id).await {
-            Ok(_) => {
-                // The project was archived inside `sync_project_issues` if
-                // the repository 404'd. Re-read so we report it under the
-                // right bucket — `sync_project_issues` returns Ok in that
-                // case to keep the Tauri ABI simple.
-                let archive_check: Option<(bool,)> = sqlx::query_as(
-                    "SELECT COALESCE(is_archived, 0) = 1 FROM projects WHERE id = ?",
-                )
-                .bind(project_id)
-                .fetch_optional(state.db.pool())
-                .await
-                .map_err(|e| format!("Failed to read archive flag: {}", e))?;
-                if archive_check.map(|(b,)| b).unwrap_or(false) {
-                    archived.push(project_id);
-                } else {
-                    synced.push(project_id);
-                }
-            }
+        // `sync_project_issues_inner` returns the structural outcome
+        // directly so we don't need a follow-up SELECT to bucket
+        // archived projects. (Issue #190 review feedback: avoid an
+        // N+1 over linked projects.)
+        match sync_project_issues_inner(&app, &state, project_id).await {
+            Ok(ProjectSyncOutcome::Synced) => synced.push(project_id),
+            Ok(ProjectSyncOutcome::Archived) => archived.push(project_id),
             Err(message) => {
                 failed.push(SyncFailure {
                     project_id,
@@ -631,7 +664,7 @@ pub async fn get_project_issues(
             SELECT id, project_id, github_issue_id, number, title, body, state, status, priority,
                    assignee_login, assignee_avatar_url, labels_json, html_url,
                    github_created_at, github_updated_at, cached_at,
-                   COALESCE(is_archived, 0) AS is_archived, archived_at
+                   is_archived, archived_at
             FROM cached_issues
             WHERE project_id = ? AND status = ?
             ORDER BY number DESC
@@ -647,7 +680,7 @@ pub async fn get_project_issues(
             SELECT id, project_id, github_issue_id, number, title, body, state, status, priority,
                    assignee_login, assignee_avatar_url, labels_json, html_url,
                    github_created_at, github_updated_at, cached_at,
-                   COALESCE(is_archived, 0) AS is_archived, archived_at
+                   is_archived, archived_at
             FROM cached_issues
             WHERE project_id = ?
             ORDER BY number DESC
@@ -1507,9 +1540,7 @@ mod tests {
     ) -> (bool, Option<String>, Option<String>) {
         let row = sqlx::query(
             r#"
-            SELECT COALESCE(is_archived, 0) AS is_archived,
-                   archived_at,
-                   archived_reason
+            SELECT is_archived, archived_at, archived_reason
             FROM projects WHERE id = ?
             "#,
         )
@@ -1528,7 +1559,7 @@ mod tests {
         let row = sqlx::query(
             r#"
             SELECT
-                CAST(SUM(CASE WHEN COALESCE(is_archived, 0) = 1 THEN 1 ELSE 0 END) AS INTEGER) AS archived,
+                CAST(SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) AS INTEGER) AS archived,
                 CAST(COUNT(*) AS INTEGER) AS total
             FROM cached_issues WHERE project_id = ?
             "#,
@@ -1638,5 +1669,43 @@ mod tests {
         assert!(!is_pr_progress_fallback_eligible(
             &GitHubError::RepositoryGone("octo/deleted".into())
         ));
+    }
+
+    // Regression guard for the review feedback on PR #213
+    // (chatgpt-codex-connector): adding `is_archived` / `archived_at` to
+    // `CachedIssue` must not break legacy SELECT statements (e.g. the ones
+    // in `update_issue_status` / `create_github_issue`) that don't project
+    // those columns. `#[sqlx(default)]` on the new fields is what keeps
+    // those decodes working — this test fails loudly if anyone removes
+    // the attribute.
+    #[tokio::test]
+    async fn cached_issue_decodes_without_archive_columns() {
+        let db = Database::in_memory().await.expect("db");
+        let pool = db.pool();
+        let (_user_id, project_id) = seed_project_with_issues(pool, 400, "octo", "alive").await;
+
+        // Mimic the legacy SELECT shape used in `update_issue_status` /
+        // `create_github_issue` — pre-#190 column set, no archive
+        // columns. With `#[sqlx(default)]` this must still decode.
+        let issues: Vec<CachedIssue> = sqlx::query_as(
+            r#"
+            SELECT id, project_id, github_issue_id, number, title, body,
+                   state, status, priority, assignee_login, assignee_avatar_url,
+                   labels_json, html_url, github_created_at, github_updated_at,
+                   cached_at
+            FROM cached_issues
+            WHERE project_id = ?
+            ORDER BY number
+            "#,
+        )
+        .bind(project_id)
+        .fetch_all(pool)
+        .await
+        .expect("legacy CachedIssue SELECT must still decode");
+
+        assert_eq!(issues.len(), 2);
+        // Defaults take effect when the columns are absent from the row.
+        assert!(!issues[0].is_archived);
+        assert!(issues[0].archived_at.is_none());
     }
 }

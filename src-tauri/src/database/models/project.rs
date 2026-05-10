@@ -209,13 +209,21 @@ pub struct Project {
     /// (deleted / renamed). Set by `sync_project_issues` on 404 so the
     /// rest of the sync run can continue and the UI can offer re-link
     /// or delete actions. See Issue #190.
+    ///
+    /// `#[sqlx(default)]` lets legacy SELECT statements (those written
+    /// before migration v13) still decode rows; otherwise every
+    /// pre-existing fetch site would have to be updated atomically with
+    /// the column addition.
     #[serde(default)]
+    #[sqlx(default)]
     pub is_archived: bool,
     #[serde(default)]
+    #[sqlx(default)]
     pub archived_at: Option<String>,
     /// Short tag describing why the project was archived
     /// (currently only `"repository_gone"`).
     #[serde(default)]
+    #[sqlx(default)]
     pub archived_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -281,9 +289,16 @@ pub struct CachedIssue {
     /// Issues stay in cache (not deleted) so the UI can keep history
     /// readable; the flag lets the kanban board dim or hide them.
     /// See Issue #190.
+    ///
+    /// `#[sqlx(default)]` keeps legacy SELECT statements (e.g. the ones
+    /// in `update_issue_status` / `create_github_issue` that don't
+    /// project these columns) from breaking with a missing-column
+    /// decode error.
     #[serde(default)]
+    #[sqlx(default)]
     pub is_archived: bool,
     #[serde(default)]
+    #[sqlx(default)]
     pub archived_at: Option<String>,
 }
 
