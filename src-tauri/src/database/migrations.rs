@@ -411,6 +411,38 @@ WHERE snapshot_date = (
 DELETE FROM activity_cache WHERE data_type = 'previous_github_stats';
 "#,
     },
+    Migration {
+        version: 13,
+        name: "add_project_archive_columns",
+        sql: r#"
+-- Track linked-repo deletion / rename so `sync_project_issues` can mark a
+-- single project unreachable instead of stopping the whole sync run, and so
+-- the UI can offer "re-link" or "delete" without the user having to dig
+-- through the database. See Issue #190 / Audit §7.3 G-09.
+--
+-- `is_archived` is the durable flag (1 = repository gone, 0 = healthy).
+-- `archived_at` records when we first observed the 404 and is null while
+-- the project is healthy. `archived_reason` is a short tag we expose to
+-- the UI ("repository_gone", or future variants).
+--
+-- We deliberately keep `repo_*` columns populated on archive so the
+-- "re-link" flow can prefill the dialog with the previous owner / repo,
+-- and so audit logs remain meaningful after the fact.
+ALTER TABLE projects ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN archived_at DATETIME;
+ALTER TABLE projects ADD COLUMN archived_reason TEXT;
+
+-- Mirror flag on `cached_issues` so the UI can dim / segregate orphaned
+-- issues without dropping them (the original GitHub URL still works for
+-- a renamed repo, and historical context is sometimes valuable even
+-- after a hard delete). Physical deletion is intentionally avoided —
+-- `delete_project` already cascades when the user opts in.
+ALTER TABLE cached_issues ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE cached_issues ADD COLUMN archived_at DATETIME;
+
+CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(user_id, is_archived);
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

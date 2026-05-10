@@ -602,7 +602,9 @@ pub async fn get_challenge_stats() -> Result<ChallengeStats, String> {
 // Issue Management API
 // =============================================================================
 
-use crate::types::issue::{CachedIssue, KanbanBoard, Project, RepositoryInfo};
+use crate::types::issue::{
+    CachedIssue, KanbanBoard, Project, RepositoryInfo, SyncProjectIssuesResponse,
+};
 
 /// Get all projects for current user
 pub async fn get_projects() -> Result<Vec<Project>, String> {
@@ -731,8 +733,14 @@ pub async fn setup_github_actions(project_id: i64) -> Result<String, String> {
         .map_err(|e| format!("Failed to setup GitHub Actions: {:?}", e))
 }
 
-/// Sync issues from GitHub for a project
-pub async fn sync_project_issues(project_id: i64) -> Result<Vec<CachedIssue>, String> {
+/// Sync issues from GitHub for a project.
+///
+/// Returns a [`SyncProjectIssuesResponse`] that carries both the cached
+/// issues and an `archived` flag — the latter is `true` when the linked
+/// repository returned 404 and the project was archived in this run, so
+/// the UI can show a re-link banner instead of presenting stale data as
+/// a successful sync. See Issue #190.
+pub async fn sync_project_issues(project_id: i64) -> Result<SyncProjectIssuesResponse, String> {
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
     struct Args {

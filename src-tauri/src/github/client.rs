@@ -41,6 +41,15 @@ pub enum GitHubError {
     /// data — see Issue #183.
     #[error("Incomplete results: {0}")]
     Incomplete(String),
+
+    /// A previously-linked GitHub repository can no longer be reached because
+    /// it has been deleted or renamed (404 on a URL we previously resolved
+    /// successfully). Distinct from [`GitHubError::NotFound`] so callers can
+    /// take cleanup actions (archiving the local project, marking cached
+    /// issues) instead of treating it as a generic missing-resource error.
+    /// Related: GitHub Issue #190 / Audit §7.3 G-09.
+    #[error("Repository no longer accessible: {0}")]
+    RepositoryGone(String),
 }
 
 pub type GitHubResult<T> = Result<T, GitHubError>;

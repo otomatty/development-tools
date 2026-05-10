@@ -88,6 +88,9 @@ export function issuePriorityColorClass(priority: IssuePriority): string {
   }
 }
 
+/// Reasons a project may be archived. `null` while the project is healthy.
+export type ProjectArchivedReason = 'repository_gone' | (string & {});
+
 /// Project model (1 project = 1 repository)
 export interface Project {
   id: number;
@@ -100,6 +103,11 @@ export interface Project {
   repoFullName: string | null;
   isActionsSetup: boolean;
   lastSyncedAt: string | null;
+  /// True when the linked GitHub repository disappeared (404) — sync paused
+  /// for this project until the user re-links or deletes it. See Issue #190.
+  isArchived: boolean;
+  archivedAt: string | null;
+  archivedReason: ProjectArchivedReason | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -107,6 +115,15 @@ export interface Project {
 /// Check if repository is linked
 export function isLinked(project: Project): boolean {
   return project.githubRepoId !== null;
+}
+
+/// Check if the project's linked repository is no longer reachable.
+/// Use this for badge/banner rendering to keep the UI consistent across
+/// pages — `archivedReason === 'repository_gone'` is the only current
+/// trigger but the helper hides the literal so we can extend the enum
+/// later without rewriting call sites.
+export function isProjectRepositoryGone(project: Project | ProjectWithStats): boolean {
+  return project.isArchived && project.archivedReason === 'repository_gone';
 }
 
 /// Get repository display name
@@ -126,10 +143,39 @@ export interface ProjectWithStats {
   repoFullName: string | null;
   isActionsSetup: boolean;
   lastSyncedAt: string | null;
+  isArchived: boolean;
+  archivedAt: string | null;
+  archivedReason: ProjectArchivedReason | null;
   createdAt: string;
   updatedAt: string;
   openIssuesCount: number;
   totalIssuesCount: number;
+}
+
+/// Response returned by `sync_project_issues`. The `archived` flag is true
+/// when GitHub returned 404 for the linked repository in this run, so the
+/// UI can render an actionable banner instead of treating stale cache as
+/// a successful sync. See Issue #190.
+export interface SyncProjectIssuesResponse {
+  issues: CachedIssue[];
+  archived: boolean;
+}
+
+/// Result returned by `sync_all_projects`. See Issue #190.
+export interface SyncAllProjectsResult {
+  /// Project IDs that synced successfully.
+  synced: number[];
+  /// Project IDs that were marked archived because the linked repository
+  /// returned 404 during the sync run.
+  archived: number[];
+  /// Per-project failures with the original error message (e.g. transient
+  /// network errors, rate limits).
+  failed: SyncFailure[];
+}
+
+export interface SyncFailure {
+  projectId: number;
+  message: string;
 }
 
 /// Cached issue model
@@ -150,6 +196,10 @@ export interface CachedIssue {
   githubCreatedAt: string | null;
   githubUpdatedAt: string | null;
   cachedAt: string;
+  /// Mirrors the parent project's archive flag when the linked repository
+  /// disappeared from GitHub. See Issue #190.
+  isArchived: boolean;
+  archivedAt: string | null;
 }
 
 /// Get parsed status
