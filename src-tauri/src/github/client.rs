@@ -859,8 +859,7 @@ impl GitHubClient {
             "author": author_id,
         });
 
-        let response: LanguageBreakdownQueryResponse =
-            self.graphql(query, Some(variables)).await?;
+        let response: LanguageBreakdownQueryResponse = self.graphql(query, Some(variables)).await?;
 
         let mut language_totals: std::collections::HashMap<String, (i64, Option<String>)> =
             std::collections::HashMap::new();

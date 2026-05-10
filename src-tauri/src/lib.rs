@@ -50,6 +50,8 @@ use commands::{
     get_github_stats_with_cache,
     get_github_user,
     get_kanban_board,
+    // Language / repository breakdown command (Issue #193)
+    get_language_breakdown_with_cache,
     get_level_info,
     // Cross-repository "Today / Inbox" command (Issue #183)
     get_my_open_work_with_cache,
@@ -67,8 +69,6 @@ use commands::{
     get_sync_intervals,
     // Realtime "today's commits" command (Issue #188)
     get_today_commits_with_cache,
-    // Language / repository breakdown command (Issue #193)
-    get_language_breakdown_with_cache,
     get_user_repositories,
     get_user_stats,
     get_user_stats_with_cache,

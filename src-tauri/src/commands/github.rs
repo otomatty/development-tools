@@ -1944,9 +1944,7 @@ pub async fn get_language_breakdown_with_cache(
                 .map_err(|e| format!("Failed to serialize language breakdown: {}", e))?;
 
             let expires_at = now
-                + chrono::Duration::minutes(
-                    crate::database::cache_durations::LANGUAGE_BREAKDOWN,
-                );
+                + chrono::Duration::minutes(crate::database::cache_durations::LANGUAGE_BREAKDOWN);
 
             let _ = state
                 .db
