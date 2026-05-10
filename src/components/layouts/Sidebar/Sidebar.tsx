@@ -13,6 +13,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from '@/components/icons';
 import { NotificationsButton } from '@/components/features/notifications';
+import { SessionWidget } from '@/components/features/pomodoro';
 import { SidebarItem } from './SidebarItem';
 
 interface NavItem {
@@ -26,6 +27,7 @@ const navItems: NavItem[] = [
   { path: '/', label: 'ホーム', icon: 'home', exact: true },
   { path: '/projects', label: 'プロジェクト', icon: 'folder' },
   { path: '/issues', label: 'Issue', icon: 'list' },
+  { path: '/pomodoro', label: 'Pomodoro', icon: 'timer' },
   { path: '/settings', label: '設定', icon: 'settings' },
 ];
 
@@ -72,6 +74,9 @@ export const Sidebar = () => {
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Active Pomodoro session widget (Issue #192) */}
+      <SessionWidget />
 
       {/* Footer */}
       <div className="p-3 border-t border-slate-700/50">

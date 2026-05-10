@@ -13,6 +13,7 @@
 export * from './authStore';
 export * from './navigationStore';
 export * from './notificationsStore';
+export * from './sessionStore';
 export * from './settingsStore';
 export * from './networkStore';
 export * from './animationStore';
