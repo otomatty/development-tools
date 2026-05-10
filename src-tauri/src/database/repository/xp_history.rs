@@ -244,6 +244,33 @@ impl Database {
                     }
                 });
 
+                // `try_get` instead of `get` so a NULL / unexpected-type
+                // `created_at` cell can't panic the whole query. The
+                // RFC3339-or-legacy parse is also fallible, so we log
+                // both failure modes (matching the breakdown_json
+                // handling above) and fall back to `Utc::now()` rather
+                // than aborting the entire history fetch on a single
+                // malformed row.
+                let created_at = row
+                    .try_get::<String, _>("created_at")
+                    .map_err(|e| {
+                        // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+                        eprintln!("[WARN] Failed to read xp_history.created_at: {}", e);
+                    })
+                    .ok()
+                    .and_then(|s| {
+                        let parsed = parse_xp_history_timestamp(&s);
+                        if parsed.is_none() {
+                            // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+                            eprintln!(
+                                "[WARN] Failed to parse xp_history.created_at value: {:?}",
+                                s
+                            );
+                        }
+                        parsed
+                    })
+                    .unwrap_or_else(Utc::now);
+
                 XpHistoryEntry {
                     id: row.get("id"),
                     user_id: row.get("user_id"),
@@ -252,8 +279,7 @@ impl Database {
                     description: row.get("description"),
                     github_event_id: row.get("github_event_id"),
                     breakdown,
-                    created_at: parse_xp_history_timestamp(row.get::<&str, _>("created_at"))
-                        .unwrap_or_else(Utc::now),
+                    created_at,
                     source: row.get("source"),
                 }
             })

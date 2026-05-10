@@ -359,6 +359,20 @@ pub async fn recalculate_xp_history(
     // wait for the scheduler-driven sync to finish, so the upper bound
     // of the window must reflect that wait.
     let recalc_at = Utc::now();
+
+    // Re-derive the 365-day floor against `recalc_at` and clamp
+    // `parsed_since` forward if the lock wait pushed the original lower
+    // bound past the contributionCalendar cap. Without this, a long
+    // lock wait (e.g. behind a scheduler-driven sync) could send a
+    // `[from, to]` span > 365 days to GitHub and trigger an intermittent
+    // GraphQL rejection for a request that was valid at submit time.
+    let effective_max_lookback = recalc_at - Duration::days(RECALC_MAX_WINDOW_DAYS);
+    let parsed_since = if parsed_since < effective_max_lookback {
+        effective_max_lookback
+    } else {
+        parsed_since
+    };
+
     if let Some(last) = state
         .db
         .get_last_recalculation_at(user.id)
