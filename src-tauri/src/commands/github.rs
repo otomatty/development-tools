@@ -297,10 +297,7 @@ pub async fn run_github_sync(
                 diff_count(github_stats.total_issues, prev.total_issues),
                 diff_count(github_stats.total_issues_closed, prev.total_issues_closed),
                 diff_count(github_stats.total_reviews, prev.total_reviews),
-                diff_count(
-                    github_stats.total_stars_received,
-                    prev.total_stars_received,
-                ),
+                diff_count(github_stats.total_stars_received, prev.total_stars_received),
                 current_streak,
             );
             let total = breakdown.total_xp;
@@ -325,6 +322,33 @@ pub async fn run_github_sync(
             (breakdown, total)
         }
     };
+
+    // Persist the new XP-diff baseline *before* awarding any XP. Without
+    // a transaction API we can't make the two writes atomic, so we pick
+    // the safer ordering: if the snapshot save fails we return early
+    // (no XP awarded, retry sees the same diff and tries again); if the
+    // snapshot save succeeds and a later step fails we lose this sync's
+    // XP but never double-award on retry. The opposite order — XP first,
+    // snapshot last — would re-award the same activity on every retry
+    // until the snapshot finally lands.
+    let today = chrono::Utc::now().date_naive().to_string();
+    let current_snapshot = GitHubStatsSnapshot::new(
+        user.id,
+        github_stats.total_commits,
+        github_stats.total_prs,
+        github_stats.total_prs_merged,
+        github_stats.total_reviews,
+        github_stats.total_issues,
+        github_stats.total_issues_closed,
+        github_stats.total_stars_received,
+        github_stats.total_contributions,
+        &today,
+    );
+    state
+        .db
+        .save_github_stats_snapshot(&current_snapshot)
+        .await
+        .map_err(|e| format!("Failed to persist XP-diff baseline snapshot: {}", e))?;
 
     // Get current stats for level comparison and streak update
     let current_stats = state
@@ -819,45 +843,17 @@ pub async fn run_github_sync(
         eprintln!("Failed to check expired challenges: {}", e);
     }
 
-    // Save today's snapshot and calculate diff for the daily-comparison UI.
-    //
-    // After Issue #189, the snapshot also serves as the XP-diff baseline,
-    // but here we only need the *previous-day* row (for the "+5 commits
-    // vs yesterday" bubble). The XP baseline was already loaded above
-    // via `get_latest_github_stats_snapshot` (which may legitimately be
-    // today's row when the user already synced earlier today).
-    let today = chrono::Utc::now().date_naive().to_string();
+    // Daily-comparison diff for the UI bubble ("+5 commits vs yesterday").
+    // The current snapshot was already persisted upfront as the XP-diff
+    // baseline, so we only need to read the *previous-day* row here and
+    // diff against the in-memory `current_snapshot`.
     let stats_diff = {
-        // Get previous-day snapshot for the daily-comparison display.
         let previous_snapshot = state
             .db
             .get_previous_github_stats_snapshot(user.id, &today)
             .await
             .map_err(|e| e.to_string())?;
 
-        // Create current snapshot for diff calculation and saving
-        let current_snapshot = GitHubStatsSnapshot::new(
-            user.id,
-            github_stats.total_commits,
-            github_stats.total_prs,
-            github_stats.total_prs_merged,
-            github_stats.total_reviews,
-            github_stats.total_issues,
-            github_stats.total_issues_closed,
-            github_stats.total_stars_received,
-            github_stats.total_contributions,
-            &today,
-        );
-
-        // Save current snapshot (UPSERT). Failure here is logged but does
-        // not fail the sync — the user-visible XP gain has already been
-        // persisted. The next sync will rebuild the baseline from
-        // whatever snapshot row remains.
-        if let Err(e) = state.db.save_github_stats_snapshot(&current_snapshot).await {
-            eprintln!("Failed to save github stats snapshot: {}", e);
-        }
-
-        // Calculate diff and convert to StatsDiffResult using From trait
         let diff = current_snapshot.calculate_diff(previous_snapshot.as_ref());
         if diff.comparison_date.is_some() {
             Some(diff.into())

@@ -343,14 +343,46 @@ ALTER TABLE sync_metadata ADD COLUMN scheduler_baseline_at DATETIME;
 ALTER TABLE github_stats_snapshots ADD COLUMN total_prs_merged INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE github_stats_snapshots ADD COLUMN total_issues_closed INTEGER NOT NULL DEFAULT 0;
 
--- 2. Backfill the new columns on each user's most-recent snapshot from the
---    legacy `previous_github_stats` KV (JSON, camelCase keys). Without
---    this step, the first post-migration sync would diff against
---    `prs_merged = 0` / `issues_closed = 0` and award XP for every
---    historical merged PR / closed issue — a level-spamming regression
---    for active users. Older snapshots stay at the default 0 because they
---    are only used when even more recent rows are absent, and the diff
---    UI doesn't surface these two metrics anyway.
+-- 2. Seed a snapshot for users who only have the legacy KV but no
+--    snapshot row. Without this fallback, step 4's DELETE would strip
+--    their only baseline and the first post-migration sync would treat
+--    them as a fresh user — re-awarding XP for their entire lifetime
+--    of activity. The JSON keys are camelCase (`#[serde(rename_all =
+--    "camelCase")]` on `GitHubStats`); `DATE(ac.fetched_at)` anchors
+--    the seed row to when the KV was last written, which approximates
+--    the user's last sync.
+INSERT INTO github_stats_snapshots (
+    user_id, total_commits, total_prs, total_prs_merged, total_reviews,
+    total_issues, total_issues_closed, total_stars_received,
+    total_contributions, snapshot_date
+)
+SELECT
+    ac.user_id,
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalCommits')        AS INTEGER), 0),
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalPrs')            AS INTEGER), 0),
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalPrsMerged')      AS INTEGER), 0),
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalReviews')        AS INTEGER), 0),
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalIssues')         AS INTEGER), 0),
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalIssuesClosed')   AS INTEGER), 0),
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalStarsReceived')  AS INTEGER), 0),
+    COALESCE(CAST(json_extract(ac.data_json, '$.totalContributions')  AS INTEGER), 0),
+    DATE(ac.fetched_at)
+FROM activity_cache ac
+WHERE ac.data_type = 'previous_github_stats'
+  AND NOT EXISTS (
+      SELECT 1 FROM github_stats_snapshots s WHERE s.user_id = ac.user_id
+  );
+
+-- 3. Backfill `prs_merged` / `issues_closed` on each user's *latest*
+--    snapshot from the legacy KV. Picking by `MAX(snapshot_date)` (not
+--    `MAX(id)`) is required because `id` only reflects insert order —
+--    if a user backfilled an older date later, `MAX(id)` would land on
+--    that backdated row while the actual latest row stayed at default
+--    `0`, leaving the next sync to re-award XP for every historical
+--    merged PR / closed issue.
+--    Older snapshots stay at the default 0 because they are only used
+--    when even more recent rows are absent, and the diff UI doesn't
+--    surface these two metrics anyway.
 UPDATE github_stats_snapshots
 SET total_prs_merged = COALESCE(
         (SELECT CAST(json_extract(ac.data_json, '$.totalPrsMerged') AS INTEGER)
@@ -366,12 +398,16 @@ SET total_prs_merged = COALESCE(
            AND ac.data_type = 'previous_github_stats'),
         total_issues_closed
     )
-WHERE id IN (
-    SELECT MAX(id) FROM github_stats_snapshots GROUP BY user_id
+WHERE snapshot_date = (
+    SELECT MAX(s2.snapshot_date)
+    FROM github_stats_snapshots s2
+    WHERE s2.user_id = github_stats_snapshots.user_id
 );
 
--- 3. Drop the legacy `previous_github_stats` KV now that snapshots carry
---    the same information.
+-- 4. Drop the legacy `previous_github_stats` KV now that snapshots carry
+--    the same information. Safe because steps 2–3 guarantee every user
+--    that had a KV now has at least one snapshot row populated with
+--    that KV's `prs_merged` / `issues_closed` values.
 DELETE FROM activity_cache WHERE data_type = 'previous_github_stats';
 "#,
     },
@@ -571,8 +607,10 @@ mod tests {
                        AND ac.data_type = 'previous_github_stats'),
                     total_issues_closed
                 )
-            WHERE id IN (
-                SELECT MAX(id) FROM github_stats_snapshots GROUP BY user_id
+            WHERE snapshot_date = (
+                SELECT MAX(s2.snapshot_date)
+                FROM github_stats_snapshots s2
+                WHERE s2.user_id = github_stats_snapshots.user_id
             );
             "#,
         )
@@ -610,6 +648,202 @@ mod tests {
         .await
         .expect("Should count remaining KV rows");
         assert_eq!(kv_count, 0, "Legacy KV must be deleted");
+    }
+
+    /// Issue #189 / migration v12: when a user has older snapshots that
+    /// were inserted *after* the most recent one (e.g. a gap-fill
+    /// backfill writes a `2025-11-01` row long after `2025-11-30` was
+    /// already saved), the backfill must still target the row with the
+    /// latest `snapshot_date`. Picking `MAX(id)` would land on the
+    /// backdated row and leave the actual latest row at the default 0
+    /// — letting the next sync re-award lifetime XP.
+    #[tokio::test]
+    async fn test_migration_v12_targets_latest_snapshot_by_date_not_id() {
+        let pool = create_test_pool().await;
+        run_migrations(&pool)
+            .await
+            .expect("Migrations should run cleanly");
+
+        sqlx::query(
+            "INSERT INTO users (github_id, username, access_token_encrypted) VALUES (?, ?, ?)",
+        )
+        .bind(54321_i64)
+        .bind("backdater")
+        .bind("encrypted")
+        .execute(&pool)
+        .await
+        .expect("Should insert user");
+
+        // Insert "today" first (lower id, latest date), then a backdated
+        // older row (higher id, earlier date). MAX(id) would pick the
+        // backdated row; MAX(snapshot_date) correctly picks today.
+        sqlx::query(
+            r#"INSERT INTO github_stats_snapshots
+               (user_id, total_commits, total_prs, total_prs_merged, total_reviews,
+                total_issues, total_issues_closed, total_stars_received,
+                total_contributions, snapshot_date)
+               VALUES (1, 100, 20, 0, 30, 15, 0, 50, 200, '2025-11-30')"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Should insert today snapshot");
+
+        sqlx::query(
+            r#"INSERT INTO github_stats_snapshots
+               (user_id, total_commits, total_prs, total_prs_merged, total_reviews,
+                total_issues, total_issues_closed, total_stars_received,
+                total_contributions, snapshot_date)
+               VALUES (1, 50, 10, 0, 15, 8, 0, 25, 100, '2025-11-01')"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Should insert backdated snapshot");
+
+        sqlx::query(
+            r#"INSERT INTO activity_cache
+               (user_id, data_type, data_json, fetched_at, expires_at)
+               VALUES (1, 'previous_github_stats',
+                       '{"totalPrsMerged":12,"totalIssuesClosed":8}',
+                       '2025-11-30T00:00:00Z', '2125-11-30T00:00:00Z')"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Should insert legacy KV");
+
+        sqlx::query(
+            r#"
+            UPDATE github_stats_snapshots
+            SET total_prs_merged = COALESCE(
+                    (SELECT CAST(json_extract(ac.data_json, '$.totalPrsMerged') AS INTEGER)
+                     FROM activity_cache ac
+                     WHERE ac.user_id = github_stats_snapshots.user_id
+                       AND ac.data_type = 'previous_github_stats'),
+                    total_prs_merged
+                ),
+                total_issues_closed = COALESCE(
+                    (SELECT CAST(json_extract(ac.data_json, '$.totalIssuesClosed') AS INTEGER)
+                     FROM activity_cache ac
+                     WHERE ac.user_id = github_stats_snapshots.user_id
+                       AND ac.data_type = 'previous_github_stats'),
+                    total_issues_closed
+                )
+            WHERE snapshot_date = (
+                SELECT MAX(s2.snapshot_date)
+                FROM github_stats_snapshots s2
+                WHERE s2.user_id = github_stats_snapshots.user_id
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Backfill UPDATE should succeed");
+
+        let (today_pm, today_ic): (i32, i32) = sqlx::query_as(
+            "SELECT total_prs_merged, total_issues_closed FROM github_stats_snapshots WHERE user_id = 1 AND snapshot_date = '2025-11-30'"
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Should query today snapshot");
+
+        let (back_pm, back_ic): (i32, i32) = sqlx::query_as(
+            "SELECT total_prs_merged, total_issues_closed FROM github_stats_snapshots WHERE user_id = 1 AND snapshot_date = '2025-11-01'"
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Should query backdated snapshot");
+
+        assert_eq!(today_pm, 12, "Latest-by-date row must be backfilled");
+        assert_eq!(today_ic, 8, "Latest-by-date row must be backfilled");
+        assert_eq!(back_pm, 0, "Backdated row must remain untouched");
+        assert_eq!(back_ic, 0, "Backdated row must remain untouched");
+    }
+
+    /// Issue #189 / migration v12: when a user has a `previous_github_stats`
+    /// KV but no snapshot row at all (possible if a prior snapshot save
+    /// failed and the error was swallowed), the migration must seed a
+    /// fallback snapshot from the KV's JSON before deleting the KV —
+    /// otherwise that user loses their only XP baseline and the first
+    /// post-migration sync re-awards lifetime XP.
+    #[tokio::test]
+    async fn test_migration_v12_seeds_snapshot_when_only_kv_exists() {
+        let pool = create_test_pool().await;
+        run_migrations(&pool)
+            .await
+            .expect("Migrations should run cleanly");
+
+        sqlx::query(
+            "INSERT INTO users (github_id, username, access_token_encrypted) VALUES (?, ?, ?)",
+        )
+        .bind(99999_i64)
+        .bind("kvonly")
+        .bind("encrypted")
+        .execute(&pool)
+        .await
+        .expect("Should insert user");
+
+        sqlx::query(
+            r#"INSERT INTO activity_cache
+               (user_id, data_type, data_json, fetched_at, expires_at)
+               VALUES (1, 'previous_github_stats',
+                       '{"totalCommits":50,"totalPrs":7,"totalPrsMerged":4,"totalReviews":11,"totalIssues":3,"totalIssuesClosed":2,"totalStarsReceived":18,"totalContributions":80}',
+                       '2025-11-29T12:00:00Z', '2125-11-29T12:00:00Z')"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Should insert legacy KV");
+
+        // Re-run the v12 seed step (idempotent: NOT EXISTS guards a re-insert).
+        sqlx::query(
+            r#"
+            INSERT INTO github_stats_snapshots (
+                user_id, total_commits, total_prs, total_prs_merged, total_reviews,
+                total_issues, total_issues_closed, total_stars_received,
+                total_contributions, snapshot_date
+            )
+            SELECT
+                ac.user_id,
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalCommits')        AS INTEGER), 0),
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalPrs')            AS INTEGER), 0),
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalPrsMerged')      AS INTEGER), 0),
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalReviews')        AS INTEGER), 0),
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalIssues')         AS INTEGER), 0),
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalIssuesClosed')   AS INTEGER), 0),
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalStarsReceived')  AS INTEGER), 0),
+                COALESCE(CAST(json_extract(ac.data_json, '$.totalContributions')  AS INTEGER), 0),
+                DATE(ac.fetched_at)
+            FROM activity_cache ac
+            WHERE ac.data_type = 'previous_github_stats'
+              AND NOT EXISTS (
+                  SELECT 1 FROM github_stats_snapshots s WHERE s.user_id = ac.user_id
+              );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Seed INSERT should succeed");
+
+        let row: (i32, i32, i32, i32, i32, i32, i32, i32, String) = sqlx::query_as(
+            r#"SELECT total_commits, total_prs, total_prs_merged, total_reviews,
+                      total_issues, total_issues_closed, total_stars_received,
+                      total_contributions, snapshot_date
+               FROM github_stats_snapshots WHERE user_id = 1"#,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Seeded snapshot should exist");
+
+        assert_eq!(row.0, 50);
+        assert_eq!(row.1, 7);
+        assert_eq!(row.2, 4);
+        assert_eq!(row.3, 11);
+        assert_eq!(row.4, 3);
+        assert_eq!(row.5, 2);
+        assert_eq!(row.6, 18);
+        assert_eq!(row.7, 80);
+        assert_eq!(
+            row.8, "2025-11-29",
+            "snapshot_date must come from DATE(fetched_at)"
+        );
     }
 
     #[tokio::test]

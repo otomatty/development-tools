@@ -213,9 +213,7 @@ impl XpBreakdown {
         // 1 日あたり +1%、上限 `STREAK_BONUS_CAP_DAYS`% (= 10%)。
         // streak は `streak.max(0)` 相当に正規化したうえで掛け算する。
         let capped_streak_days = streak.clamp(0, STREAK_BONUS_CAP_DAYS) as u64;
-        let streak_bonus_xp = base_total
-            .saturating_mul(capped_streak_days)
-            / 100;
+        let streak_bonus_xp = base_total.saturating_mul(capped_streak_days) / 100;
 
         let total_xp = base_total.saturating_add(streak_bonus_xp);
 
@@ -355,7 +353,16 @@ mod tests {
         }
 
         // 飽和入力でも非負
-        let saturated = XpBreakdown::calculate(u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX, 100);
+        let saturated = XpBreakdown::calculate(
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            100,
+        );
         for field in [
             saturated.commits_xp,
             saturated.prs_created_xp,
