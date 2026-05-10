@@ -679,7 +679,10 @@ async fn test_record_xp_recalculation_is_separate_from_live() {
         .await
         .expect("Should fetch history");
     let live_count = history.iter().filter(|e| e.source == "live").count();
-    let recalc_count = history.iter().filter(|e| e.source == "recalculated").count();
+    let recalc_count = history
+        .iter()
+        .filter(|e| e.source == "recalculated")
+        .count();
     assert_eq!(live_count, 1);
     assert_eq!(recalc_count, 1);
 }

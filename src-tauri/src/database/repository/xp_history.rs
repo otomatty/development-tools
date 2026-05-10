@@ -170,10 +170,7 @@ impl Database {
     /// compared on a single canonical scale — see the comment on
     /// `get_xp_total_in_range` for why a lexicographic ordering on the raw
     /// column would otherwise mis-order across formats.
-    pub async fn get_last_recalculation_at(
-        &self,
-        user_id: i64,
-    ) -> DbResult<Option<DateTime<Utc>>> {
+    pub async fn get_last_recalculation_at(&self, user_id: i64) -> DbResult<Option<DateTime<Utc>>> {
         let row: Option<(String,)> = sqlx::query_as(
             r#"
             SELECT created_at
