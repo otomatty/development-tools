@@ -33,6 +33,9 @@ interface PersistedState {
   config: PomodoroConfig;
   history: SessionRecord[];
   cycleCount: number;
+  /// 通算完了数。`history` は HISTORY_LIMIT で切られるため、再計算ではなく
+  /// 永続化された値を信頼することで restart 後にも正しい総計を保つ。
+  totalFocusCompleted: number;
   /// 進行中フェーズの状態（リロード後も継続できるように保存）。
   /// `idle` のときは undefined になる（読み込み時は idle として扱う）。
   status?: SessionStatus;
@@ -52,7 +55,7 @@ const isSessionPhase = (v: unknown): v is SessionPhase =>
 
 const loadPersisted = (): PersistedState => {
   if (typeof window === 'undefined') {
-    return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0 };
+    return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0, totalFocusCompleted: 0 };
   }
   try {
     // Read the current key first; fall back to the v1 key so users who
@@ -60,12 +63,23 @@ const loadPersisted = (): PersistedState => {
     const raw =
       window.localStorage.getItem(STORAGE_KEY) ??
       window.localStorage.getItem('development-tools.pomodoro.v1');
-    if (!raw) return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0 };
+    if (!raw) return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0, totalFocusCompleted: 0 };
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
+    const history = Array.isArray(parsed.history)
+      ? parsed.history.slice(0, HISTORY_LIMIT)
+      : [];
     return {
       config: { ...DEFAULT_POMODORO_CONFIG, ...(parsed.config ?? {}) },
-      history: Array.isArray(parsed.history) ? parsed.history.slice(0, HISTORY_LIMIT) : [],
+      history,
       cycleCount: typeof parsed.cycleCount === 'number' ? parsed.cycleCount : 0,
+      // `history` is truncated at HISTORY_LIMIT, so once a user crosses
+      // that line a recompute would silently rewind the lifetime tally.
+      // Trust the persisted counter when present and only fall back to
+      // recompute for migrating users who never had it written.
+      totalFocusCompleted:
+        typeof parsed.totalFocusCompleted === 'number'
+          ? Math.max(0, Math.floor(parsed.totalFocusCompleted))
+          : computeTotalFocusCompleted(history),
       status: isSessionStatus(parsed.status) ? parsed.status : undefined,
       phase: isSessionPhase(parsed.phase) ? parsed.phase : undefined,
       phaseStartedAt:
@@ -82,7 +96,7 @@ const loadPersisted = (): PersistedState => {
     };
   } catch (err) {
     console.error('[sessionStore] Failed to parse persisted state:', err);
-    return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0 };
+    return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0, totalFocusCompleted: 0 };
   }
 };
 
@@ -161,6 +175,7 @@ const persistAll = () => {
     config: s.config,
     history: s.history,
     cycleCount: s.cycleCount,
+    totalFocusCompleted: s.totalFocusCompleted,
     status: s.status,
     phase: s.phase,
     phaseStartedAt: s.phaseStartedAt,
@@ -332,7 +347,7 @@ export const useSession = create<SessionStoreState>((set, get) => ({
   phasePlannedSeconds: initialPhasePlannedSeconds,
   phaseXpReward: initialPhaseXpReward,
   cycleCount: persisted.cycleCount,
-  totalFocusCompleted: computeTotalFocusCompleted(persisted.history),
+  totalFocusCompleted: persisted.totalFocusCompleted,
   history: persisted.history,
 
   start: (phase) => {
@@ -493,7 +508,11 @@ export const useSession = create<SessionStoreState>((set, get) => ({
   },
 
   clearHistory: () => {
-    set({ history: [], totalFocusCompleted: 0, cycleCount: 0 });
+    // The button is labelled "履歴を削除" — only wipe the history list and
+    // its lifetime counter. Leave `cycleCount` alone so a clear performed
+    // mid-session doesn't reroute the next phase (e.g. flipping a pending
+    // long break back to a short one).
+    set({ history: [], totalFocusCompleted: 0 });
     persistAll();
   },
 
