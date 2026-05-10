@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import { Sidebar } from '../Sidebar';
 import { OfflineBanner } from '../OfflineBanner';
 import { SessionExpiredBanner } from '../../features/auth';
+import { PomodoroSessionToast } from '../../features/pomodoro';
 
 /**
  * MainLayout Component
@@ -35,6 +36,9 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
         <SessionExpiredBanner />
         {children}
       </main>
+      {/* Global Pomodoro completion toast — rendered here so it appears
+          regardless of which page the user is on when the timer fires. */}
+      <PomodoroSessionToast />
     </div>
   );
 };

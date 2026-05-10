@@ -125,7 +125,7 @@ export const PomodoroSettings = () => {
           suffix="XP"
           onChange={(v) => update('focusCompletionXp', v)}
         />
-        <label className="block">
+        <div className="block">
           <span className="block text-xs font-gaming text-dt-text-sub uppercase tracking-wide mb-1">
             自動継続
           </span>
@@ -138,7 +138,7 @@ export const PomodoroSettings = () => {
             />
             <span className="text-sm text-dt-text">次のフェーズを自動開始</span>
           </label>
-        </label>
+        </div>
       </div>
     </div>
   );

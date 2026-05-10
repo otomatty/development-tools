@@ -11,5 +11,6 @@
 export { PomodoroTimer } from './PomodoroTimer';
 export { PomodoroControls } from './PomodoroControls';
 export { PomodoroSettings } from './PomodoroSettings';
+export { PomodoroSessionToast } from './PomodoroSessionToast';
 export { SessionWidget } from './SessionWidget';
 export { SessionHistory } from './SessionHistory';

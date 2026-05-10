@@ -92,12 +92,20 @@ export const SessionHistory = () => {
   const clearHistory = useSession((s) => s.clearHistory);
 
   const todayCompleted = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTomorrow = new Date(startOfToday);
+    startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+    const startMs = startOfToday.getTime();
+    const endMs = startOfTomorrow.getTime();
+
     return history.filter((r) => {
       if (!(r.phase === 'focus' && r.completed)) return false;
-      const ended = new Date(r.endedAt);
-      return ended.getTime() >= today.getTime();
+      const endedMs = new Date(r.endedAt).getTime();
+      // Bound on tomorrow midnight too — clock skew or restored backups
+      // can sneak in records dated in the future, and we don't want them
+      // counted in today's tally.
+      return endedMs >= startMs && endedMs < endMs;
     }).length;
   }, [history]);
 

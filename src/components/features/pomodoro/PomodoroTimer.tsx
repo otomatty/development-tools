@@ -10,12 +10,7 @@
  */
 
 import { useSession } from '@/stores/sessionStore';
-import {
-  formatRemaining,
-  sessionPhaseEmoji,
-  sessionPhaseLabel,
-  sessionPhaseMinutes,
-} from '@/types/session';
+import { formatRemaining, sessionPhaseEmoji, sessionPhaseLabel } from '@/types/session';
 
 const RADIUS = 110;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -30,10 +25,15 @@ export const PomodoroTimer = () => {
   const phase = useSession((s) => s.phase);
   const status = useSession((s) => s.status);
   const remaining = useSession((s) => s.remainingSeconds);
-  const config = useSession((s) => s.config);
+  const phasePlannedSeconds = useSession((s) => s.phasePlannedSeconds);
+  const phaseXpReward = useSession((s) => s.phaseXpReward);
+  const longBreakInterval = useSession((s) => s.config.longBreakInterval);
   const cycleCount = useSession((s) => s.cycleCount);
 
-  const total = Math.max(1, sessionPhaseMinutes(phase, config) * 60);
+  // Use the snapshot so a mid-session settings tweak doesn't make the ring
+  // jump to the wrong fill — the snapshot freezes "what the user signed up
+  // for" at start time.
+  const total = Math.max(1, phasePlannedSeconds);
   const progress = Math.max(0, Math.min(1, 1 - remaining / total));
   const offset = CIRCUMFERENCE * (1 - progress);
 
@@ -83,15 +83,15 @@ export const PomodoroTimer = () => {
         <span>
           サイクル{' '}
           <span className="text-dt-text font-gaming-mono">
-            {cycleCount}/{config.longBreakInterval}
+            {cycleCount}/{longBreakInterval}
           </span>
         </span>
-        <span>
-          完了で{' '}
-          <span className="text-gm-accent-cyan font-gaming-mono">
-            +{config.focusCompletionXp} XP
+        {phase === 'focus' && (
+          <span>
+            完了で{' '}
+            <span className="text-gm-accent-cyan font-gaming-mono">+{phaseXpReward} XP</span>
           </span>
-        </span>
+        )}
       </div>
     </div>
   );

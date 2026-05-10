@@ -26,27 +26,59 @@ import {
 } from '@/types/session';
 import { gamification } from '@/lib/tauri/commands';
 
-const STORAGE_KEY = 'development-tools.pomodoro.v1';
+const STORAGE_KEY = 'development-tools.pomodoro.v2';
 const HISTORY_LIMIT = 200;
 
 interface PersistedState {
   config: PomodoroConfig;
   history: SessionRecord[];
   cycleCount: number;
+  /// 進行中フェーズの状態（リロード後も継続できるように保存）。
+  /// `idle` のときは undefined になる（読み込み時は idle として扱う）。
+  status?: SessionStatus;
+  phase?: SessionPhase;
+  phaseStartedAt?: string | null;
+  endsAt?: number | null;
+  remainingSeconds?: number;
+  elapsedSeconds?: number;
+  phasePlannedSeconds?: number;
+  phaseXpReward?: number;
 }
+
+const isSessionStatus = (v: unknown): v is SessionStatus =>
+  v === 'idle' || v === 'running' || v === 'paused';
+const isSessionPhase = (v: unknown): v is SessionPhase =>
+  v === 'focus' || v === 'short_break' || v === 'long_break';
 
 const loadPersisted = (): PersistedState => {
   if (typeof window === 'undefined') {
     return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0 };
   }
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    // Read the current key first; fall back to the v1 key so users who
+    // started with the previous release don't lose their config / history.
+    const raw =
+      window.localStorage.getItem(STORAGE_KEY) ??
+      window.localStorage.getItem('development-tools.pomodoro.v1');
     if (!raw) return { config: DEFAULT_POMODORO_CONFIG, history: [], cycleCount: 0 };
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     return {
       config: { ...DEFAULT_POMODORO_CONFIG, ...(parsed.config ?? {}) },
       history: Array.isArray(parsed.history) ? parsed.history.slice(0, HISTORY_LIMIT) : [],
       cycleCount: typeof parsed.cycleCount === 'number' ? parsed.cycleCount : 0,
+      status: isSessionStatus(parsed.status) ? parsed.status : undefined,
+      phase: isSessionPhase(parsed.phase) ? parsed.phase : undefined,
+      phaseStartedAt:
+        typeof parsed.phaseStartedAt === 'string' ? parsed.phaseStartedAt : null,
+      endsAt: typeof parsed.endsAt === 'number' ? parsed.endsAt : null,
+      remainingSeconds:
+        typeof parsed.remainingSeconds === 'number' ? parsed.remainingSeconds : undefined,
+      elapsedSeconds:
+        typeof parsed.elapsedSeconds === 'number' ? parsed.elapsedSeconds : undefined,
+      phasePlannedSeconds:
+        typeof parsed.phasePlannedSeconds === 'number' ? parsed.phasePlannedSeconds : undefined,
+      phaseXpReward:
+        typeof parsed.phaseXpReward === 'number' ? parsed.phaseXpReward : undefined,
     };
   } catch (err) {
     console.error('[sessionStore] Failed to parse persisted state:', err);
@@ -54,7 +86,7 @@ const loadPersisted = (): PersistedState => {
   }
 };
 
-const persist = (state: PersistedState) => {
+const persistRaw = (state: PersistedState) => {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -90,6 +122,13 @@ interface SessionStoreState {
   remainingSeconds: number;
   /// このフェーズで実際にカウントされた秒数（一時停止分を除く）
   elapsedSeconds: number;
+  /// セッション開始時に確定した総時間（秒）。設定をフェーズ実行中に変更しても
+  /// 進行中のフェーズ長は変わらない（次のフェーズから新しい設定が適用される）
+  /// — UI と finalize の両方がこのスナップショットを参照する。
+  phasePlannedSeconds: number;
+  /// セッション開始時に確定した完了時 XP。同様にフェーズ実行中の設定変更は
+  /// 進行中のセッションには影響しない。
+  phaseXpReward: number;
   /// long_break 周期内で完了した focus フェーズ数（long_break 後にリセット）
   cycleCount: number;
   /// 通算で完了した focus フェーズ数（履歴の下限）
@@ -111,8 +150,79 @@ interface SessionStoreState {
 }
 
 const persisted = loadPersisted();
-const initialPhase: SessionPhase = 'focus';
-const initialRemaining = persisted.config.focusMinutes * 60;
+
+/// Read the persistable subset out of the live store and write it. Called
+/// after every state-mutating action so a refresh / restart picks up where
+/// the user left off (running timers resume from the same `endsAt`, paused
+/// timers restore their `remainingSeconds`, etc.).
+const persistAll = () => {
+  const s = useSession.getState();
+  persistRaw({
+    config: s.config,
+    history: s.history,
+    cycleCount: s.cycleCount,
+    status: s.status,
+    phase: s.phase,
+    phaseStartedAt: s.phaseStartedAt,
+    endsAt: s.endsAt,
+    remainingSeconds: s.remainingSeconds,
+    elapsedSeconds: s.elapsedSeconds,
+    phasePlannedSeconds: s.phasePlannedSeconds,
+    phaseXpReward: s.phaseXpReward,
+  });
+};
+
+// Restore the active timer state when present. If a `running` session was
+// persisted and its `endsAt` is already in the past (e.g. the user closed
+// the app mid-session and reopened it 40 minutes later), we keep the
+// `running` status — the very next ticker tick (within 1s) will detect
+// `remaining <= 0` and finalize the phase, awarding XP and advancing the
+// cycle exactly as if the timer had completed in the foreground.
+const initialPhase: SessionPhase = persisted.phase ?? 'focus';
+const initialStatus: SessionStatus = persisted.status ?? 'idle';
+const initialPhaseStartedAt = persisted.phaseStartedAt ?? null;
+const initialEndsAt = initialStatus === 'running' ? (persisted.endsAt ?? null) : null;
+const initialRemaining = (() => {
+  if (initialStatus === 'running' && initialEndsAt !== null) {
+    return Math.max(0, Math.ceil((initialEndsAt - Date.now()) / 1000));
+  }
+  if (initialStatus === 'paused' && typeof persisted.remainingSeconds === 'number') {
+    return Math.max(0, persisted.remainingSeconds);
+  }
+  return sessionPhaseMinutes(initialPhase, persisted.config) * 60;
+})();
+// Snapshot the planned duration / XP for the active phase. When idle, mirror
+// the current config so the dial can render its "ready to start" total. When
+// running or paused, prefer the value persisted with the session — that's
+// the contract the user signed up for when they hit Start, even if they
+// later edit the focus duration in settings.
+const initialPhasePlannedSeconds = (() => {
+  if (
+    initialStatus !== 'idle' &&
+    typeof persisted.phasePlannedSeconds === 'number' &&
+    persisted.phasePlannedSeconds > 0
+  ) {
+    return Math.floor(persisted.phasePlannedSeconds);
+  }
+  return Math.max(1, Math.floor(sessionPhaseMinutes(initialPhase, persisted.config) * 60));
+})();
+const initialPhaseXpReward = (() => {
+  if (
+    initialStatus !== 'idle' &&
+    typeof persisted.phaseXpReward === 'number' &&
+    persisted.phaseXpReward >= 0
+  ) {
+    return Math.floor(persisted.phaseXpReward);
+  }
+  return Math.max(0, Math.floor(persisted.config.focusCompletionXp));
+})();
+const initialElapsed = (() => {
+  if (initialStatus === 'idle') return 0;
+  if (typeof persisted.elapsedSeconds === 'number') {
+    return Math.max(0, persisted.elapsedSeconds);
+  }
+  return Math.max(0, initialPhasePlannedSeconds - initialRemaining);
+})();
 
 interface FinalizeResult {
   history: SessionRecord[];
@@ -123,19 +233,20 @@ interface FinalizeResult {
 
 /// 純粋関数: 現在のフェーズを履歴に書き込み、付与すべき XP を計算する。
 /// 外部副作用（XP 加算 API 呼び出し / イベント発火 / 永続化）は呼び出し側で行う。
+///
+/// `plannedDurationSeconds` と `xpAwarded` は **セッション開始時にスナップショットした値**
+/// (`state.phasePlannedSeconds` / `state.phaseXpReward`) から計算する。
+/// セッション中の設定変更で進行中のセッションの履歴値が遡って書き換わらないようにするため。
 const finalizePhasePure = (state: SessionStoreState, completed: boolean): FinalizeResult | null => {
   if (state.phaseStartedAt === null) return null;
 
-  const planned = Math.max(
-    1,
-    Math.floor(sessionPhaseMinutes(state.phase, state.config) * 60),
-  );
+  const planned = Math.max(1, Math.floor(state.phasePlannedSeconds));
   const remaining = state.endsAt
     ? Math.max(0, Math.ceil((state.endsAt - Date.now()) / 1000))
     : state.remainingSeconds;
   const actual = completed ? planned : Math.max(0, planned - remaining);
   const xpAwarded =
-    completed && state.phase === 'focus' ? state.config.focusCompletionXp : 0;
+    completed && state.phase === 'focus' ? Math.max(0, Math.floor(state.phaseXpReward)) : 0;
 
   const record: SessionRecord = {
     id: generateId(),
@@ -164,23 +275,19 @@ const finalizePhasePure = (state: SessionStoreState, completed: boolean): Finali
   };
 };
 
-/// 副作用付きの後処理: XP 加算 + イベント発火 + localStorage 永続化。
+/// 副作用付きの後処理: XP 加算 + イベント発火。永続化は呼び出し側で `persistAll()`
+/// を実行することで、`set` 後の最新 state 全体を 1 回で書き出す。
 const applyFinalizeSideEffects = (
-  state: SessionStoreState,
+  _state: SessionStoreState,
   result: FinalizeResult,
 ): void => {
-  persist({
-    config: state.config,
-    history: result.history,
-    cycleCount: result.cycleCount,
-  });
-
   if (result.record.xpAwarded > 0) {
+    const minutes = Math.max(1, Math.round(result.record.plannedDurationSeconds / 60));
     void gamification
       .addXp(
         result.record.xpAwarded,
         'pomodoro_focus',
-        `Pomodoro 集中セッション完了 (${state.config.focusMinutes}分)`,
+        `Pomodoro 集中セッション完了 (${minutes}分)`,
       )
       .catch((err) => {
         // XP grant failures shouldn't block the timer flow — log and let the
@@ -216,12 +323,14 @@ const computeNextPhase = (
 
 export const useSession = create<SessionStoreState>((set, get) => ({
   config: persisted.config,
-  status: 'idle',
+  status: initialStatus,
   phase: initialPhase,
-  phaseStartedAt: null,
-  endsAt: null,
+  phaseStartedAt: initialPhaseStartedAt,
+  endsAt: initialEndsAt,
   remainingSeconds: initialRemaining,
-  elapsedSeconds: 0,
+  elapsedSeconds: initialElapsed,
+  phasePlannedSeconds: initialPhasePlannedSeconds,
+  phaseXpReward: initialPhaseXpReward,
   cycleCount: persisted.cycleCount,
   totalFocusCompleted: computeTotalFocusCompleted(persisted.history),
   history: persisted.history,
@@ -239,7 +348,15 @@ export const useSession = create<SessionStoreState>((set, get) => ({
       endsAt: now + seconds * 1000,
       remainingSeconds: seconds,
       elapsedSeconds: 0,
+      // Lock in the planned duration + reward at start time so a mid-phase
+      // setting tweak doesn't retroactively rewrite this session's history.
+      phasePlannedSeconds: seconds,
+      phaseXpReward:
+        targetPhase === 'focus'
+          ? Math.max(0, Math.floor(state.config.focusCompletionXp))
+          : 0,
     });
+    persistAll();
   },
 
   pause: () => {
@@ -251,6 +368,7 @@ export const useSession = create<SessionStoreState>((set, get) => ({
       endsAt: null,
       remainingSeconds: remaining,
     });
+    persistAll();
   },
 
   resume: () => {
@@ -262,6 +380,7 @@ export const useSession = create<SessionStoreState>((set, get) => ({
       endsAt: Date.now() + seconds * 1000,
       remainingSeconds: seconds,
     });
+    persistAll();
   },
 
   stop: () => {
@@ -276,7 +395,7 @@ export const useSession = create<SessionStoreState>((set, get) => ({
       });
       applyFinalizeSideEffects(state, result);
     }
-    const focusSeconds = state.config.focusMinutes * 60;
+    const focusSeconds = Math.max(1, state.config.focusMinutes * 60);
     set({
       status: 'idle',
       phase: 'focus',
@@ -284,7 +403,12 @@ export const useSession = create<SessionStoreState>((set, get) => ({
       endsAt: null,
       remainingSeconds: focusSeconds,
       elapsedSeconds: 0,
+      // Reset the snapshot to mirror the live config so the dial / labels
+      // for the next-up phase reflect the current settings.
+      phasePlannedSeconds: focusSeconds,
+      phaseXpReward: Math.max(0, Math.floor(state.config.focusCompletionXp)),
     });
+    persistAll();
   },
 
   skipPhase: () => {
@@ -314,12 +438,13 @@ export const useSession = create<SessionStoreState>((set, get) => ({
       endsAt: null,
       remainingSeconds: nextSeconds,
       elapsedSeconds: 0,
+      phasePlannedSeconds: nextSeconds,
+      phaseXpReward:
+        next.phase === 'focus'
+          ? Math.max(0, Math.floor(state.config.focusCompletionXp))
+          : 0,
     });
-    persist({
-      config: state.config,
-      history: get().history,
-      cycleCount: next.cycleCount,
-    });
+    persistAll();
   },
 
   setConfig: (patch) => {
@@ -331,32 +456,45 @@ export const useSession = create<SessionStoreState>((set, get) => ({
     next.longBreakInterval = Math.max(1, Math.min(12, Math.floor(next.longBreakInterval)));
     next.focusCompletionXp = Math.max(0, Math.min(1000, Math.floor(next.focusCompletionXp)));
     set({ config: next });
-    persist({ config: next, history: get().history, cycleCount: get().cycleCount });
 
     // If we're idle and the phase duration changed, refresh the displayed
-    // remaining time so the user sees the new value before they hit start.
+    // remaining time + planned snapshot so the user sees the new value
+    // before they hit start. Running / paused sessions keep their
+    // pre-edit snapshot — the new config takes effect at the next phase.
     if (get().status === 'idle') {
-      set({ remainingSeconds: sessionPhaseMinutes(get().phase, next) * 60 });
+      const seconds = Math.max(1, sessionPhaseMinutes(get().phase, next) * 60);
+      set({
+        remainingSeconds: seconds,
+        phasePlannedSeconds: seconds,
+        phaseXpReward:
+          get().phase === 'focus' ? Math.max(0, Math.floor(next.focusCompletionXp)) : 0,
+      });
     }
+    persistAll();
   },
 
   resetConfig: () => {
     set({ config: { ...DEFAULT_POMODORO_CONFIG } });
-    persist({
-      config: { ...DEFAULT_POMODORO_CONFIG },
-      history: get().history,
-      cycleCount: get().cycleCount,
-    });
     if (get().status === 'idle') {
+      const seconds = Math.max(
+        1,
+        sessionPhaseMinutes(get().phase, DEFAULT_POMODORO_CONFIG) * 60,
+      );
       set({
-        remainingSeconds: sessionPhaseMinutes(get().phase, DEFAULT_POMODORO_CONFIG) * 60,
+        remainingSeconds: seconds,
+        phasePlannedSeconds: seconds,
+        phaseXpReward:
+          get().phase === 'focus'
+            ? Math.max(0, Math.floor(DEFAULT_POMODORO_CONFIG.focusCompletionXp))
+            : 0,
       });
     }
+    persistAll();
   },
 
   clearHistory: () => {
     set({ history: [], totalFocusCompleted: 0, cycleCount: 0 });
-    persist({ config: get().config, history: [], cycleCount: 0 });
+    persistAll();
   },
 
   tick: () => {
@@ -380,6 +518,8 @@ export const useSession = create<SessionStoreState>((set, get) => ({
         1,
         Math.floor(sessionPhaseMinutes(next.phase, state.config) * 60),
       );
+      const nextXp =
+        next.phase === 'focus' ? Math.max(0, Math.floor(state.config.focusCompletionXp)) : 0;
       const autoStart = state.config.autoStartNext;
       const now = Date.now();
       set({
@@ -390,20 +530,21 @@ export const useSession = create<SessionStoreState>((set, get) => ({
         endsAt: autoStart ? now + nextSeconds * 1000 : null,
         remainingSeconds: nextSeconds,
         elapsedSeconds: 0,
+        // The next phase's snapshot reflects the live config — autoStart
+        // commits this immediately, idle just previews it for the user.
+        phasePlannedSeconds: nextSeconds,
+        phaseXpReward: nextXp,
       });
-      persist({
-        config: state.config,
-        history: get().history,
-        cycleCount: next.cycleCount,
-      });
+      persistAll();
       return;
     }
-    const planned = Math.max(
-      1,
-      Math.floor(sessionPhaseMinutes(state.phase, state.config) * 60),
-    );
+    const planned = Math.max(1, Math.floor(state.phasePlannedSeconds));
     const elapsed = Math.max(0, planned - remaining);
     set({ remainingSeconds: remaining, elapsedSeconds: elapsed });
+    // Skip persisting on every tick — `endsAt` is fixed while running, so
+    // the only field changing is the derived display. We re-persist on
+    // pause / stop / phase boundary, which is enough to recover state on
+    // reload.
   },
 }));
 
@@ -411,8 +552,20 @@ export const useSession = create<SessionStoreState>((set, get) => ({
 // system sleep doesn't desync the displayed remaining time — when the tab
 // wakes up the very next tick recomputes from `endsAt` and (if the phase
 // already elapsed) finalises immediately.
+//
+// Stash the timer handle on `globalThis` so Vite HMR re-running this module
+// in dev doesn't stack multiple intervals (which would make the timer tick
+// faster and faster on every save). Production runs through this once.
+declare global {
+  // eslint-disable-next-line no-var
+  var __pomodoroTickInterval__: ReturnType<typeof setInterval> | undefined;
+}
+
 if (typeof window !== 'undefined') {
-  setInterval(() => {
+  if (globalThis.__pomodoroTickInterval__ !== undefined) {
+    clearInterval(globalThis.__pomodoroTickInterval__);
+  }
+  globalThis.__pomodoroTickInterval__ = setInterval(() => {
     useSession.getState().tick();
   }, 1000);
 }
