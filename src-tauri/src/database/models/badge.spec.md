@@ -31,7 +31,7 @@
 
 ## データフロー
 
-```
+```text
 sync_github_stats          ── get_user_stats(REST 4 + GraphQL 1) ──▶ GitHubStats
         │
         │ 1) update_github_aggregates(user.id, &agg)
