@@ -16,6 +16,7 @@ pub(crate) struct UserRow {
     pub access_token_encrypted: String,
     pub refresh_token_encrypted: Option<String>,
     pub token_expires_at: Option<String>,
+    pub encryption_version: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -35,6 +36,7 @@ impl TryFrom<UserRow> for User {
                 .token_expires_at
                 .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
                 .map(|dt| dt.with_timezone(&Utc)),
+            encryption_version: row.encryption_version,
             created_at: DateTime::parse_from_rfc3339(&row.created_at)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
@@ -60,11 +62,14 @@ impl Database {
         let now = Utc::now().to_rfc3339();
         let expires_at = token_expires_at.map(|dt| dt.to_rfc3339());
 
+        // New rows are always written with the keystore-managed key
+        // (Issue #196 / Audit §9.3); only pre-existing rows carry version 1.
         let id = sqlx::query(
             r#"
-            INSERT INTO users (github_id, username, avatar_url, access_token_encrypted, 
-                              refresh_token_encrypted, token_expires_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (github_id, username, avatar_url, access_token_encrypted,
+                              refresh_token_encrypted, token_expires_at, encryption_version,
+                              created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(github_id)
@@ -73,6 +78,7 @@ impl Database {
         .bind(access_token_encrypted)
         .bind(refresh_token_encrypted)
         .bind(&expires_at)
+        .bind(crate::auth::token::ENCRYPTION_VERSION_KEYSTORE)
         .bind(&now)
         .bind(&now)
         .execute(self.pool())
@@ -122,17 +128,22 @@ impl Database {
         let now = Utc::now().to_rfc3339();
         let expires_at = token_expires_at.map(|dt| dt.to_rfc3339());
 
+        // Any token write goes through the keystore-managed key, so bump
+        // the per-row version tag in lockstep. Keeping the bump here means
+        // a one-off `update_user_tokens` (e.g. lazy re-encryption) doesn't
+        // need a separate "mark migrated" call.
         sqlx::query(
             r#"
-            UPDATE users 
-            SET access_token_encrypted = ?, refresh_token_encrypted = ?, 
-                token_expires_at = ?, updated_at = ?
+            UPDATE users
+            SET access_token_encrypted = ?, refresh_token_encrypted = ?,
+                token_expires_at = ?, encryption_version = ?, updated_at = ?
             WHERE id = ?
             "#,
         )
         .bind(access_token_encrypted)
         .bind(refresh_token_encrypted)
         .bind(expires_at)
+        .bind(crate::auth::token::ENCRYPTION_VERSION_KEYSTORE)
         .bind(now)
         .bind(user_id)
         .execute(self.pool())
@@ -189,6 +200,41 @@ impl Database {
             Some(r) => Ok(Some(r.try_into()?)),
             None => Ok(None),
         }
+    }
+
+    /// Fetch every user row still tagged with the legacy
+    /// (`Crypto::from_app_key`) encryption version.
+    ///
+    /// Used by `TokenManager::migrate_legacy_tokens_if_needed` to sweep
+    /// existing installations onto the keystore-managed key (Issue #196).
+    /// Returns the empty vec on a fresh install — no users yet means nothing
+    /// to migrate.
+    pub async fn list_users_with_legacy_encryption(&self) -> DbResult<Vec<User>> {
+        let rows: Vec<UserRow> = sqlx::query_as("SELECT * FROM users WHERE encryption_version = ?")
+            .bind(crate::auth::token::ENCRYPTION_VERSION_LEGACY)
+            .fetch_all(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        rows.into_iter().map(User::try_from).collect()
+    }
+
+    /// Set `encryption_version` for a user without rewriting the ciphertext.
+    ///
+    /// Used by the migration to tag rows that have an empty token blob
+    /// (logged-out users) so a future read doesn't keep bouncing through
+    /// the legacy decryption path.
+    pub async fn set_user_encryption_version(
+        &self,
+        user_id: i64,
+        encryption_version: i32,
+    ) -> DbResult<()> {
+        sqlx::query("UPDATE users SET encryption_version = ? WHERE id = ?")
+            .bind(encryption_version)
+            .bind(user_id)
+            .execute(self.pool())
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        Ok(())
     }
 
     /// Get user by ID regardless of login state

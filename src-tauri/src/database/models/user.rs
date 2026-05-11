@@ -16,6 +16,14 @@ pub struct User {
     #[serde(skip_serializing)]
     pub refresh_token_encrypted: Option<String>,
     pub token_expires_at: Option<DateTime<Utc>>,
+    /// Cipher-key provenance for the encrypted token columns:
+    ///   1 = legacy `Crypto::from_app_key` (pre-Issue #196)
+    ///   2 = OS-keystore-managed random key (current default)
+    /// Used by `TokenManager::migrate_legacy_tokens_if_needed` to lazily
+    /// re-encrypt rows on first read so existing sessions survive the
+    /// upgrade without forcing a re-login.
+    #[serde(skip_serializing)]
+    pub encryption_version: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

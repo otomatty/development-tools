@@ -440,6 +440,7 @@ mod tests {
             access_token_encrypted: "encrypted_token".to_string(),
             refresh_token_encrypted: None,
             token_expires_at: None,
+            encryption_version: crate::auth::token::ENCRYPTION_VERSION_KEYSTORE,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

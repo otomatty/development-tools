@@ -164,6 +164,31 @@ pub fn run() {
 
             app.manage(app_state);
 
+            // One-shot upgrade sweep: re-encrypt any pre-Issue #196 token
+            // rows (legacy `Crypto::from_app_key`) under the new
+            // OS-keystore-managed master key. Idempotent and safe to run
+            // every launch — on a fully migrated DB the query returns zero
+            // rows and the call is essentially free. We run this *before*
+            // the startup auth probe so the probe reads the post-migration
+            // ciphertext (although either order works since `decrypt_for_user`
+            // also handles legacy rows on demand).
+            let app_for_key_migration = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = app_for_key_migration.state::<AppState>();
+                match state.token_manager.migrate_legacy_tokens_if_needed().await {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        eprintln!(
+                            "Startup: migrated {} legacy-encrypted token row(s) to the OS keystore (Issue #196)",
+                            n
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("Startup: token keystore migration failed: {}", e);
+                    }
+                }
+            });
+
             // Probe the persisted GitHub token in the background so we can
             // surface a re-login prompt if the user revoked it externally
             // between launches. Runs after `app.manage(app_state)` because the
