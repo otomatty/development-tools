@@ -358,6 +358,12 @@ impl IssuesClient {
         per_page: i32,
         page: i32,
     ) -> GitHubResult<GitHubSearchResponse> {
+        // Account this call in the in-process sliding-window limiter so
+        // `get_detailed_rate_limit` and `is_rate_limit_critical` reflect
+        // every Search API consumer, not just GitHubClient's.
+        super::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         let url = format!(
             "{}/search/issues?q={}&per_page={}&page={}&sort=updated&order=desc",
             GITHUB_API_URL,

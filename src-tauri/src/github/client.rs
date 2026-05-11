@@ -224,6 +224,9 @@ impl GitHubClient {
         state: &str,
         per_page: i32,
     ) -> GitHubResult<Vec<serde_json::Value>> {
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         self.get(&format!(
             "/search/issues?q=type:pr+author:{}+state:{}&per_page={}",
             username, state, per_page
@@ -238,6 +241,9 @@ impl GitHubClient {
         state: &str,
         per_page: i32,
     ) -> GitHubResult<Vec<serde_json::Value>> {
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         self.get(&format!(
             "/search/issues?q=type:issue+author:{}+state:{}&per_page={}",
             username, state, per_page
@@ -313,6 +319,9 @@ impl GitHubClient {
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
     pub async fn get_merged_prs_count(&self, username: &str) -> GitHubResult<i32> {
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         let query = format!(
             "/search/issues?q=type:pr+author:{}+is:merged&per_page=1",
             username
@@ -330,6 +339,9 @@ impl GitHubClient {
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
     pub async fn get_closed_issues_count(&self, username: &str) -> GitHubResult<i32> {
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         // Issues created by user that are closed
         let query = format!(
             "/search/issues?q=type:issue+author:{}+is:closed&per_page=1",
@@ -356,6 +368,9 @@ impl GitHubClient {
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
     pub async fn get_total_prs_count(&self, username: &str) -> GitHubResult<i32> {
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         let query = format!("/search/issues?q=type:pr+author:{}&per_page=1", username);
         let response: serde_json::Value = self.get(&query).await?;
         Ok(response
@@ -1172,13 +1187,14 @@ impl GitHubClient {
             .map(|dt| dt.timestamp())
             .unwrap_or(0);
 
-        // Search API limits (we can't query this directly, using defaults)
-        // Authenticated users: 30 requests per minute
+        // Search API has no rate-limit headers; we approximate locally via a
+        // sliding-window tracker. See `search_rate_limiter` module.
+        let snap = crate::github::search_rate_limiter::global().snapshot();
         let search_limit = RateLimit {
-            limit: 30,
-            remaining: 30, // We don't track this precisely
-            reset: Utc::now().timestamp() + 60,
-            used: 0,
+            limit: snap.limit,
+            remaining: snap.remaining,
+            reset: snap.reset,
+            used: snap.used,
         };
 
         Ok(RateLimitDetailed {

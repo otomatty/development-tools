@@ -6,6 +6,7 @@
 pub mod client;
 pub mod issues;
 pub mod notifications;
+pub mod search_rate_limiter;
 pub mod types;
 
 pub use client::GitHubClient;
