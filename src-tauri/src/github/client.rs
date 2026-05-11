@@ -224,7 +224,9 @@ impl GitHubClient {
         state: &str,
         per_page: i32,
     ) -> GitHubResult<Vec<serde_json::Value>> {
-        Self::await_search_slot().await?;
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         self.get(&format!(
             "/search/issues?q=type:pr+author:{}+state:{}&per_page={}",
             username, state, per_page
@@ -239,7 +241,9 @@ impl GitHubClient {
         state: &str,
         per_page: i32,
     ) -> GitHubResult<Vec<serde_json::Value>> {
-        Self::await_search_slot().await?;
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         self.get(&format!(
             "/search/issues?q=type:issue+author:{}+state:{}&per_page={}",
             username, state, per_page
@@ -309,35 +313,15 @@ impl GitHubClient {
             .ok_or_else(|| GitHubError::NotFound(format!("User {} not found", username)))
     }
 
-    /// Reserve a Search API slot from the in-process sliding-window limiter.
-    ///
-    /// GitHub does not expose Search API rate-limit headers, so we approximate
-    /// the 30/min budget locally. Waits up to `MAX_SEARCH_WAIT` for a slot;
-    /// beyond that, returns `RateLimited` so callers can fall back gracefully.
-    async fn await_search_slot() -> GitHubResult<()> {
-        use crate::github::search_rate_limiter::{global, AcquireOutcome};
-        const MAX_SEARCH_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
-        let start = std::time::Instant::now();
-        loop {
-            match global().try_acquire() {
-                AcquireOutcome::Granted => return Ok(()),
-                AcquireOutcome::WaitFor { duration, reset } => {
-                    if start.elapsed() + duration > MAX_SEARCH_WAIT {
-                        return Err(GitHubError::RateLimited(reset));
-                    }
-                    tokio::time::sleep(duration).await;
-                }
-            }
-        }
-    }
-
     /// Get count of merged PRs for the user
     ///
     /// Note: This uses GitHub's Search API which has stricter rate limits
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
     pub async fn get_merged_prs_count(&self, username: &str) -> GitHubResult<i32> {
-        Self::await_search_slot().await?;
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         let query = format!(
             "/search/issues?q=type:pr+author:{}+is:merged&per_page=1",
             username
@@ -355,7 +339,9 @@ impl GitHubClient {
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
     pub async fn get_closed_issues_count(&self, username: &str) -> GitHubResult<i32> {
-        Self::await_search_slot().await?;
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         // Issues created by user that are closed
         let query = format!(
             "/search/issues?q=type:issue+author:{}+is:closed&per_page=1",
@@ -382,7 +368,9 @@ impl GitHubClient {
     /// (30 requests/minute for authenticated users). Call sequentially
     /// and handle rate limit errors gracefully.
     pub async fn get_total_prs_count(&self, username: &str) -> GitHubResult<i32> {
-        Self::await_search_slot().await?;
+        crate::github::search_rate_limiter::await_search_slot()
+            .await
+            .map_err(GitHubError::RateLimited)?;
         let query = format!("/search/issues?q=type:pr+author:{}&per_page=1", username);
         let response: serde_json::Value = self.get(&query).await?;
         Ok(response

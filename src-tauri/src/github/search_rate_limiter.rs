@@ -123,7 +123,19 @@ impl SearchRateLimiter {
         self.evict_expired(&mut deque, now);
 
         if (deque.len() as u32) < self.limit {
-            deque.push_back(now);
+            // Keep timestamps monotonically non-decreasing. A small backward
+            // clock correction (NTP) would otherwise push a `now` smaller
+            // than `back`, breaking front-based eviction: expired entries
+            // could end up behind a newer-but-larger front entry and never
+            // be popped. Clamping to `max(now, back)` records the slot at
+            // the most recent observed instant, which is correct
+            // safe-side: the entry ages out a touch later than wall-clock
+            // would suggest, never earlier.
+            let recorded = match deque.back() {
+                Some(&last) if last > now => last,
+                _ => now,
+            };
+            deque.push_back(recorded);
             AcquireOutcome::Granted
         } else {
             let oldest = *deque.front().expect("deque is full so front must exist");
@@ -166,6 +178,33 @@ impl SearchRateLimiter {
 pub fn global() -> &'static SearchRateLimiter {
     static G: OnceLock<SearchRateLimiter> = OnceLock::new();
     G.get_or_init(SearchRateLimiter::new)
+}
+
+/// Reserve a Search API slot from the process-global sliding-window limiter.
+///
+/// Waits up to `MAX_SEARCH_WAIT` for a free slot. If the cumulative wait
+/// would exceed that budget, returns `Err(reset_ts)` so the caller can map
+/// it to its own rate-limit error type and let upstream fallback paths
+/// (e.g. GraphQL substitutes) take over.
+///
+/// Centralising the helper here means every Search API caller — whether
+/// from `GitHubClient` or `IssuesClient` — shares the same sliding-window
+/// accounting, which is required for `get_detailed_rate_limit` and
+/// `is_rate_limit_critical` to reflect real usage.
+pub async fn await_search_slot() -> Result<(), i64> {
+    const MAX_SEARCH_WAIT: Duration = Duration::from_secs(15);
+    let start = std::time::Instant::now();
+    loop {
+        match global().try_acquire() {
+            AcquireOutcome::Granted => return Ok(()),
+            AcquireOutcome::WaitFor { duration, reset } => {
+                if start.elapsed() + duration > MAX_SEARCH_WAIT {
+                    return Err(reset);
+                }
+                tokio::time::sleep(duration).await;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -330,6 +369,28 @@ mod tests {
         ));
         let snap = limiter.snapshot();
         assert_eq!(snap.used, 30);
+    }
+
+    #[test]
+    fn rollback_push_preserves_eviction_order() {
+        // Regression: before clamping, a backward clock jump could push a
+        // timestamp out of order, hiding older entries behind a newer front.
+        // After the fix, all 5 entries must evict cleanly once the wall
+        // clock has moved past `recorded + window`.
+        let clock = FakeClock::new(1100);
+        let limiter = limiter_with(clock.clone());
+        for _ in 0..3 {
+            limiter.try_acquire(); // recorded at 1100
+        }
+        clock.set(1095); // 5s backward jump (small, bucket preserved)
+        limiter.try_acquire(); // would naively record 1095 < back=1100
+        limiter.try_acquire(); // another one
+
+        // Move past the window (1100 + 60 = 1160). Every entry should age out.
+        clock.set(1161);
+        let snap = limiter.snapshot();
+        assert_eq!(snap.used, 0, "all entries must evict, none left behind");
+        assert_eq!(snap.remaining, 30);
     }
 
     #[test]
