@@ -32,7 +32,13 @@ impl Clock for SystemClock {
 #[derive(Debug, PartialEq, Eq)]
 pub enum AcquireOutcome {
     Granted,
-    WaitFor(Duration),
+    /// Slot unavailable. Carries both the suggested sleep `duration` and the
+    /// epoch-seconds `reset` (= oldest in-window timestamp + window) so
+    /// callers can return a `RateLimited(reset)` error without re-locking.
+    WaitFor {
+        duration: Duration,
+        reset: i64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,7 +84,10 @@ impl SearchRateLimiter {
 
     #[allow(dead_code)] // exposed for tests and future opt-in overrides
     pub fn with_limit(mut self, limit: u32) -> Self {
-        self.limit = limit;
+        // 1..=i32::MAX: 0 would panic on `front().expect` in `try_acquire`
+        // when the deque is empty (impossible-to-fill state), and any value
+        // above `i32::MAX` would corrupt the `u32 -> i32` cast in `snapshot()`.
+        self.limit = limit.clamp(1, i32::MAX as u32);
         self
     }
 
@@ -98,7 +107,10 @@ impl SearchRateLimiter {
 
     pub fn try_acquire(&self) -> AcquireOutcome {
         let now = self.clock.now_secs();
-        let mut deque = self.timestamps.lock().expect("SearchRateLimiter mutex poisoned");
+        let mut deque = self
+            .timestamps
+            .lock()
+            .expect("SearchRateLimiter mutex poisoned");
         self.evict_expired(&mut deque, now);
 
         if (deque.len() as u32) < self.limit {
@@ -106,14 +118,21 @@ impl SearchRateLimiter {
             AcquireOutcome::Granted
         } else {
             let oldest = *deque.front().expect("deque is full so front must exist");
-            let wait_secs = (oldest + self.window_secs - now).max(1);
-            AcquireOutcome::WaitFor(Duration::from_secs(wait_secs as u64))
+            let reset = oldest + self.window_secs;
+            let wait_secs = (reset - now).max(1);
+            AcquireOutcome::WaitFor {
+                duration: Duration::from_secs(wait_secs as u64),
+                reset,
+            }
         }
     }
 
     pub fn snapshot(&self) -> SearchSnapshot {
         let now = self.clock.now_secs();
-        let mut deque = self.timestamps.lock().expect("SearchRateLimiter mutex poisoned");
+        let mut deque = self
+            .timestamps
+            .lock()
+            .expect("SearchRateLimiter mutex poisoned");
         self.evict_expired(&mut deque, now);
 
         let used = deque.len() as i32;
@@ -185,7 +204,13 @@ mod tests {
         for _ in 0..30 {
             assert_eq!(limiter.try_acquire(), AcquireOutcome::Granted);
         }
-        assert_eq!(limiter.try_acquire(), AcquireOutcome::WaitFor(Duration::from_secs(60)));
+        assert_eq!(
+            limiter.try_acquire(),
+            AcquireOutcome::WaitFor {
+                duration: Duration::from_secs(60),
+                reset: 60,
+            }
+        );
     }
 
     #[test]
@@ -256,7 +281,10 @@ mod tests {
         }
         clock.set(59);
         match limiter.try_acquire() {
-            AcquireOutcome::WaitFor(d) => assert!(d.as_secs() >= 1),
+            AcquireOutcome::WaitFor { duration, reset } => {
+                assert!(duration.as_secs() >= 1);
+                assert_eq!(reset, 60);
+            }
             AcquireOutcome::Granted => panic!("should be at limit"),
         }
     }
@@ -282,6 +310,30 @@ mod tests {
         let limiter = SearchRateLimiter::with_clock(clock as Arc<dyn Clock>).with_limit(2);
         assert_eq!(limiter.try_acquire(), AcquireOutcome::Granted);
         assert_eq!(limiter.try_acquire(), AcquireOutcome::Granted);
-        assert!(matches!(limiter.try_acquire(), AcquireOutcome::WaitFor(_)));
+        assert!(matches!(
+            limiter.try_acquire(),
+            AcquireOutcome::WaitFor { .. }
+        ));
+    }
+
+    #[test]
+    fn with_limit_zero_clamped_to_one() {
+        let clock = FakeClock::new(0);
+        let limiter = SearchRateLimiter::with_clock(clock as Arc<dyn Clock>).with_limit(0);
+        // Clamped to 1 — first acquire succeeds, second is full.
+        assert_eq!(limiter.try_acquire(), AcquireOutcome::Granted);
+        assert!(matches!(
+            limiter.try_acquire(),
+            AcquireOutcome::WaitFor { .. }
+        ));
+    }
+
+    #[test]
+    fn with_limit_above_i32_max_clamped() {
+        let clock = FakeClock::new(0);
+        let limiter = SearchRateLimiter::with_clock(clock as Arc<dyn Clock>).with_limit(u32::MAX);
+        // `snapshot()` must not corrupt; `limit` fits in i32.
+        let snap = limiter.snapshot();
+        assert_eq!(snap.limit, i32::MAX);
     }
 }

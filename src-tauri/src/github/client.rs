@@ -224,6 +224,7 @@ impl GitHubClient {
         state: &str,
         per_page: i32,
     ) -> GitHubResult<Vec<serde_json::Value>> {
+        Self::await_search_slot().await?;
         self.get(&format!(
             "/search/issues?q=type:pr+author:{}+state:{}&per_page={}",
             username, state, per_page
@@ -238,6 +239,7 @@ impl GitHubClient {
         state: &str,
         per_page: i32,
     ) -> GitHubResult<Vec<serde_json::Value>> {
+        Self::await_search_slot().await?;
         self.get(&format!(
             "/search/issues?q=type:issue+author:{}+state:{}&per_page={}",
             username, state, per_page
@@ -319,12 +321,11 @@ impl GitHubClient {
         loop {
             match global().try_acquire() {
                 AcquireOutcome::Granted => return Ok(()),
-                AcquireOutcome::WaitFor(d) => {
-                    if start.elapsed() + d > MAX_SEARCH_WAIT {
-                        let snap = global().snapshot();
-                        return Err(GitHubError::RateLimited(snap.reset));
+                AcquireOutcome::WaitFor { duration, reset } => {
+                    if start.elapsed() + duration > MAX_SEARCH_WAIT {
+                        return Err(GitHubError::RateLimited(reset));
                     }
-                    tokio::time::sleep(d).await;
+                    tokio::time::sleep(duration).await;
                 }
             }
         }
