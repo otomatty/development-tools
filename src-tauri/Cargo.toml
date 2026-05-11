@@ -55,9 +55,10 @@ base64 = "0.22"
 # - Linux/FreeBSD  → Secret Service via DBus (`sync-secret-service` + `crypto-rust`)
 # `vendored` statically links DBus / OpenSSL so end-user systems don't need
 # extra libraries beyond an active Secret Service daemon (GNOME Keyring,
-# KWallet, etc.). Headless Linux without Secret Service falls back to the
-# in-memory `MemoryKeyStore` via the `KeyStore` trait abstraction; see
-# `auth::keystore` for details.
+# KWallet, etc.). Headless Linux without Secret Service will currently
+# fail at `TokenManager::new`; only unit tests inject `MemoryKeyStore`
+# manually via `TokenManager::with_keystore`. See `auth::keystore` for
+# the full security model.
 keyring = { version = "3", features = [
     "apple-native",
     "windows-native",

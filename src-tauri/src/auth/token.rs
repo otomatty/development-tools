@@ -46,8 +46,12 @@ pub struct TokenManager {
     /// Active cipher — key sourced from the OS keystore.
     crypto: Crypto,
     /// One-shot legacy cipher used solely to decrypt pre-#196 rows during
-    /// `migrate_legacy_tokens_if_needed`. Constructed lazily so test setups
-    /// that mock the keystore don't pay for the legacy derivation.
+    /// `migrate_legacy_tokens_if_needed` (and the lazy `decrypt_for_user`
+    /// fallback). Constructed eagerly alongside the keystore-managed
+    /// cipher — the derived-key computation is cheap (a couple of
+    /// `DefaultHasher` passes) and keeping both ciphers ready means the
+    /// migration paths never have to fail mid-decrypt because we forgot
+    /// to initialise the legacy side.
     legacy_crypto: Crypto,
     db: Database,
     /// Shared HTTP client so the periodic / startup `validate_token` probes
@@ -121,16 +125,30 @@ impl TokenManager {
                     .as_deref()
                     .map(|ct| self.legacy_crypto.decrypt(ct))
                     .transpose()?;
-                // Best-effort migrate-on-read — propagate failure rather than
-                // silently leaving the row on the legacy key, because the
-                // whole point of #196 is "no legacy keys at rest".
-                self.migrate_user_tokens(
-                    user.id,
-                    &access,
-                    refresh.as_deref(),
-                    user.token_expires_at,
-                )
-                .await?;
+                // Best-effort migrate-on-read: we already have the plaintext
+                // in hand, so a transient DB write failure (disk full, lock
+                // contention, etc.) must NOT block the user from using the
+                // session. The eager `migrate_legacy_tokens_if_needed` sweep
+                // re-runs on every launch and will retry, and on subsequent
+                // reads we'll come back through here. The legacy row at rest
+                // is no more recoverable than before #196 — the derived key
+                // hasn't gone anywhere — so leaving it briefly is acceptable.
+                if let Err(e) = self
+                    .migrate_user_tokens(
+                        user.id,
+                        &access,
+                        refresh.as_deref(),
+                        user.token_expires_at,
+                    )
+                    .await
+                {
+                    // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+                    eprintln!(
+                        "Token migration: failed to re-encrypt user {} during read: {}; \
+                         returning decrypted token, will retry on next access",
+                        user.id, e
+                    );
+                }
                 Ok(access)
             }
             other => Err(TokenError::Crypto(CryptoError::Decryption(format!(

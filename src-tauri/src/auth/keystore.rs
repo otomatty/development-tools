@@ -152,14 +152,17 @@ impl KeyStore for OsKeyStore {
 }
 
 // ---------------------------------------------------------------------------
-// In-memory implementation (tests and headless fallback)
+// In-memory implementation (tests only)
 // ---------------------------------------------------------------------------
 
 /// Process-local keystore used by unit tests. NOT a security boundary — the
 /// key lives in plain memory and is dropped when the process exits, defeating
-/// the whole point of using the OS keystore. Only use this when an OS
-/// keystore is genuinely unavailable (e.g. a Linux CI runner without DBus)
-/// and the trade-off has been explicitly accepted.
+/// the whole point of using the OS keystore.
+///
+/// Production code never selects this automatically: `TokenManager::new`
+/// hard-codes [`OsKeyStore`], so a headless environment without DBus +
+/// Secret Service will fail at startup. Tests opt in explicitly by passing
+/// a `MemoryKeyStore` to `TokenManager::with_keystore`.
 #[derive(Default)]
 pub struct MemoryKeyStore {
     inner: Mutex<HashMap<String, [u8; KEY_LEN]>>,
