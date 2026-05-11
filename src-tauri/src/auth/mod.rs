@@ -4,10 +4,12 @@
 //! and secure token storage.
 
 pub mod crypto;
+pub mod keystore;
 pub mod oauth;
 pub mod session;
 pub mod token;
 
+pub use keystore::{get_or_create_key, KeyStore, KeyStoreError, MemoryKeyStore, OsKeyStore};
 pub use oauth::{
     AuthToken, DeviceCodeResponse, DeviceFlow, DeviceFlowConfig, DeviceTokenStatus, OAuthError,
 };

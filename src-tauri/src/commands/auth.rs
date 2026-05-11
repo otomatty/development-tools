@@ -37,6 +37,7 @@ impl AppState {
             .map_err(|e| format!("Failed to initialize database: {}", e))?;
 
         let token_manager = TokenManager::new(db.clone())
+            .await
             .map_err(|e| format!("Failed to initialize token manager: {}", e))?;
 
         // Create a shared HTTP client for reuse across all requests
@@ -440,6 +441,7 @@ mod tests {
             access_token_encrypted: "encrypted_token".to_string(),
             refresh_token_encrypted: None,
             token_expires_at: None,
+            encryption_version: crate::auth::token::ENCRYPTION_VERSION_KEYSTORE,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

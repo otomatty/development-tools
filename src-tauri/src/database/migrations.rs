@@ -528,6 +528,29 @@ UPDATE xp_history
  WHERE created_at NOT LIKE '%T%';
 "#,
     },
+    Migration {
+        version: 17,
+        name: "add_encryption_version_to_users",
+        sql: r#"
+-- Audit §9.3 / Issue #196: move the access-token encryption key out of the
+-- binary and into the OS keystore (Keychain / DPAPI / Secret Service).
+--
+-- Existing rows were encrypted under the legacy app-derived key
+-- (`Crypto::from_app_key`). We can't re-encrypt them inside a SQL migration
+-- because both the legacy key and the new keystore-managed key live in
+-- Rust-land — so this migration just adds a per-row version tag and the
+-- runtime (`TokenManager::migrate_legacy_tokens_if_needed`) re-encrypts on
+-- the next read.
+--
+-- Version semantics:
+--   1 = legacy app-key (pre-#196); read with `Crypto::from_app_key`
+--   2 = OS-keystore-managed random key; read with `Crypto::from_keystore`
+--
+-- Default 1 for any pre-existing row so we know to migrate it; freshly
+-- created users (post-deploy) are written as version 2 directly.
+ALTER TABLE users ADD COLUMN encryption_version INTEGER NOT NULL DEFAULT 1;
+"#,
+    },
 ];
 
 /// Create the migrations tracking table

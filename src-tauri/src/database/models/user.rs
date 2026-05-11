@@ -16,6 +16,20 @@ pub struct User {
     #[serde(skip_serializing)]
     pub refresh_token_encrypted: Option<String>,
     pub token_expires_at: Option<DateTime<Utc>>,
+    /// Cipher-key provenance for the encrypted token columns:
+    ///   1 = legacy `Crypto::from_app_key` (pre-Issue #196)
+    ///   2 = OS-keystore-managed random key (current default)
+    /// Used by `TokenManager::migrate_legacy_tokens_if_needed` to lazily
+    /// re-encrypt rows on first read so existing sessions survive the
+    /// upgrade without forcing a re-login.
+    ///
+    /// `default` covers the (currently unused, but derived) Deserialize
+    /// path: if a `User` is ever rebuilt from JSON lacking this field,
+    /// it defaults to `0` (i32::default), which falls through to the
+    /// "unknown version" arm of `decrypt_for_user` and surfaces an
+    /// explicit error rather than silently mis-routing the ciphertext.
+    #[serde(skip_serializing, default)]
+    pub encryption_version: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
