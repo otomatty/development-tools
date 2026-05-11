@@ -91,13 +91,22 @@ impl SearchRateLimiter {
         self
     }
 
-    /// Drop timestamps older than the window. Also treats a backward clock
-    /// jump (`now < oldest`) as a signal to evict everything — safer than
-    /// leaving stale entries that would never age out.
+    /// Drop timestamps older than the window. Only treats a *large* backward
+    /// clock jump (every entry more than a full window in the future) as a
+    /// corrupted-clock signal that warrants flushing the bucket. Small
+    /// rollbacks (NTP correction, brief desync) keep the bucket intact so we
+    /// don't over-grant a Search burst — those entries naturally age out as
+    /// the clock advances past `ts + window`.
     fn evict_expired(&self, deque: &mut VecDeque<i64>, now: i64) {
+        if let Some(&front) = deque.front() {
+            if front.saturating_sub(now) > self.window_secs {
+                deque.clear();
+                return;
+            }
+        }
         let cutoff = now - self.window_secs;
         while let Some(&front) = deque.front() {
-            if front <= cutoff || front > now {
+            if front <= cutoff {
                 deque.pop_front();
             } else {
                 break;
@@ -296,12 +305,31 @@ mod tests {
         for _ in 0..30 {
             limiter.try_acquire();
         }
-        // Clock jumps backward past all recorded timestamps.
+        // Large backward jump (900s) is treated as corrupted clock: bucket
+        // is flushed so we don't block Search until the clock catches back up.
         clock.set(100);
-        // Evicts everything (front > now branch), so we can acquire again.
         assert_eq!(limiter.try_acquire(), AcquireOutcome::Granted);
         let snap = limiter.snapshot();
         assert_eq!(snap.used, 1);
+    }
+
+    #[test]
+    fn small_clock_rollback_preserves_bucket() {
+        // NTP correction / brief time desync (rollback <= window) must NOT
+        // wipe the bucket — otherwise the next acquire could over-grant a
+        // fresh 30-request burst and exceed GitHub's real Search quota.
+        let clock = FakeClock::new(1000);
+        let limiter = limiter_with(clock.clone());
+        for _ in 0..30 {
+            limiter.try_acquire();
+        }
+        clock.set(998); // 2-second rollback (typical NTP correction)
+        assert!(matches!(
+            limiter.try_acquire(),
+            AcquireOutcome::WaitFor { .. }
+        ));
+        let snap = limiter.snapshot();
+        assert_eq!(snap.used, 30);
     }
 
     #[test]
