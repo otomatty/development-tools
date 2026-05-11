@@ -59,7 +59,7 @@ base64 = "0.22"
 # fail at `TokenManager::new`; only unit tests inject `MemoryKeyStore`
 # manually via `TokenManager::with_keystore`. See `auth::keystore` for
 # the full security model.
-keyring = { version = "3", features = [
+keyring = { version = "4", features = [
     "apple-native",
     "windows-native",
     "sync-secret-service",
