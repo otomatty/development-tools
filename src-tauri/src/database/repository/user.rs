@@ -218,6 +218,54 @@ impl Database {
         rows.into_iter().map(User::try_from).collect()
     }
 
+    /// Count rows whose tokens were encrypted under the keystore-managed
+    /// key and still hold a non-empty ciphertext.
+    ///
+    /// Used by `TokenManager::with_keystore` to detect the "OS keystore
+    /// was wiped but our SQLite DB survived" recovery case — see Issue
+    /// #196 / Codex review. A non-zero count means a freshly generated
+    /// master key would orphan those rows, so the caller wipes the
+    /// ciphertext and forces re-authentication.
+    pub async fn count_keystore_token_rows(&self) -> DbResult<i64> {
+        let row: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM users \
+             WHERE encryption_version = ? AND access_token_encrypted != ''",
+        )
+        .bind(crate::auth::token::ENCRYPTION_VERSION_KEYSTORE)
+        .fetch_one(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        Ok(row.0)
+    }
+
+    /// Wipe access / refresh tokens on every keystore-encrypted row.
+    ///
+    /// Used in the lost-master-key recovery path: the ciphertext is no
+    /// longer decryptable, so we treat those users as logged out (same
+    /// contract as `clear_user_tokens` — non-token user data is
+    /// preserved). The encryption version stays at
+    /// `ENCRYPTION_VERSION_KEYSTORE` because the fresh master key
+    /// generated immediately after is also a v2 key.
+    pub async fn clear_keystore_orphan_tokens(&self) -> DbResult<()> {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET access_token_encrypted = '',
+                refresh_token_encrypted = NULL,
+                token_expires_at = NULL,
+                updated_at = ?
+            WHERE encryption_version = ? AND access_token_encrypted != ''
+            "#,
+        )
+        .bind(now)
+        .bind(crate::auth::token::ENCRYPTION_VERSION_KEYSTORE)
+        .execute(self.pool())
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        Ok(())
+    }
+
     /// Set `encryption_version` for a user without rewriting the ciphertext.
     ///
     /// Used by the migration to tag rows that have an empty token blob

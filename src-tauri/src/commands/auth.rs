@@ -37,6 +37,7 @@ impl AppState {
             .map_err(|e| format!("Failed to initialize database: {}", e))?;
 
         let token_manager = TokenManager::new(db.clone())
+            .await
             .map_err(|e| format!("Failed to initialize token manager: {}", e))?;
 
         // Create a shared HTTP client for reuse across all requests

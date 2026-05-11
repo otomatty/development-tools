@@ -11,10 +11,11 @@
 
 use std::sync::Arc;
 
+use rand::RngExt as _;
 use thiserror::Error;
 
 use super::crypto::{Crypto, CryptoError};
-use super::keystore::{KeyStore, OsKeyStore};
+use super::keystore::{KeyStore, OsKeyStore, KEY_LEN};
 use super::oauth::{AuthToken, OAuthError};
 use crate::database::{Database, DatabaseError, User};
 
@@ -63,18 +64,53 @@ pub struct TokenManager {
 
 impl TokenManager {
     /// Create a new token manager backed by the platform credential store.
-    pub fn new(db: Database) -> TokenResult<Self> {
-        Self::with_keystore(db, Arc::new(OsKeyStore::new()))
+    pub async fn new(db: Database) -> TokenResult<Self> {
+        Self::with_keystore(db, Arc::new(OsKeyStore::new())).await
     }
 
     /// Create a token manager with a caller-supplied keystore.
     ///
     /// Production code should use [`TokenManager::new`]; this entry point
-    /// exists for unit tests (which pass `MemoryKeyStore`) and for environments
-    /// where the OS keystore needs explicit configuration (alternative
-    /// service / account identifiers, headless fallback, etc.).
-    pub fn with_keystore(db: Database, keystore: Arc<dyn KeyStore>) -> TokenResult<Self> {
-        let crypto = Crypto::from_keystore(keystore.as_ref())?;
+    /// exists for unit tests (which pass `MemoryKeyStore`).
+    ///
+    /// Async because the constructor may need to clear orphaned token rows
+    /// when the OS keystore has lost its master key (see below).
+    pub async fn with_keystore(db: Database, keystore: Arc<dyn KeyStore>) -> TokenResult<Self> {
+        // Two-step key acquisition (instead of `get_or_create_key`) so we can
+        // detect the "OS keystore was wiped but our SQLite DB survived" case
+        // — e.g. the user reset their credential store, migrated profiles,
+        // or ran a privacy-cleanup tool. Silently generating a fresh key
+        // would leave every existing `encryption_version = 2` row encrypted
+        // under an unrecoverable key, and the user would just see opaque
+        // decryption errors on every subsequent token read.
+        let key = match keystore.get_key().map_err(CryptoError::from)? {
+            Some(k) => k,
+            None => {
+                // Count v2 token rows that would be bricked by a new key.
+                // Logged-out rows (empty ciphertext) are excluded because
+                // they have nothing to lose.
+                let orphans = db.count_keystore_token_rows().await?;
+                if orphans > 0 {
+                    // Fail-closed recovery: drop the orphaned tokens so the
+                    // user is cleanly forced through Device Flow on next
+                    // launch. We preserve all non-token user data (XP,
+                    // badges, etc.) — same contract as `logout()`.
+                    db.clear_keystore_orphan_tokens().await?;
+                    // TODO: [INFRA] logクレートに置換（ログ基盤整備時に一括対応）
+                    eprintln!(
+                        "Token keystore: master key missing from OS keystore but \
+                         {} encrypted token row(s) found in DB; cleared orphaned \
+                         tokens so the user can re-authenticate (Issue #196).",
+                        orphans
+                    );
+                }
+                let mut fresh = [0u8; KEY_LEN];
+                rand::rng().fill(&mut fresh);
+                keystore.set_key(&fresh).map_err(CryptoError::from)?;
+                fresh
+            }
+        };
+        let crypto = Crypto::new(&key)?;
         // `#[deprecated]` on the legacy constructor is intentional — the only
         // legitimate caller is the migration path below, so silence the lint
         // at the single call site rather than ripping the marker off.
@@ -487,7 +523,9 @@ mod tests {
         db.create_user_stats(1).await.unwrap();
 
         let keystore: Arc<dyn KeyStore> = Arc::new(MemoryKeyStore::new());
-        let tm = TokenManager::with_keystore(db.clone(), keystore).unwrap();
+        let tm = TokenManager::with_keystore(db.clone(), keystore)
+            .await
+            .unwrap();
 
         let migrated = tm.migrate_legacy_tokens_if_needed().await.unwrap();
         assert_eq!(migrated, 1, "exactly one legacy row should migrate");
@@ -533,7 +571,9 @@ mod tests {
         .await
         .unwrap();
 
-        let tm = TokenManager::with_keystore(db.clone(), Arc::new(MemoryKeyStore::new())).unwrap();
+        let tm = TokenManager::with_keystore(db.clone(), Arc::new(MemoryKeyStore::new()))
+            .await
+            .unwrap();
 
         // No rows are "migrated" (we don't have a token to re-encrypt),
         // but the version tag must still flip so future reads don't trip.
@@ -554,7 +594,9 @@ mod tests {
         use crate::database::Database;
 
         let db = Database::in_memory().await.unwrap();
-        let tm = TokenManager::with_keystore(db.clone(), Arc::new(MemoryKeyStore::new())).unwrap();
+        let tm = TokenManager::with_keystore(db.clone(), Arc::new(MemoryKeyStore::new()))
+            .await
+            .unwrap();
 
         let user = tm
             .create_user_from_token(
@@ -573,5 +615,85 @@ mod tests {
 
         // And re-reading goes through the keystore cipher cleanly.
         assert_eq!(tm.get_access_token().await.unwrap(), "ghp_new_token");
+    }
+
+    /// Codex P2: if the OS keystore loses the master key but our SQLite DB
+    /// survives, naïvely generating a fresh key would brick every existing
+    /// v2 row. Constructor must detect this and clear the orphaned tokens
+    /// so the user re-authenticates instead of getting opaque decryption
+    /// errors forever.
+    #[tokio::test]
+    async fn lost_master_key_clears_orphan_token_rows_and_continues() {
+        use crate::auth::keystore::MemoryKeyStore;
+        use crate::database::Database;
+
+        let db = Database::in_memory().await.unwrap();
+
+        // Seed: a logged-in v2 user (will be orphaned), a logged-out v2
+        // user (already empty, must remain untouched but harmless), and a
+        // v1 legacy user (untouched — different key family).
+        sqlx::query(
+            "INSERT INTO users (github_id, username, access_token_encrypted,
+                                refresh_token_encrypted, encryption_version)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(11i64)
+        .bind("alive-v2")
+        .bind("ciphertext-from-old-key")
+        .bind(Option::<&str>::None)
+        .bind(ENCRYPTION_VERSION_KEYSTORE)
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO users (github_id, username, access_token_encrypted, encryption_version)
+             VALUES (?, ?, '', ?)",
+        )
+        .bind(12i64)
+        .bind("logged-out-v2")
+        .bind(ENCRYPTION_VERSION_KEYSTORE)
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO users (github_id, username, access_token_encrypted, encryption_version)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(13i64)
+        .bind("legacy-v1")
+        .bind("legacy-ciphertext")
+        .bind(ENCRYPTION_VERSION_LEGACY)
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        // Empty keystore = "we lost the master key".
+        let keystore: Arc<dyn KeyStore> = Arc::new(MemoryKeyStore::new());
+        let _tm = TokenManager::with_keystore(db.clone(), keystore.clone())
+            .await
+            .expect("constructor must recover, not error");
+
+        // The orphaned v2 row is now cleared (logged-out shape).
+        let alive: (String,) =
+            sqlx::query_as("SELECT access_token_encrypted FROM users WHERE github_id = 11")
+                .fetch_one(db.pool())
+                .await
+                .unwrap();
+        assert!(alive.0.is_empty(), "orphaned v2 token must be cleared");
+
+        // The legacy v1 row is untouched — its ciphertext is decryptable
+        // by `legacy_crypto`, independent of the keystore key.
+        let legacy: (String, i32) = sqlx::query_as(
+            "SELECT access_token_encrypted, encryption_version FROM users WHERE github_id = 13",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(legacy.0, "legacy-ciphertext");
+        assert_eq!(legacy.1, ENCRYPTION_VERSION_LEGACY);
+
+        // And the keystore is now populated, so a second construction is
+        // a normal (non-recovery) startup.
+        assert!(keystore.get_key().unwrap().is_some());
     }
 }
