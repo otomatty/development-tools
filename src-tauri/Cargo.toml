@@ -59,7 +59,15 @@ base64 = "0.22"
 # fail at `TokenManager::new`; only unit tests inject `MemoryKeyStore`
 # manually via `TokenManager::with_keystore`. See `auth::keystore` for
 # the full security model.
-keyring = { version = "4", features = [
+#
+# Pinned to ^3: keyring v4 was an architectural rewrite where the main
+# crate became a re-export shell and platform backends moved to separate
+# `keyring-core` + per-platform credential-store crates. The v4 README
+# explicitly tells v3 users not to upgrade in place — no drop-in path
+# is planned. Migrating requires a full rewrite of the `OsKeyStore`
+# impl against the new trait/registration API; track as a future task
+# and reassess when that work can be prioritised.
+keyring = { version = "3", features = [
     "apple-native",
     "windows-native",
     "sync-secret-service",
