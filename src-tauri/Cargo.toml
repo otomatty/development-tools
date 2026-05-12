@@ -63,9 +63,10 @@ base64 = "0.22"
 # Pinned to ^3: keyring v4 was an architectural rewrite where the main
 # crate became a re-export shell and platform backends moved to separate
 # `keyring-core` + per-platform credential-store crates. The v4 README
-# explicitly tells v3 users not to upgrade in place — the migration
-# requires a full rewrite of the `OsKeyStore` impl. Reassess once v4
-# stabilises a drop-in replacement path.
+# explicitly tells v3 users not to upgrade in place — no drop-in path
+# is planned. Migrating requires a full rewrite of the `OsKeyStore`
+# impl against the new trait/registration API; track as a future task
+# and reassess when that work can be prioritised.
 keyring = { version = "3", features = [
     "apple-native",
     "windows-native",

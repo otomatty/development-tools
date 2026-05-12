@@ -73,6 +73,8 @@ const iconNameMap: Record<string, keyof typeof LucideIcons> = {
   'clock': 'Clock',
   // lucide-react v1 dropped brand icons (incl. `Github`). `GitGraph` is the
   // closest neutral substitute for the ActivityTimeline default-event fallback.
+  // TODO: integrate a dedicated brand-icon library (e.g. simple-icons) once a
+  // GitHub mark is needed for a user-facing affordance like a login button.
   'github': 'GitGraph',
   'link': 'Link',
   'refresh': 'RefreshCw',
