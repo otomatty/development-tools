@@ -71,7 +71,9 @@ const iconNameMap: Record<string, keyof typeof LucideIcons> = {
   'git-pull-request-closed': 'GitPullRequestClosed',
   'git-pull-request-draft': 'GitPullRequestDraft',
   'clock': 'Clock',
-  'github': 'Github',
+  // lucide-react v1 dropped brand icons (incl. `Github`). `GitGraph` is the
+  // closest neutral substitute for the ActivityTimeline default-event fallback.
+  'github': 'GitGraph',
   'link': 'Link',
   'refresh': 'RefreshCw',
   'circle': 'Circle',
