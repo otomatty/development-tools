@@ -1052,3 +1052,37 @@ src/
 - **開発プロセスの可視化**: Issue/Research/Plan/Log により、開発プロセス全体が可視化され、後から振り返りや引き継ぎが容易
 
 このガイドラインに従うことで、AI と人間双方にとって可読性が高く、変更に強いソフトウェア構造を実現できます。
+
+---
+
+## Cursor Cloud specific instructions
+
+### Project overview
+
+This is a **Tauri 2.0 desktop application** (Rust backend + React 19/TypeScript/Vite frontend) with bundled CLI tools in `tools/`. SQLite is embedded — no external database server required.
+
+### Prerequisites (installed by the update script)
+
+- Rust stable (1.85+) with `wasm32-unknown-unknown` target
+- Node.js 22 + npm (use `--legacy-peer-deps` due to peer dependency conflicts)
+- Linux system deps: `libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev libayatana-appindicator3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev`
+
+### Common commands
+
+| Task | Command |
+|------|---------|
+| **Lint (Rust format)** | `cargo fmt -- --check` |
+| **Lint (Clippy)** | `cargo clippy --workspace` |
+| **Lint (TypeScript)** | `npx tsc --noEmit` |
+| **Tests (Rust)** | `cd src-tauri && cargo test` |
+| **Frontend dev server** | `npm run dev:frontend` (Vite on port 1520) |
+| **Full Tauri dev** | `npm run dev` (requires display server) |
+| **Build CLI tools** | `cd tools/<tool-name> && cargo build --release` |
+
+### Gotchas
+
+- `npm install` fails without `--legacy-peer-deps` due to React 19 / Vite 8 peer dependency conflicts.
+- The full `npm run dev` (Tauri dev mode) requires a display server (X11/Wayland). On headless Cloud VMs, use `npm run dev:frontend` for frontend-only development, or `cargo test` for backend validation.
+- The root `Cargo.toml` workspace includes both the Leptos WASM frontend (`development-tools-ui`) and `src-tauri`. The primary frontend is the React/Vite app; the Leptos code is legacy/experimental.
+- CLI tools in `tools/` are excluded from the workspace and must be built individually.
+- The pre-commit hook runs `cargo fmt -- --check`; always run `cargo fmt` before committing Rust code.
