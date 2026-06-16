@@ -67,7 +67,7 @@ base64 = "0.22"
 # is planned. Migrating requires a full rewrite of the `OsKeyStore`
 # impl against the new trait/registration API; track as a future task
 # and reassess when that work can be prioritised.
-keyring = { version = "3", features = [
+keyring = { version = "4", features = [
     "apple-native",
     "windows-native",
     "sync-secret-service",
