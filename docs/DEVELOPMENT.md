@@ -106,16 +106,6 @@ GITHUB_CLIENT_ID=your_github_oauth_app_client_id
    - **Authorization callback URL**: `development-tools://callback`
 4. Client ID をコピーして`.env`に設定
 
-### 7. CLI ツールのビルド
-
-```bash
-# 全ツールをビルド
-for tool in todo-collector shai-hulud-scanner loc-counter large-file-finder port-scanner; do
-  echo "Building $tool..."
-  cd tools/$tool && cargo build --release && cd ../..
-done
-```
-
 ---
 
 ## 開発サーバー
@@ -329,21 +319,7 @@ rm ~/Library/Application\ Support/com.development-tools/development_tools.db
 # アプリを再起動
 ```
 
-### 4. ツールが見つからない
-
-**症状**: ツール一覧が空
-
-**解決方法**:
-
-```bash
-# CLIツールがビルドされているか確認
-ls tools/*/target/release/
-
-# ビルドされていない場合は再ビルド
-cd tools/todo-collector && cargo build --release
-```
-
-### 5. Tailwind CSS が反映されない
+### 4. Tailwind CSS が反映されない
 
 **症状**: スタイルが適用されない
 

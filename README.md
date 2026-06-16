@@ -14,26 +14,12 @@
 
 ## 📖 概要
 
-Development Tools は、GitHub 連携によるゲーミフィケーションを備えたデスクトップアプリケーションです。`tools/` ディレクトリには独立した Rust 製 CLI ツール群も同梱しており、各ツールはコマンドラインから単体で実行できます。
+Development Tools は、GitHub 連携によるゲーミフィケーションを備えたデスクトップアプリケーションです。レベルシステム・バッジ・ストリーク・チャレンジなどを通じて、日々の開発活動を可視化・ゲーミフィケーション化します。
 
 ### 主な機能
 
 - **🎮 GitHub ゲーミフィケーション** - レベルシステム、バッジ、ストリーク、チャレンジで開発を楽しく
 - **⚙️ カスタマイズ可能な設定** - アニメーション、通知、同期間隔などを自由に設定
-
----
-
-## 🛠️ 同梱 CLI ツール
-
-`tools/` ディレクトリ配下に独立した Rust 製 CLI ツールを同梱しています。各ツールはコマンドラインから単体で実行できます。
-
-| ツール                 | 説明                                                   | カテゴリ     |
-| ---------------------- | ------------------------------------------------------ | ------------ |
-| **TODO Collector**     | コード内の TODO/FIXME/HACK コメントを収集・一覧化      | Code Quality |
-| **Shai-Hulud Scanner** | npm サプライチェーン攻撃の影響を受けたパッケージを検出 | Security     |
-| **LOC Counter**        | 言語別コード行数をカウント・統計表示                   | Analytics    |
-| **Large File Finder**  | 閾値以上の行数を持つファイルを検出                     | Analytics    |
-| **Port Scanner**       | ローカルで使用中のポートとプロセスを確認               | Utility      |
 
 ---
 
@@ -99,13 +85,6 @@ cd development-tools
 bun install
 # または
 npm install
-
-# CLIツールのビルド
-cd tools/todo-collector && cargo build --release && cd ../..
-cd tools/shai-hulud-scanner && cargo build --release && cd ../..
-cd tools/loc-counter && cargo build --release && cd ../..
-cd tools/large-file-finder && cargo build --release && cd ../..
-cd tools/port-scanner && cargo build --release && cd ../..
 ```
 
 ### 環境変数の設定
@@ -157,13 +136,6 @@ development-tools/
 │       ├── database/         # SQLite操作
 │       ├── github/           # GitHub API クライアント
 │       └── auth/             # OAuth認証
-│
-├── tools/                    # CLIツール群
-│   ├── todo-collector/
-│   ├── shai-hulud-scanner/
-│   ├── loc-counter/
-│   ├── large-file-finder/
-│   └── port-scanner/
 │
 ├── docs/                     # ドキュメント
 │   ├── requirements.md       # 要件定義
