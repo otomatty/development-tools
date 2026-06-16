@@ -1059,7 +1059,7 @@ src/
 
 ### Project overview
 
-This is a **Tauri 2.0 desktop application** (Rust backend + React 19/TypeScript/Vite frontend) with bundled CLI tools in `tools/`. SQLite is embedded — no external database server required.
+This is a **Tauri 2.0 desktop application** (Rust backend + React 19/TypeScript/Vite frontend) focused on GitHub-integrated gamification. SQLite is embedded — no external database server required.
 
 ### Prerequisites (installed by the update script)
 
@@ -1077,12 +1077,10 @@ This is a **Tauri 2.0 desktop application** (Rust backend + React 19/TypeScript/
 | **Tests (Rust)** | `cd src-tauri && cargo test` |
 | **Frontend dev server** | `npm run dev:frontend` (Vite on port 1520) |
 | **Full Tauri dev** | `npm run dev` (requires display server) |
-| **Build CLI tools** | `cd tools/<tool-name> && cargo build --release` |
 
 ### Gotchas
 
 - `npm install` fails without `--legacy-peer-deps` due to React 19 / Vite 8 peer dependency conflicts.
 - The full `npm run dev` (Tauri dev mode) requires a display server (X11/Wayland). On headless Cloud VMs, use `npm run dev:frontend` for frontend-only development, or `cargo test` for backend validation.
 - The root `Cargo.toml` workspace includes both the Leptos WASM frontend (`development-tools-ui`) and `src-tauri`. The primary frontend is the React/Vite app; the Leptos code is legacy/experimental.
-- CLI tools in `tools/` are excluded from the workspace and must be built individually.
 - The pre-commit hook runs `cargo fmt -- --check`; always run `cargo fmt` before committing Rust code.

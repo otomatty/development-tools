@@ -32,4 +32,3 @@ ammonia = "4"
 
 [workspace]
 members = ["src-tauri"]
-exclude = ["tools/loc-counter", "tools/shai-hulud-scanner", "tools/todo-collector", "tools/large-file-finder", "tools/port-scanner"]

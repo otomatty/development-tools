@@ -33,6 +33,15 @@ ignore = [
     # Used by glib-macros (Tauri dependency)
     "RUSTSEC-2024-0370",
 
+    # proc-macro-error2 - unmaintained
+    # Used by Leptos' macro stack (leptos_macro / reactive_stores_macro /
+    # syn_derive -> rstml). No maintained replacement is available yet:
+    # the latest stable leptos (0.8.x) and the 0.9.0-alpha pre-release both
+    # still depend on proc-macro-error2, so this cannot be fixed by us
+    # directly until the Leptos frontend is removed (Phase 5) or upstream
+    # drops the dependency.
+    "RUSTSEC-2026-0173",
+
     # paste - unmaintained
     # Used by Leptos
     "RUSTSEC-2024-0436",
