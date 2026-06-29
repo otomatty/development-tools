@@ -45,7 +45,7 @@ thiserror = "2"
 anyhow = "1"
 
 # Security (for token encryption)
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 rand = "0.10"
 base64 = "0.22"
 
