@@ -47,7 +47,7 @@ anyhow = "1"
 # Security (for token encryption)
 aes-gcm = "0.10"
 rand = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 
 # OS keystore for master encryption key (Issue #196 / Audit §9.3)
 # - macOS / iOS    → Keychain (`apple-native`)
